@@ -1466,3 +1466,306 @@ if (sessionStorage.getItem('mt_auth') === '1') init();
 </script>
 </body>
 </html>
+Sacrificed — ${m.cause||'endpoint'}${m.kdv?' ('+m.kdv+')':''}`,logged_by:null}:null;
+  const allEvts=[...mevts];if(sacEvt)allEvts.push(sacEvt);
+  const displayMs=showAll?msl:msl.filter(ms=>keyMs.has(ms.id));
+  const rows=[];
+  displayMs.forEach(ms=>rows.push({date:ms.measured_at,kind:'ms',data:ms}));
+  allEvts.forEach(ev=>rows.push({date:ev.event_date,kind:'ev',data:ev}));
+  rows.sort((a,b)=>a.date.localeCompare(b.date));
+  const multi=exp?.multi_tumor||false;
+  let html=`<div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+    <div style="font-size:10px;font-weight:500;color:var(--text2)">History — ${m.id}${m.day0_date?` · Day 0: ${m.day0_date}`:' · <span style="color:var(--amber)">Day 0 not set</span>'}</div>
+    <button class="btn btn-xs" onclick="S.showAllMs['${m.id}']=!S.showAllMs['${m.id}'];toggleHist('${eid}','${m.id}')">
+      <i class="ti ti-history"></i> ${showAll?'Key events only':'Show all measurements'}
+    </button>
+  </div>
+  <div class="hw"><table class="ht">
+    <thead><tr>
+      <th style="width:75px">Date</th><th style="width:60px">Type</th>
+      <th>${multi?'Sites':'Size'}</th>${multi?'<th style="width:72px">Burden</th>':''}
+      <th style="width:52px">Weight</th><th>Details / note</th>
+      <th style="width:55px">By</th><th style="width:95px"></th>
+    </tr></thead><tbody>`;
+  rows.forEach(row=>{
+    if(row.kind==='ms'){
+      const ms=row.data;const sites=ms.tumor_sites||[];const isD0=ms.id===m.day0_measurement_id;
+      const b=Math.round(burden(sites,S.inclSkin));
+      let sitesHTML='';
+      if(multi){sitesHTML=sites.map(s=>`<span style="font-family:var(--mono);font-size:10px${s.is_skin?';color:var(--text3)':''}">${s.location?s.location+' ':''}${s.dim1}×${s.dim2}${s.is_skin?' <em style="font-size:8px">(skin)</em>':''}</span>`).join('<br>');}
+      else{sitesHTML=`<span class="mono">${sites[0]?.dim1&&sites[0]?.dim2?sites[0].dim1+'×'+sites[0].dim2:'—'}</span>`;}
+      const msIdx=msl.indexOf(ms);
+      html+=`<tr class="${isD0?'d0-row':''}">
+        <td class="mono" style="color:var(--text2)">${ms.measured_at}${isD0?'<span class="d0-badge">Day 0</span>':''}</td>
+        <td><span class="badge bg" style="font-size:9px">measure</span></td>
+        <td>${sitesHTML}</td>
+        ${multi?`<td class="mono">${b?b+'mm²':'—'}</td>`:''}
+        <td style="font-size:10px">${m.weight?m.weight+'g':'—'}</td>
+        <td style="font-size:10px">${ms.note||'—'}${ms.edited_at?`<span style="font-size:9px;color:var(--text3);margin-left:4px">edited ${ms.edited_at}</span>`:''}</td>
+        <td style="font-size:10px;color:var(--text3)">${ms.logged_by||'—'}</td>
+        <td><div style="display:flex;gap:3px">
+          <button class="d0-btn" onclick="setDay0('${m.id}','${eid}','${ms.id}','${ms.measured_at}')">${isD0?'✓ Day 0':'▶ Day 0'}</button>
+          <button class="btn btn-xs btn-icon" onclick="openLogE('${eid}','${m.id}',${msIdx})"><i class="ti ti-pencil"></i></button>
+        </div></td>
+      </tr>`;
+    } else {
+      const ev=row.data;const ec=ev.event_type==='transferred'?'ev-row tr':ev.event_type==='sacrifice'?'ev-row sac':'ev-row';
+      const icon=EICO[ev.event_type]||'ti-point';const det=ev.details||{};
+      let ds='';
+      if(ev.event_type==='transferred')ds=`→ ${det.to_group||''} | Tx: ${det.first_tx_date||''} | Sched: ${det.schedule_anchor||''}${det.note?' | '+det.note:''}`;
+      else if(ev.event_type==='cage_change')ds=`${det.old_cage||'?'} → ${det.new_cage||'?'}`;
+      html+=`<tr class="${ec}">
+        <td class="mono">${ev.event_date}</td>
+        <td><i class="ti ${icon}" style="font-size:12px"></i></td>
+        <td colspan="${multi?3:2}" style="font-weight:500">${ev.label||''}</td>
+        <td style="font-size:10px">${ds}</td>
+        <td style="font-size:10px;color:var(--text3)">${ev.logged_by||'—'}</td>
+        <td></td>
+      </tr>`;
+    }
+  });
+  if(!rows.length)html+=`<tr><td colspan="${multi?8:7}" style="text-align:center;padding:1rem;color:var(--text3);font-size:11px">No history yet</td></tr>`;
+  html+=`</tbody></table></div>`;
+  return html;
+}
+function toggleHist(eid,mid){
+  const tr=document.getElementById(`hist-tr-${mid}`);if(!tr)return;
+  if(tr.style.display==='none'){
+    tr.style.display='';
+    const m=(S.mice[eid]||[]).find(x=>x.id===mid);
+    tr.querySelector('td').innerHTML=renderMouseHist(m,eid);
+  } else {tr.style.display='none';}
+}
+
+// ── CHARTS ────────────────────────────────────────────────────────────────────
+const charts={};
+function drawGrowth(exp,groups){
+  const ctx=document.getElementById('growthChart');if(!ctx)return;
+  const key='g'+exp.id;if(charts[key])charts[key].destroy();
+  const miceAll=S.mice[exp.id]||[];
+  const allDays=new Set();
+  miceAll.forEach(m=>{
+    if(!m.day0_date)return;
+    ((S.measurements[exp.id]||{})[m.id]||[]).forEach(ms=>{
+      if(!ms.tumor_sites?.some(s=>s.dim1))return;
+      allDays.add(Math.round((new Date(ms.measured_at)-new Date(m.day0_date))/86400000));
+    });
+  });
+  const labs=Array.from(allDays).sort((a,b)=>a-b);
+  if(!labs.length){ctx.parentElement.innerHTML=`<div class="empty">No day 0 set yet. Open a mouse history and click "▶ Day 0" on the measurement to start from.</div>`;return;}
+  const datasets=[];
+  groups.forEach(g=>{
+    const mice=miceAll.filter(m=>(m.group_id===g.id||m.group_name===g.name)&&m.day0_date);
+    if(S.plotMode==='individual'||S.plotMode==='both'){
+      mice.forEach(m=>{
+        const msl=(S.measurements[exp.id]||{})[m.id]||[];
+        const data=labs.map(rd=>{
+          const td=addD(m.day0_date,rd);
+          const ms=msl.find(x=>x.measured_at===td&&x.tumor_sites?.some(s=>s.dim1));
+          return ms?Math.round(burden(ms.tumor_sites,S.inclSkin)):null;
+        });
+        if(data.some(v=>v!=null))datasets.push({label:m.id,data,borderColor:g.color,backgroundColor:'transparent',tension:.3,fill:false,spanGaps:true,pointRadius:2,borderWidth:1.2,borderDash:[4,3]});
+      });
+    }
+    if(S.plotMode==='mean'||S.plotMode==='both'){
+      const meanD=labs.map(rd=>{
+        const vals=mice.map(m=>{const td=addD(m.day0_date,rd);const ms=((S.measurements[exp.id]||{})[m.id]||[]).find(x=>x.measured_at===td&&x.tumor_sites?.some(s=>s.dim1));return ms?burden(ms.tumor_sites,S.inclSkin):null;}).filter(v=>v!=null);
+        return vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null;
+      });
+      if(meanD.some(v=>v!=null))datasets.push({label:g.name+' (mean)',data:meanD,borderColor:g.color,backgroundColor:g.color+'22',tension:.3,fill:false,spanGaps:true,pointRadius:4,borderWidth:2.5});
+    }
+  });
+  if(!datasets.length){ctx.parentElement.innerHTML=`<div class="empty">No data to plot. Make sure mice have day 0 set and measurements recorded.</div>`;return;}
+  charts[key]=new Chart(ctx,{type:'line',data:{labels:labs.map(d=>'d'+d),datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.raw} mm²`}}},scales:{x:{ticks:{font:{size:9},maxRotation:45},grid:{color:'rgba(128,128,128,0.08)'},title:{display:true,text:'Days from day 0',font:{size:9}}},y:{title:{display:true,text:'Burden (mm²)',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'},min:0}}}});
+}
+function drawKM(exp,groups){
+  const ctx=document.getElementById('kmChart');if(!ctx)return;
+  const key='k'+exp.id;if(charts[key])charts[key].destroy();
+  function buildKM(mice){
+    const evs=mice.map(m=>{if(!m.tx_start)return null;const eD=m.sac_date?new Date(m.sac_date):TODAY;return{days:Math.round((eD-new Date(m.tx_start))/86400000),event:m.cause==='endpoint'?1:0};}).filter(Boolean).sort((a,b)=>a.days-b.days);
+    let s=1,n=evs.length;const pts=[{x:0,y:1}];
+    evs.forEach((e,i)=>{if(e.event===1)s*=(n-i-1)/(n-i);pts.push({x:e.days,y:Math.max(0,s)});});
+    return pts;
+  }
+  const datasets=groups.map(g=>{
+    const mice=(S.mice[exp.id]||[]).filter(m=>m.group_name===g.name||m.group_id===g.id);
+    if(!mice.length)return null;
+    return{label:g.name,data:buildKM(mice),borderColor:g.color,backgroundColor:'transparent',stepped:'before',tension:0,fill:false,pointRadius:0,borderWidth:2};
+  }).filter(Boolean);
+  if(!datasets.length){ctx.parentElement.innerHTML=`<div class="empty">No survival data yet</div>`;return;}
+  charts[key]=new Chart(ctx,{type:'line',data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{type:'linear',title:{display:true,text:'Days from tx start',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'}},y:{min:0,max:1,title:{display:true,text:'Survival',font:{size:9}},ticks:{font:{size:9},callback:v=>Math.round(v*100)+'%'},grid:{color:'rgba(128,128,128,0.08)'}}}}});
+}
+
+// ── NEW EXPERIMENT ────────────────────────────────────────────────────────────
+let NG=[];
+function renderNew(){
+  document.getElementById('pg-title').textContent='New experiment';
+  document.getElementById('tb-acts').innerHTML='';document.getElementById('pg-acts').innerHTML='';
+  NG=[
+    {name:'Group 1 (Control)',n:8,color:COLS[0],events:[
+      {type:'measure',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
+      {type:'treatment',label:'',drug:'Control antibody',dose:'100µg',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7},
+    ]},
+    {name:'Group 2',n:8,color:COLS[1],events:[
+      {type:'measure',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
+      {type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7},
+    ]},
+  ];
+  document.getElementById('content').innerHTML=newFormHTML();
+}
+function newFormHTML(){
+  return`<div class="card">
+  <div style="font-size:12px;font-weight:500;margin-bottom:.625rem">Experiment details</div>
+  <div class="f2">
+    <div class="fg"><label class="fl">WP number</label><input class="fi" id="nwp" placeholder="WP12345"></div>
+    <div class="fg"><label class="fl">Researcher(s)</label><input class="fi" id="nres"></div>
+    <div class="fg full"><label class="fl">Title</label><input class="fi" id="ntit" placeholder="e.g. PIK3CA aCD25+ICB"></div>
+    <div class="fg"><label class="fl">Model</label><input class="fi" id="nmod" placeholder="KEP transplant"></div>
+    <div class="fg"><label class="fl">Strain</label><input class="fi" id="nstr" placeholder="Kcre;EcdF;P53F"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:.5rem .75rem;background:var(--surface2);border-radius:var(--r)">
+    <input type="checkbox" id="nmulti" style="width:14px;height:14px">
+    <div><label for="nmulti" style="font-size:11px;font-weight:500;cursor:pointer">Multiple tumor sites possible</label>
+    <div style="font-size:10px;color:var(--text2)">KEP, intraductal, spontaneous models. Enables per-gland logging and total burden tracking.</div></div>
+  </div>
+  <hr class="div">
+  <div style="font-size:12px;font-weight:500;margin-bottom:.5rem">Endpoint & harvest</div>
+  <div class="f2">
+    <div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="nep" placeholder="e.g. 15×15 mm"></div>
+    <div class="fg"><label class="fl">Discomfort</label><select class="fs" id="ndis"><option>Mild</option><option>Moderate</option><option>Severe</option></select></div>
+    <div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="nhar" rows="2" placeholder="Blood 50/50 FACS+serum. Tumor 1/3 FACS, 1/3 N2, 1/3 formalin." style="resize:vertical"></textarea></div>
+  </div>
+  <hr class="div">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+    <div style="font-size:12px;font-weight:500">Groups & events</div>
+    <button class="btn btn-xs" onclick="addNG()"><i class="ti ti-plus"></i> Add group</button>
+  </div>
+  <div id="ng-cont">${renderNGGroups()}</div>
+  <hr class="div">
+  <div style="display:flex;gap:7px;justify-content:flex-end">
+    <button class="btn btn-xs" onclick="go('exps')">Cancel</button>
+    <button class="btn btn-p btn-xs" onclick="createExp()"><i class="ti ti-check"></i> Create experiment</button>
+  </div>
+</div>`;
+}
+function renderNGGroups(){
+  return NG.map((g,gi)=>`
+    <div class="grp-blk">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+        <div style="display:flex;align-items:center;gap:7px">
+          <div class="edot" style="background:${g.color}"></div>
+          <input class="fi" value="${g.name}" style="width:185px;font-size:11px;padding:3px 6px" oninput="NG[${gi}].name=this.value">
+          <span style="font-size:10px;color:var(--text2)">N:</span>
+          <input class="fi" type="number" value="${g.n}" style="width:48px;font-size:11px;padding:3px 5px" oninput="NG[${gi}].n=parseInt(this.value)||0">
+        </div>
+        ${gi>0?`<button class="btn btn-xs" onclick="NG.splice(${gi},1);document.getElementById('ng-cont').innerHTML=renderNGGroups()"><i class="ti ti-trash"></i></button>`:''}
+      </div>
+      ${g.events.map((ev,ei)=>renderNGEvent(gi,ei,ev)).join('')}
+      <button class="btn btn-xs" style="margin-top:3px" onclick="addNGEvent(${gi})"><i class="ti ti-plus"></i> Add event</button>
+    </div>`).join('');
+}
+function renderNGEvent(gi,ei,ev){
+  const types=['measure','treatment','blood','ivis','custom'];
+  const typeSel=types.map(t=>{const sc=ev.type===t?`sel-${t}`:'';return`<span class="ec ${sc}" onclick="NG[${gi}].events[${ei}].type='${t}';document.getElementById('ng-cont').innerHTML=renderNGGroups()">${t}</span>`;}).join('');
+  const dayPicker=[1,2,3,4,5].map(d=>`<span class="day-btn ${ev.days&&ev.days.includes(d)?'sel':''}" onclick="toggleNGDay(${gi},${ei},${d})">${DOW[d]}</span>`).join('');
+  const trigOpts=['enrollment','size','age','day-after-tx','endpoint'].map(t=>`<option value="${t}" ${ev.trigger===t?'selected':''}>${t}</option>`).join('');
+  return`<div class="ev-blk">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+      <div>${typeSel}</div>
+      ${ei>0?`<button class="btn btn-xs" onclick="NG[${gi}].events.splice(${ei},1);document.getElementById('ng-cont').innerHTML=renderNGGroups()"><i class="ti ti-x"></i></button>`:''}
+    </div>
+    <div class="f2" style="margin-bottom:5px">
+      <div class="fg"><label class="fl">Label</label><input class="fi" style="font-size:10px;padding:3px 5px" value="${ev.label||''}" placeholder="e.g. anti-PD1 IP" oninput="NG[${gi}].events[${ei}].label=this.value"></div>
+      ${ev.type==='treatment'?`<div class="fg"><label class="fl">Drug / dose / route</label><div style="display:flex;gap:3px">
+        <input class="fi" style="flex:2;font-size:10px;padding:3px 5px" value="${ev.drug||''}" placeholder="drug" oninput="NG[${gi}].events[${ei}].drug=this.value">
+        <input class="fi" style="flex:1;font-size:10px;padding:3px 4px" value="${ev.dose||''}" placeholder="dose" oninput="NG[${gi}].events[${ei}].dose=this.value">
+        <select class="fs" style="flex:1;font-size:10px;padding:3px 3px" onchange="NG[${gi}].events[${ei}].route=this.value"><option>IP</option><option>IV</option><option>SC</option><option>PO</option></select>
+      </div></div>`:'<div></div>'}
+    </div>
+    <div style="margin-bottom:5px">
+      <div class="fl" style="margin-bottom:3px">Schedule</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <div>${dayPicker}</div>
+        <select class="fs" style="font-size:10px;padding:3px 5px" onchange="NG[${gi}].events[${ei}].schedule=this.value;document.getElementById('ng-cont').innerHTML=renderNGGroups()">
+          <option value="fixed-days" ${ev.schedule==='fixed-days'?'selected':''}>Fixed days of week</option>
+          <option value="interval" ${ev.schedule==='interval'?'selected':''}>Every N days</option>
+          <option value="once" ${ev.schedule==='once'?'selected':''}>Once only</option>
+        </select>
+        ${ev.schedule==='interval'?`<div style="display:flex;align-items:center;gap:3px"><span class="fl">Every</span><input class="fi" type="number" min="1" style="width:52px;font-size:10px;padding:3px 5px" value="${ev.intervalDays||7}" oninput="NG[${gi}].events[${ei}].intervalDays=parseInt(this.value)||7"><span class="fl">days</span></div>`:''}
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fg"><label class="fl">Start trigger</label>
+        <select class="fs" style="font-size:10px;padding:3px 5px" onchange="NG[${gi}].events[${ei}].trigger=this.value;document.getElementById('ng-cont').innerHTML=renderNGGroups()">${trigOpts}</select>
+      </div>
+      ${ev.trigger==='size'||ev.trigger==='age'?`<div class="fg"><label class="fl">Value</label><input class="fi" style="width:80px;font-size:10px;padding:3px 5px" value="${ev.triggerVal||''}" placeholder="${ev.trigger==='size'?'3×3':'14 weeks'}" oninput="NG[${gi}].events[${ei}].triggerVal=this.value"></div>`:''}
+      ${ev.trigger==='day-after-tx'?`<div class="fg"><label class="fl">Day offset</label><input class="fi" type="number" style="width:65px;font-size:10px;padding:3px 5px" value="${ev.dayOffset||0}" oninput="NG[${gi}].events[${ei}].dayOffset=parseInt(this.value)||0"></div>`:''}
+      <div class="fg"><label class="fl">Max doses</label><input class="fi" type="number" style="width:60px;font-size:10px;padding:3px 5px" value="${ev.maxDoses||''}" placeholder="∞" oninput="NG[${gi}].events[${ei}].maxDoses=this.value?parseInt(this.value):null"></div>
+    </div>
+  </div>`;
+}
+function toggleNGDay(gi,ei,d){const ev=NG[gi].events[ei];if(!ev.days)ev.days=[];const idx=ev.days.indexOf(d);if(idx>=0)ev.days.splice(idx,1);else ev.days.push(d);document.getElementById('ng-cont').innerHTML=renderNGGroups();}
+function addNG(){NG.push({name:`Group ${NG.length+1}`,n:8,color:COLS[NG.length%COLS.length],events:[{type:'measure',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},{type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7}]});document.getElementById('ng-cont').innerHTML=renderNGGroups();}
+function addNGEvent(gi){NG[gi].events.push({type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7});document.getElementById('ng-cont').innerHTML=renderNGGroups();}
+async function createExp(){
+  const wp=(document.getElementById('nwp')?.value||'').trim();
+  const res=(document.getElementById('nres')?.value||'').trim();
+  const tit=(document.getElementById('ntit')?.value||'').trim();
+  if(!wp||!res||!tit){alert('Fill WP number, researcher, and title');return;}
+  const multi=document.getElementById('nmulti')?.checked||false;
+  const btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
+  const{error:expErr}=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:document.getElementById('nmod')?.value||'',strain:document.getElementById('nstr')?.value||'',started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:document.getElementById('nep')?.value||'',harvest:document.getElementById('nhar')?.value||''});
+  if(expErr){alert('Error: '+expErr.message);if(btn)btn.disabled=false;return;}
+  for(let i=0;i<NG.length;i++){
+    const g=NG[i];
+    const{data:gD,error:gE}=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i}).select().single();
+    if(gE||!gD)continue;
+    for(let j=0;j<g.events.length;j++){
+      const ev=g.events[j];
+      await sb.from('scheduled_events').insert({group_id:gD.id,experiment_id:wp,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',schedule_type:ev.schedule,schedule_days:ev.days||[],interval_days:ev.schedule==='interval'?ev.intervalDays:null,trigger_type:ev.trigger,trigger_value:ev.triggerVal||'',day_offset:ev.dayOffset||0,max_doses:ev.maxDoses||null,sort_order:j});
+    }
+  }
+  await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────────────────
+function showModal(title,body,footer){
+  closeModal();
+  const ov=document.createElement('div');ov.id='modal-ov';ov.className='modal-ov';
+  ov.innerHTML=`<div class="modal"><div class="modal-t">${title}</div>${body}<div class="modal-f">${footer}</div></div>`;
+  document.getElementById('app').appendChild(ov);
+}
+function closeModal(){document.getElementById('modal-ov')?.remove();}
+
+// ── NAV ───────────────────────────────────────────────────────────────────────
+function buildExpNav(){
+  document.getElementById('exp-nav').innerHTML=S.experiments.filter(e=>e.status==='active').map(e=>`<div class="nav-exp" onclick="go('exp-${e.id}')"><div class="edot" style="background:${e.color}"></div>${e.id}</div>`).join('');
+}
+function go(view){
+  S.view=view;S.curExp=null;S.expTab='mice';
+  ['daily','week','exps','new'].forEach(n=>document.getElementById('nav-'+n)?.classList.toggle('act',n===view));
+  if(view==='daily')renderDaily();
+  else if(view==='week')renderWeek();
+  else if(view==='exps')renderExps();
+  else if(view==='new')renderNew();
+  else if(view.startsWith('exp-')){
+    ['daily','week','exps','new'].forEach(n=>document.getElementById('nav-'+n)?.classList.remove('act'));
+    S.curExp=view.replace('exp-','');renderExp(S.curExp);
+  }
+}
+
+// ── BOOT ─────────────────────────────────────────────────────────────────────
+const saved=sessionStorage.getItem('mt_user');
+if(saved){
+  S.user=JSON.parse(saved);
+  document.getElementById('auth-screen').style.display='none';
+  const app=document.getElementById('app');app.style.display='flex';app.style.flexDirection='column';
+  document.getElementById('tb-name').textContent=S.user.name;
+  document.getElementById('tb-dot').style.background=S.user.color;
+  init();
+} else {
+  loadUsers();
+}
+</script>
+</body>
+</html>
