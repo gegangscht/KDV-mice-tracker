@@ -94,7 +94,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .npill{background:var(--amber-bg);color:var(--amber);border-radius:3px;padding:0 4px;font-size:9px;margin-left:3px}
 .hv-wrap{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--surface2);color:var(--text3);cursor:pointer;font-size:11px;position:relative;vertical-align:middle;margin-left:4px}
 .hv-wrap:hover .hv-tip{display:block}
-.hv-tip{display:none;position:fixed;left:auto;top:auto;margin-top:-30px;background:var(--text);color:#fff;font-size:10px;border-radius:var(--r);padding:6px 9px;width:300px;z-index:9999;line-height:1.5;white-space:normal;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.hv-tip{display:none;position:fixed;background:var(--text);color:#fff;font-size:10px;border-radius:var(--r);padding:6px 9px;width:300px;z-index:9999;line-height:1.5;white-space:normal;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3);top:auto;left:auto}
 .mt{overflow:visible!important}
 .mt td{overflow:visible!important}
 .il{background:var(--surface2);border:.5px solid var(--border2);border-radius:var(--r);padding:8px 10px;margin-top:4px;min-width:0;width:100%}
@@ -829,7 +829,6 @@ async function renderExp(eid){
       +'<button class="btn btn-xs" onclick="S.showHist[\''+eid+'\']=!S.showHist[\''+eid+'\'];renderExp(\''+eid+'\')"><i class="ti ti-history"></i> '+(showAllHist?'Collapse all history':'Show full history for all mice')+'</button>'
       +'</div>';
     if(showAllHist){
-      // expand all mice histories
       S.mice[eid]&&S.mice[eid].forEach(function(m){S.showAllMs[m.id]=true;});
     }
     groups.forEach(function(g){
@@ -851,10 +850,10 @@ async function renderExp(eid){
         var last=lastMs(m.id,eid);var days=dInTx(m);var near=nearEP(m.id,eid);var isAct=m.status==='active';
         var sbb='';
         if(isAct)sbb='<span class="badge bg">Active</span>';
-        else if(m.cause==='endpoint')sbb='<span class="badge bgy">Endpoint</span>';
-        else if(m.cause==='humane')sbb='<span class="badge ba">Humane</span>';
-        else if(m.cause==='dead')sbb='<span class="badge br">Dead</span>';
-        else sbb='<span class="badge bgy">Sacrificed</span>';
+        else if(m.cause==='endpoint')sbb='<span class="badge bgy" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Endpoint</span>';
+        else if(m.cause==='humane')sbb='<span class="badge ba" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Humane</span>';
+        else if(m.cause==='dead')sbb='<span class="badge br" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Dead</span>';
+        else sbb='<span class="badge bgy" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Sacrificed</span>';
         var bc=last?'<span title="'+bFull(last.tumor_sites)+'" style="'+(near?'color:var(--amber);font-weight:500':'')+'">'+(bShort(last.tumor_sites,S.inclSkin))+'</span>':'--';
         var kdvC=m.kdv?'<span class="mono" style="cursor:pointer" onclick="editKDV(\''+m.id+'\',\''+eid+'\')" title="Click to edit">'+m.kdv+'</span>':(m.status==='sacrificed'?'<button class="btn btn-xs btn-a" onclick="editKDV(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> KDV</button>':'--');
         var cageC='<span class="cage-tag" onclick="editCage(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-cage" style="font-size:10px"></i>'+(m.cage_number||'--')+'</span>';
@@ -917,6 +916,15 @@ async function renderExp(eid){
   document.getElementById('content').innerHTML=html;
   if(S.expTab==='growth')setTimeout(function(){drawGrowth(exp,groups)},50);
   if(S.expTab==='km')setTimeout(function(){drawKM(exp,groups)},50);
+  // Auto-expand histories if global show-all is on
+  if(S.expTab==='mice'&&S.showHist[eid]){
+    setTimeout(function(){
+      (S.mice[eid]||[]).forEach(function(m){
+        var tr=document.getElementById('hist-tr-'+m.id);
+        if(tr&&tr.dataset.open!=='1'){toggleHist(eid,m.id);}
+      });
+    },50);
+  }
 }
 function ST(t){S.expTab=t;renderExp(S.curExp);}
 
@@ -992,13 +1000,16 @@ function renderMouseHist(m,eid){
 }
 function toggleHist(eid,mid){
   var tr=document.getElementById('hist-tr-'+mid);if(!tr)return;
-  if(tr.style.display==='none'||tr.style.display===''){
-    var isOpen=tr.style.display!=='none'&&tr.querySelector('td')&&tr.querySelector('td').innerHTML.trim()!=='';
-    if(isOpen){tr.style.display='none';return;}
-    tr.style.display='';
+  var isVisible=tr.style.display!==''&&tr.style.display!=='none'
+    ?true
+    :(tr.dataset.open==='1');
+  if(isVisible){
+    tr.style.display='none';tr.dataset.open='0';
+  } else {
+    tr.style.display='';tr.dataset.open='1';
     var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
     if(m)tr.querySelector('td').innerHTML=renderMouseHist(m,eid);
-  } else {tr.style.display='none';}
+  }
 }
 
 // CHARTS
@@ -1182,6 +1193,14 @@ async function createExp(){
   await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
 }
 
+// REACTIVATE MOUSE
+async function reactivateMouse(mid,eid){
+  if(!confirm('Reactivate mouse '+mid+'? This will undo the sacrifice status.'))return;
+  await sb.from('mice').update({status:'active',cause:null,sac_date:null,kdv:null}).eq('id',mid);
+  await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:TISO,event_type:'note',label:'Mouse reactivated (sacrifice status reversed)',logged_by:uname()});
+  await loadAll(eid);renderExp(eid);
+}
+
 // MODAL
 function showModal(title,body,footer){
   closeModal();
@@ -1209,6 +1228,24 @@ function go(view){
 }
 
 // BOOT
+// Tooltip positioning
+document.addEventListener('mouseover',function(e){
+  var wrap=e.target.closest&&e.target.closest('.hv-wrap');
+  if(!wrap)return;
+  var tip=wrap.querySelector('.hv-tip');if(!tip)return;
+  tip.style.display='block';
+  var r=wrap.getBoundingClientRect();
+  var tx=r.right+8,ty=r.top-4;
+  if(tx+310>window.innerWidth)tx=r.left-318;
+  if(ty+80>window.innerHeight)ty=window.innerHeight-90;
+  tip.style.left=tx+'px';tip.style.top=ty+'px';
+});
+document.addEventListener('mouseout',function(e){
+  var wrap=e.target.closest&&e.target.closest('.hv-wrap');
+  if(!wrap)return;
+  var tip=wrap.querySelector('.hv-tip');if(tip)tip.style.display='none';
+});
+
 var saved=sessionStorage.getItem('mt_user');
 if(saved){
   S.user=JSON.parse(saved);
