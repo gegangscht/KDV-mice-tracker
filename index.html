@@ -173,6 +173,25 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .loading{display:flex;align-items:center;justify-content:center;padding:3rem;gap:.5rem;color:var(--text2);font-size:12px}
+@media print{
+  #auth-screen{display:none!important}
+  .sidebar{display:none!important}
+  .topbar{display:none!important}
+  .main-hdr{display:none!important}
+  .body{display:block!important}
+  .main{overflow:visible!important}
+  .content{overflow:visible!important;padding:.5rem!important}
+  .btn{display:none!important}
+  .task-row{break-inside:avoid;border:0.5px solid #ccc!important;margin-bottom:2px!important;padding:4px 6px!important}
+  .task-row .btn{display:none!important}
+  .mc-grid{display:none!important}
+  .print-harvest{display:block!important}
+  .no-print{display:none!important}
+  body{font-size:11px}
+  .mono{font-size:10px}
+}
+.print-harvest{display:none}
+.print-site-rows td{padding:2px 5px;border-bottom:0.5px solid #eee;font-size:10px}
 </style>
 </head>
 <body>
@@ -246,12 +265,20 @@ const S={view:'daily',curExp:null,expTab:'mice',sortBy:'type',wkOff:0,plotMode:'
 // HELPERS
 function parseSz(s){if(!s)return null;const m=s.toString().match(/(\d+\.?\d*)\s*[x\xd7X]\s*(\d+\.?\d*)/);return m?{v1:parseFloat(m[1]),v2:parseFloat(m[2])}:null}
 function sArea(s){return(s.dim1||0)*(s.dim2||0)}
-function burden(sites,incSkin){incSkin=incSkin===undefined?true:incSkin;return(sites||[]).reduce(function(t,s){return t+(incSkin||!s.is_skin?sArea(s):0)},0)}
+function burden(sites,incSkin){incSkin=incSkin===undefined?true:incSkin;return(sites||[]).reduce(function(t,s){
+  if(s.status==='gone'||s.status==='nm')return t;
+  return t+(incSkin||!s.is_skin?sArea(s):0);
+},0)}
 function bShort(sites,incSkin){
   incSkin=incSkin===undefined?true:incSkin;
   if(!sites||!sites.length)return'--';
-  const t=Math.round(burden(sites,incSkin));
-  if(sites.length===1&&!sites[0].is_skin)return sites[0].dim1&&sites[0].dim2?sites[0].dim1+'x'+sites[0].dim2:'--';
+  var active=sites.filter(function(s){return s.status!=='gone'&&s.status!=='nm'});
+  if(active.length===0){
+    var gone=sites.filter(function(s){return s.status==='gone'}).length;
+    return gone?gone+' Gone':'NM';
+  }
+  if(active.length===1&&!active[0].is_skin)return active[0].dim1&&active[0].dim2?active[0].dim1+'x'+active[0].dim2:'--';
+  var t=Math.round(burden(sites,incSkin));
   return t+'mm2'+(sites.length>1?' ('+sites.length+' sites)':'');
 }
 function bFull(sites){
@@ -400,72 +427,160 @@ function sortTasks(tasks){
 // LOG FORM
 var logOrder=[];
 function logHTML(eid,mid,ei){
-  var exp=S.experiments.find(function(e){return e.id===eid});
-  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
-  var isEdit=ei>=0;
+  // Get existing sites from LAST measurement to pre-populate rows
   var msl=(S.measurements[eid]||{})[mid]||[];
-  var entry=isEdit?msl[ei]:null;
+  var entry=ei>=0?msl[ei]:null;
+  var lastMs=msl.length>0?msl[msl.length-1]:null;
   var defD=entry?entry.measured_at:TISO;
-  var defN=entry&&entry.note?entry.note:'';
-  var defW=m&&m.weight?m.weight:'';
-  var multi=exp&&exp.multi_tumor?true:false;
-  var defSites=entry&&entry.tumor_sites&&entry.tumor_sites.length?entry.tumor_sites:[{location:'',dim1:'',dim2:'',is_skin:false}];
-  var siteHTML='';
-  if(multi){
-    siteHTML='<div class="il-g"><div class="il-l">Sites</div><div id="sr-'+mid+'">';
-    defSites.forEach(function(site,si){
-      siteHTML+='<div class="site-row" id="sr-'+mid+'-'+si+'">'
-        +'<select class="sin" id="il-loc-'+mid+'-'+si+'" style="width:60px"><option value="">loc</option>'
-        +LOCS.map(function(l){return'<option value="'+l+'"'+(site.location===l?' selected':'')+'>'+l+'</option>'}).join('')
-        +'</select>'
-        +'<input class="sin" id="il-sz-'+mid+'-'+si+'" value="'+(site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'')+'" style="width:68px" placeholder="7x8" onkeydown="ilSK(event,\''+eid+'\',\''+mid+'\','+ei+','+si+')">'
-        +'<label class="skin-chk"><input type="checkbox" id="il-sk-'+mid+'-'+si+'"'+(site.is_skin?' checked':'')+'>skin</label>'
-        +(si>0?'<button class="btn btn-xs btn-icon" onclick="rmSite(\''+mid+'\','+si+')"><i class="ti ti-x"></i></button>':'')
+  var defN=entry?entry.note||'':'';
+  var defW='';
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+  if(m&&m.weight)defW=m.weight;
+  var isEdit=ei>=0;
+
+  // Sites: if editing, use that entry's sites. If new, use last measurement's sites as template
+  var templateSites=entry&&entry.tumor_sites&&entry.tumor_sites.length
+    ?entry.tumor_sites
+    :(lastMs&&lastMs.tumor_sites&&lastMs.tumor_sites.length
+      ?lastMs.tumor_sites
+      :[]);
+
+  // Build site rows
+  var siteRowsHTML='';
+  if(templateSites.length>0){
+    templateSites.forEach(function(site,si){
+      var prevSz=entry?'':(site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'');
+      var isSkin=site.is_skin?true:false;
+      var isGone=site.status==='gone';
+      var isNM=site.status==='nm';
+      siteRowsHTML+='<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px">'
+        +'<span class="site-loc-label" style="font-size:10px;font-weight:500;color:var(--text2);min-width:38px;display:inline-block">'
+        +site.location+(isSkin?' <span style="font-size:8px;color:var(--amber)">(skin)</span>':'')
+        +'</span>'
+        +'<input class="sin" id="il-sz-'+mid+'-'+si+'" value="'+(isEdit?prevSz:'')+'" style="width:72px" placeholder="7x8"'
+        +' onkeydown="ilSK(event,\''+eid+'\',\''+mid+'\','+ei+','+si+')"'
+        +' oninput="ilSzInput(\''+mid+'\','+si+')">'
+        +'<label class="skin-chk" style="margin-left:4px"><input type="checkbox" id="il-gone-'+mid+'-'+si+'"'+(isGone?' checked':'')+' onchange="ilToggleGone(\''+mid+'\','+si+',\'gone\')"> Gone</label>'
+        +'<label class="skin-chk" style="margin-left:4px"><input type="checkbox" id="il-nm-'+mid+'-'+si+'"'+(isNM?' checked':'')+' onchange="ilToggleGone(\''+mid+'\','+si+',\'nm\')"> NM</label>'
+        +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="'+site.location+'">'
+        +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
+        +'<input type="hidden" id="il-status-'+mid+'-'+si+'" value="'+(isGone?'gone':isNM?'nm':'ok')+'">'
         +'</div>';
     });
-    siteHTML+='</div><button class="btn btn-xs" style="margin:3px 0 5px" onclick="addSite(\''+mid+'\')"><i class="ti ti-plus"></i> Add site</button></div>';
   } else {
-    siteHTML='<div class="il-g"><div class="il-l">Size (e.g. 7x8)</div>'
-      +'<input class="il-in" id="il-sz-'+mid+'-0" value="'+(defSites[0]&&defSites[0].dim1&&defSites[0].dim2?defSites[0].dim1+'x'+defSites[0].dim2:'')+'" style="width:88px" placeholder="7x8" onkeydown="ilK(event,\''+eid+'\',\''+mid+'\','+ei+')">'
-      +'</div>';
+    // No prior sites — show one blank row with dropdown for new tumor
+    siteRowsHTML=blankSiteRowHTML(mid,0);
   }
+
   return '<div class="il" id="il-'+mid+'">'
-    +'<div class="il-row">'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">'
     +'<div class="il-g"><div class="il-l">Date</div><input class="il-in" id="il-d-'+mid+'" type="date" value="'+defD+'" style="width:130px"></div>'
-    +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:65px" placeholder="C14"></div>'
-    +siteHTML
-    +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+defW+'" style="width:62px" placeholder="24.5" onkeydown="ilK(event,\''+eid+'\',\''+mid+'\','+ei+')"></div>'
-    +'<div class="il-g" style="flex:1;min-width:110px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration..." onkeydown="ilK(event,\''+eid+'\',\''+mid+'\','+ei+')"></div>'
+    +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+defW+'" style="width:62px" placeholder="24.5"></div>'
+    +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:62px" placeholder="C01"></div>'
+    +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..."></div>'
     +(!isEdit?'<div class="il-g"><div class="il-l">Status</div><select class="il-in" id="il-st-'+mid+'" style="padding:3px 4px;font-size:10px"><option value="">Active</option><option value="endpoint">Sacrifice - endpoint</option><option value="humane">Sacrifice - humane EP</option><option value="early">Sacrifice - early</option><option value="dead">Found dead</option></select></div>':'')
     +'<div class="il-g"><div class="il-l">&nbsp;</div><button class="btn btn-g btn-xs" onclick="submitLog(\''+eid+'\',\''+mid+'\','+ei+')"><i class="ti ti-check"></i>'+(isEdit?' Update':' Save')+'</button></div>'
     +'</div>'
+    +'<div id="sr-wrap-'+mid+'" style="border-top:.5px solid var(--border);padding-top:6px">'
+    +'<div class="il-l" style="margin-bottom:4px">Tumor sites</div>'
+    +'<div id="sr-'+mid+'">'
+    +siteRowsHTML
+    +'</div>'
+    +'<button class="btn btn-xs" style="margin-top:3px" onclick="addBlankSite(\''+mid+'\')">'
+    +'<i class="ti ti-plus"></i> Add tumor site</button>'
+    +'</div>'
     +'<div id="il-kdv-'+mid+'" style="display:none;margin-top:6px;padding-top:6px;border-top:.5px solid var(--border)">'
-    +'<div class="il-row">'
+    +'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
     +'<div class="il-g"><div class="il-l">KDV number (if formalin)</div><input class="il-in" id="il-kdv-in-'+mid+'" style="width:140px" placeholder="26KDV123" onkeydown="if(event.key===\'Enter\')saveKDV(\''+eid+'\',\''+mid+'\')"></div>'
     +'<div class="il-g"><div class="il-l">&nbsp;</div><button class="btn btn-p btn-xs" onclick="saveKDV(\''+eid+'\',\''+mid+'\')">Save KDV</button></div>'
     +'</div></div></div>';
 }
-function addSite(mid){
+
+function blankSiteRowHTML(mid,si){
+  return '<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px">'
+    +'<select class="sin" id="il-loc-sel-'+mid+'-'+si+'" style="width:60px" onchange="document.getElementById(\'il-loc-'+mid+'-'+si+'\').value=this.value">'
+    +'<option value="">loc</option>'
+    +LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')
+    +'</select>'
+    +'<input class="sin" id="il-sz-'+mid+'-'+si+'" style="width:72px" placeholder="7x8">'
+    +'<label class="skin-chk" style="margin-left:4px"><input type="checkbox" id="il-skin-chk-'+mid+'-'+si+'" onchange="document.getElementById(\'il-skin-'+mid+'-'+si+'\').value=this.checked?\'1\':\'0\'"> skin</label>'
+    +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="">'
+    +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="0">'
+    +'<input type="hidden" id="il-status-'+mid+'-'+si+'" value="ok">'
+    +'<button class="btn btn-xs btn-icon" style="margin-left:3px" onclick="rmSiteRow(\''+mid+'\','+si+')"><i class="ti ti-x"></i></button>'
+    +'</div>';
+}
+
+function addBlankSite(mid){
   var cont=document.getElementById('sr-'+mid);if(!cont)return;
   var si=cont.children.length;
-  var div=document.createElement('div');div.className='site-row';div.id='sr-'+mid+'-'+si;
-  div.innerHTML='<select class="sin" id="il-loc-'+mid+'-'+si+'" style="width:60px"><option value="">loc</option>'+LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')+'</select>'
-    +'<input class="sin" id="il-sz-'+mid+'-'+si+'" style="width:68px" placeholder="5x6">'
-    +'<label class="skin-chk"><input type="checkbox" id="il-sk-'+mid+'-'+si+'">skin</label>'
-    +'<button class="btn btn-xs btn-icon" onclick="rmSite(\''+mid+'\','+si+')"><i class="ti ti-x"></i></button>';
-  cont.appendChild(div);document.getElementById('il-loc-'+mid+'-'+si)&&document.getElementById('il-loc-'+mid+'-'+si).focus();
+  var div=document.createElement('div');
+  div.innerHTML=blankSiteRowHTML(mid,si);
+  cont.appendChild(div.firstChild);
+  var sel=document.getElementById('il-loc-sel-'+mid+'-'+si);if(sel)sel.focus();
 }
-function rmSite(mid,si){var el=document.getElementById('sr-'+mid+'-'+si);if(el)el.remove();}
+
+function rmSiteRow(mid,si){
+  var el=document.getElementById('sr-'+mid+'-'+si);if(el)el.remove();
+}
+
+function ilToggleGone(mid,si,type){
+  var goneEl=document.getElementById('il-gone-'+mid+'-'+si);
+  var nmEl=document.getElementById('il-nm-'+mid+'-'+si);
+  var statusEl=document.getElementById('il-status-'+mid+'-'+si);
+  var szEl=document.getElementById('il-sz-'+mid+'-'+si);
+  if(!statusEl)return;
+  var checked=type==='gone'?goneEl&&goneEl.checked:nmEl&&nmEl.checked;
+  if(checked){
+    // uncheck the other
+    if(type==='gone'&&nmEl)nmEl.checked=false;
+    if(type==='nm'&&goneEl)goneEl.checked=false;
+    statusEl.value=type;
+    if(szEl){szEl.value='';szEl.disabled=true;szEl.placeholder=type==='gone'?'Gone':'NM';}
+  } else {
+    statusEl.value='ok';
+    if(szEl){szEl.disabled=false;szEl.placeholder='7x8';}
+  }
+}
+
+function ilSzInput(mid,si){
+  // If user types a size, uncheck gone/nm
+  var goneEl=document.getElementById('il-gone-'+mid+'-'+si);
+  var nmEl=document.getElementById('il-nm-'+mid+'-'+si);
+  var statusEl=document.getElementById('il-status-'+mid+'-'+si);
+  if(goneEl)goneEl.checked=false;
+  if(nmEl)nmEl.checked=false;
+  if(statusEl)statusEl.value='ok';
+}
+
 function getSites(mid){
   var sites=[],si=0;
   while(true){
     var szEl=document.getElementById('il-sz-'+mid+'-'+si);if(!szEl)break;
-    var sz=szEl.value.trim(),loc=(document.getElementById('il-loc-'+mid+'-'+si)&&document.getElementById('il-loc-'+mid+'-'+si).value)||'',isSkin=!!(document.getElementById('il-sk-'+mid+'-'+si)&&document.getElementById('il-sk-'+mid+'-'+si).checked);
-    if(sz){var p=parseSz(sz);if(p)sites.push({location:loc,dim1:p.v1,dim2:p.v2,is_skin:isSkin,sort_order:si});}
+    var sz=szEl.value.trim();
+    var loc=document.getElementById('il-loc-'+mid+'-'+si);
+    var locVal=loc?loc.value:'';
+    // also check the dropdown version for new blank rows
+    var locSel=document.getElementById('il-loc-sel-'+mid+'-'+si);
+    if(locSel&&locSel.value)locVal=locSel.value;
+    var isSkin=document.getElementById('il-skin-'+mid+'-'+si);
+    var skinVal=isSkin&&isSkin.value==='1'?true:false;
+    var skinChk=document.getElementById('il-skin-chk-'+mid+'-'+si);
+    if(skinChk)skinVal=skinChk.checked;
+    var statusEl=document.getElementById('il-status-'+mid+'-'+si);
+    var status=statusEl?statusEl.value:'ok';
+    if(status==='gone'||status==='nm'){
+      sites.push({location:locVal,dim1:0,dim2:0,is_skin:skinVal,status:status,sort_order:si});
+    } else if(sz){
+      var p=parseSz(sz);
+      if(p)sites.push({location:locVal,dim1:p.v1,dim2:p.v2,is_skin:skinVal,status:'ok',sort_order:si});
+    }
     si++;
   }
   return sites;
 }
+
+
 function ilK(e,eid,mid,ei){if(e.key==='Enter'){e.preventDefault();submitLog(eid,mid,ei);}}
 function ilSK(e,eid,mid,ei,si){if(e.key==='Enter'){e.preventDefault();var n=document.getElementById('il-sz-'+mid+'-'+(si+1))||document.getElementById('il-loc-'+mid+'-'+(si+1));if(n)n.focus();else submitLog(eid,mid,ei);}}
 function openLogD(eid,mid){
@@ -678,7 +793,22 @@ function taskSection(title,icon,items){
         +'<button class="btn btn-xs btn-icon" onclick="reschedTask(\''+JSON.stringify({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''}).replace(/'/g,"&#39;")+'\')">'
         +'<i class="ti ti-calendar-event"></i></button>'
       +'</div></div>'
-      +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>';
+      +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>'
+      // Print-only tumor site rows for measurement tasks
+      +(t.type==='measure'?function(){
+        var last=lastMs(t.mouseId,t.expId);
+        if(!last||!last.tumor_sites||!last.tumor_sites.length)return '';
+        var rows='<div class="print-harvest" style="padding:2px 9px 4px;font-size:9px">';
+        last.tumor_sites.forEach(function(s){
+          rows+='<div style="display:flex;align-items:center;gap:8px;padding:1px 0">'
+            +'<span style="min-width:90px;color:#555">'+(s.location||'tumor')+(s.is_skin?' (skin)':'')+':'+'</span>'
+            +'<span style="border-bottom:1px solid #999;min-width:60px;margin-right:4px">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>'
+            +'<span style="font-size:8px;color:#aaa">prev: '+(s.dim1&&s.dim2?s.dim1+'x'+s.dim2:(s.status==='gone'?'Gone':'?'))+'</span>'
+            +'</div>';
+        });
+        rows+='</div>';
+        return rows;
+      }():'');
   }).join('');
   return '<div style="margin-bottom:.75rem">'
     +'<div class="task-sh"><i class="ti '+icon+'" style="font-size:13px;color:var(--text2)"></i>'
@@ -725,6 +855,20 @@ function renderDaily(){
     });
   }
   if(!tasks.length)html+='<div class="empty"><i class="ti ti-circle-check"></i>No tasks scheduled for today</div>';
+
+  // Print-only harvest protocol section
+  var activeExps=S.experiments.filter(function(e){return e.status==='active'&&e.harvest});
+  if(activeExps.length){
+    html+='<div class="print-harvest" style="margin-top:1.5rem;border-top:1px solid #ccc;padding-top:.75rem">';
+    html+='<div style="font-size:11px;font-weight:600;margin-bottom:.5rem">Harvest protocols</div>';
+    activeExps.forEach(function(exp){
+      html+='<div style="margin-bottom:.5rem;font-size:10px">'
+        +'<span style="font-weight:600">'+exp.id+' — '+exp.name+':</span> '+exp.harvest
+        +'</div>';
+    });
+    html+='</div>';
+  }
+
   document.getElementById('content').innerHTML=html;
 }
 
@@ -815,7 +959,7 @@ async function renderExp(eid){
     +'<div><div style="color:var(--text2);margin-bottom:1px">Multi-site</div><div style="font-weight:500">'+(exp.multi_tumor?'Yes':'No')+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Started</div><div style="font-weight:500">'+exp.started+'</div></div>'
     +'</div><hr class="div">'
-    +'<div style="font-size:10px;color:var(--text2);line-height:1.5"><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+'</div></div>'
+    +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div></div>'
     +'<div class="tabs">'
     +'<div class="tab '+(S.expTab==='mice'?'act':'')+'" onclick="ST(\'mice\')">Mice & measurements</div>'
     +'<div class="tab '+(S.expTab==='growth'?'act':'')+'" onclick="ST(\'growth\')">Tumor growth</div>'
@@ -963,8 +1107,16 @@ function renderMouseHist(m,eid){
       var ms=row.data;var sites=ms.tumor_sites||[];var isD0=ms.id===m.day0_measurement_id;
       var b=Math.round(burden(sites,S.inclSkin));
       var sitesHTML='';
-      if(multi){sitesHTML=sites.map(function(s){return'<span style="font-family:var(--mono);font-size:10px'+(s.is_skin?';color:var(--text3)':'')+'">'+((s.location?s.location+' ':'')+s.dim1+'x'+s.dim2+(s.is_skin?' (skin)':''))+'</span>'}).join('<br>');}
-      else{sitesHTML='<span class="mono">'+(sites[0]&&sites[0].dim1&&sites[0].dim2?sites[0].dim1+'x'+sites[0].dim2:'--')+'</span>';}
+      if(multi){sitesHTML=sites.map(function(s){
+        var gone=s.status==='gone',nm=s.status==='nm';
+        var szStr=gone?'<em style="color:var(--amber)">Gone</em>':nm?'<em style="color:var(--text3)">NM</em>':(s.dim1&&s.dim2?s.dim1+'x'+s.dim2:'--');
+        return'<span style="font-family:var(--mono);font-size:10px'+(s.is_skin?';color:var(--text3)':'')+'">'+( s.location?s.location+' ':'')+szStr+(s.is_skin?' <em style="font-size:8px">(skin)</em>':'')+'</span>';
+      }).join('<br>');}
+      else{
+        var s0=sites[0];
+        if(s0){sitesHTML='<span class="mono">'+(s0.status==='gone'?'<em style="color:var(--amber)">Gone</em>':s0.status==='nm'?'<em style="color:var(--text3)">NM</em>':(s0.dim1&&s0.dim2?s0.dim1+'x'+s0.dim2:'--'))+'</span>';}
+        else{sitesHTML='<span class="mono">--</span>';}
+      }
       var msIdx=msl.indexOf(ms);
       html+='<tr class="'+(isD0?'d0-row':'')+'" id="histrow-'+ms.id+'">'
         +'<td class="mono" style="color:var(--text2)">'+ms.measured_at+(isD0?'<span class="d0-badge">Day 0</span>':'')+'</td>'
@@ -1094,10 +1246,9 @@ function newFormHTML(){
     +'<div class="fg"><label class="fl">Model</label><input class="fi" id="nmod" placeholder="KEP transplant"></div>'
     +'<div class="fg"><label class="fl">Strain</label><input class="fi" id="nstr" placeholder="Kcre;EcdF;P53F"></div>'
     +'</div>'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:.5rem .75rem;background:var(--surface2);border-radius:var(--r)">'
-    +'<input type="checkbox" id="nmulti" style="width:14px;height:14px">'
-    +'<div><label for="nmulti" style="font-size:11px;font-weight:500;cursor:pointer">Multiple tumor sites possible</label>'
-    +'<div style="font-size:10px;color:var(--text2)">KEP, intraductal, spontaneous. Enables per-gland logging and total burden tracking.</div></div></div>'
+    +'<div style="padding:.4rem .75rem;background:var(--blue-bg);border-radius:var(--r);font-size:10px;color:var(--blue);margin-bottom:8px">'
+    +'<i class="ti ti-info-circle"></i> All experiments support multiple tumor sites. Use the <strong>+ Add tumor site</strong> button when logging measurements.'
+    +'</div>'
     +'<hr class="div">'
     +'<div style="font-size:12px;font-weight:500;margin-bottom:.5rem">Endpoint & harvest</div>'
     +'<div class="f2">'
@@ -1176,7 +1327,7 @@ async function createExp(){
   var res=((document.getElementById('nres')&&document.getElementById('nres').value)||'').trim();
   var tit=((document.getElementById('ntit')&&document.getElementById('ntit').value)||'').trim();
   if(!wp||!res||!tit){alert('Fill WP number, researcher, and title');return;}
-  var multi=!!(document.getElementById('nmulti')&&document.getElementById('nmulti').checked);
+  var multi=true; // all experiments support multi-site
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
   var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||''});
   if(result.error){alert('Error: '+result.error.message);if(btn)btn.disabled=false;return;}
@@ -1191,6 +1342,32 @@ async function createExp(){
     }
   }
   await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
+}
+
+// EDIT EXPERIMENT
+function showEditExp(eid){
+  var exp=S.experiments.find(function(e){return e.id===eid});if(!exp)return;
+  showModal('Edit experiment — '+eid,
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Researcher(s)</label><input class="fi" id="ee-res" value="'+exp.researcher+'"></div>'
+    +'<div class="fg"><label class="fl">Model</label><input class="fi" id="ee-mod" value="'+(exp.model||'')+'"></div>'
+    +'<div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="ee-ep" value="'+(exp.endpoint_criterion||'')+'"></div>'
+    +'<div class="fg"><label class="fl">Status</label><select class="fs" id="ee-status"><option value="active"'+(exp.status==='active'?' selected':'')+'>Active</option><option value="completed"'+(exp.status==='completed'?' selected':'')+'>Completed</option><option value="archived"'+(exp.status==='archived'?' selected':'')+'>Archived</option></select></div>'
+    +'<div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="ee-har" rows="3" style="resize:vertical">'+( exp.harvest||'')+'</textarea></div>'
+    +'<div class="fg full"><label class="fl">Strain</label><input class="fi" id="ee-str" value="'+(exp.strain||'')+'"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="saveEditExp(''+eid+'')"><i class="ti ti-check"></i> Save</button>');
+}
+async function saveEditExp(eid){
+  var res=(document.getElementById('ee-res')&&document.getElementById('ee-res').value)||'';
+  var mod=(document.getElementById('ee-mod')&&document.getElementById('ee-mod').value)||'';
+  var ep=(document.getElementById('ee-ep')&&document.getElementById('ee-ep').value)||'';
+  var har=(document.getElementById('ee-har')&&document.getElementById('ee-har').value)||'';
+  var str=(document.getElementById('ee-str')&&document.getElementById('ee-str').value)||'';
+  var status=(document.getElementById('ee-status')&&document.getElementById('ee-status').value)||'active';
+  await sb.from('experiments').update({researcher:res,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status}).eq('id',eid);
+  closeModal();await loadAll(eid);renderExp(eid);
 }
 
 // REACTIVATE MOUSE
