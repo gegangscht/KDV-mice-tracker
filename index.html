@@ -448,26 +448,26 @@ function logHTML(eid,mid,ei){
     ?entry.tumor_sites
     :(lastMeas&&lastMeas.tumor_sites&&lastMeas.tumor_sites.length?lastMeas.tumor_sites:[]);
 
-  var siteRowsHTML='';
+  // Build inline site columns — one compact column per tumor site
+  var siteCols='';
+  var nSites=Math.max(templateSites.length,1);
   if(templateSites.length>0){
     templateSites.forEach(function(site,si){
-      var prevSz=entry?'':(site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'');
-      var isSkin=site.is_skin?true:false;
+      var isSkin=site.location==='skin'||site.is_skin;
       var isGone=site.status==='gone';
-      var isNM=site.status==='nm';
-      siteRowsHTML+='<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px;display:flex;align-items:center;gap:5px">'
-        +'<span style="font-size:10px;font-weight:500;color:var(--text2);min-width:42px">'
-        +site.location+(isSkin?' <span style="font-size:8px;color:var(--amber)">(skin)</span>':'')+'</span>'
-        +'<input class="sin" id="il-sz-'+mid+'-'+si+'" value="'+(isEdit?prevSz:'')+'" style="width:72px" placeholder="7x8">'
-        +'<label class="skin-chk"><input type="checkbox" class="gone-chk" data-mid="'+mid+'" data-si="'+si+'" data-type="gone"'+(isGone?' checked':'')+'>Gone</label>'
-        +'<label class="skin-chk"><input type="checkbox" class="nm-chk" data-mid="'+mid+'" data-si="'+si+'" data-type="nm"'+(isNM?' checked':'')+'>NM</label>'
+      var prevSz=entry?'':(site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'');
+      siteCols+='<div class="il-g" id="sr-'+mid+'-'+si+'" style="min-width:80px">'
+        +'<div class="il-l" style="color:'+(isSkin?'var(--amber)':'var(--text3)')+'">'+site.location+'</div>'
+        +'<input class="il-in" id="il-sz-'+mid+'-'+si+'" value="'+(isEdit?prevSz:'')+'" style="width:72px" placeholder="7x8" tabindex="'+(si+1)+'"'+(isGone?' disabled':'')+'>'
+        +'<div style="margin-top:2px"><label class="skin-chk"><input type="checkbox" class="gone-chk" data-mid="'+mid+'" data-si="'+si+'"'+(isGone?' checked':'')+'>Gone</label></div>'
         +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="'+site.location+'">'
         +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
-        +'<input type="hidden" id="il-status-'+mid+'-'+si+'" value="'+(isGone?'gone':isNM?'nm':'ok')+'">'
+        +'<input type="hidden" id="il-status-'+mid+'-'+si+'" value="'+(isGone?'gone':'ok')+'">'
         +'</div>';
     });
   } else {
-    siteRowsHTML=blankSiteRowHTML(mid,0);
+    // No prior sites — one blank column with dropdown
+    siteCols=blankSiteRowHTML(mid,0);
   }
 
   var statusSel=!isEdit?'<div class="il-g"><div class="il-l">Status</div>'
@@ -480,53 +480,52 @@ function logHTML(eid,mid,ei){
     +'</select></div>':'';
 
   return '<div class="il" id="il-'+mid+'">'
-    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">'
-    +'<div class="il-g"><div class="il-l">Date</div><input class="il-in" id="il-d-'+mid+'" type="date" value="'+defD+'" style="width:130px"></div>'
-    +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+defW+'" style="width:62px" placeholder="24.5"></div>'
-    +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:62px" placeholder="C01"></div>'
-    +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..."></div>'
+    +'<div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap">'
+    +'<div class="il-g"><div class="il-l">Date</div><input class="il-in" id="il-d-'+mid+'" type="date" value="'+defD+'" style="width:128px" tabindex="0"></div>'
+    +siteCols
+    +'<button class="btn btn-xs btn-icon" id="il-addsite-'+mid+'" title="Add tumor site" style="margin-top:14px;align-self:flex-start"><i class="ti ti-plus"></i></button>'
+    +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+defW+'" style="width:58px" placeholder="24.5" tabindex="50"></div>'
+    +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:52px" placeholder="C01" tabindex="51"></div>'
+    +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..." tabindex="52"></div>'
     +statusSel
     +'<div class="il-g"><div class="il-l">&nbsp;</div>'
-    +'<button class="btn btn-g btn-xs" id="il-save-'+mid+'"><i class="ti ti-check"></i>'+(isEdit?' Update':' Save')+'</button>'
+    +'<button class="btn btn-g btn-xs" id="il-save-'+mid+'" tabindex="53"><i class="ti ti-check"></i>'+(isEdit?' Update':' Save')+'</button>'
     +'</div></div>'
-    +'<div style="border-top:.5px solid var(--border);padding-top:6px">'
-    +'<div class="il-l" style="margin-bottom:4px">Tumor sites</div>'
-    +'<div id="sr-'+mid+'">'+siteRowsHTML+'</div>'
-    +'<button class="btn btn-xs" id="il-addsite-'+mid+'" style="margin-top:3px"><i class="ti ti-plus"></i> Add tumor site</button>'
-    +'</div>'
     +'<div id="il-kdv-'+mid+'" style="display:none;margin-top:6px;padding-top:6px;border-top:.5px solid var(--border)">'
     +'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
     +'<div class="il-g"><div class="il-l">KDV number</div><input class="il-in" id="il-kdv-in-'+mid+'" style="width:140px" placeholder="26KDV123"></div>'
     +'<div class="il-g"><div class="il-l">&nbsp;</div><button class="btn btn-p btn-xs" id="il-savekdv-'+mid+'">Save KDV</button></div>'
     +'</div></div></div>';
-  // Wire buttons immediately after HTML is returned (called by openLogD/openLogE)
-  // We use a global map to store eid/ei context
   S._logCtx=S._logCtx||{};
   S._logCtx[mid]={eid:eid,ei:ei};
 }
 
 function blankSiteRowHTML(mid,si){
-  return '<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px;display:flex;align-items:center;gap:5px">'
-    +'<select class="sin" id="il-loc-sel-'+mid+'-'+si+'" style="width:62px">'
-    +'<option value="">loc</option>'
+  // Returns a site column for a new (unknown location) tumor
+  return '<div class="il-g" id="sr-'+mid+'-'+si+'" style="min-width:80px">'
+    +'<div class="il-l">Location</div>'
+    +'<select class="sin" id="il-loc-sel-'+mid+'-'+si+'" style="width:72px;margin-bottom:2px">'
+    +'<option value="">select</option>'
     +LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')
     +'</select>'
-    +'<input class="sin" id="il-sz-'+mid+'-'+si+'" style="width:72px" placeholder="7x8">'
-    +'<label class="skin-chk"><input type="checkbox" class="skin-chk-inp" data-mid="'+mid+'" data-si="'+si+'">skin</label>'
+    +'<input class="il-in" id="il-sz-'+mid+'-'+si+'" style="width:72px" placeholder="7x8" tabindex="'+(si+1)+'">'
+    +'<div style="margin-top:2px"><label class="skin-chk"><input type="checkbox" class="gone-chk" data-mid="'+mid+'" data-si="'+si+'">Gone</label></div>'
     +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="">'
     +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="0">'
     +'<input type="hidden" id="il-status-'+mid+'-'+si+'" value="ok">'
-    +'<button class="btn btn-xs btn-icon rm-site-btn" data-mid="'+mid+'" data-si="'+si+'"><i class="ti ti-x"></i></button>'
     +'</div>';
 }
 
-
 function addBlankSite(mid){
-  var cont=document.getElementById('sr-'+mid);if(!cont)return;
-  var si=cont.children.length;
+  var wrap=document.getElementById('il-'+mid);if(!wrap)return;
+  // Count existing site columns
+  var si=0;
+  while(document.getElementById('sr-'+mid+'-'+si))si++;
+  // Insert before the + button
+  var addBtn=document.getElementById('il-addsite-'+mid);if(!addBtn)return;
   var div=document.createElement('div');
   div.innerHTML=blankSiteRowHTML(mid,si);
-  cont.appendChild(div.firstChild);
+  addBtn.parentNode.insertBefore(div.firstChild,addBtn);
   var sel=document.getElementById('il-loc-sel-'+mid+'-'+si);if(sel)sel.focus();
 }
 
@@ -534,19 +533,16 @@ function rmSiteRow(mid,si){
   var el=document.getElementById('sr-'+mid+'-'+si);if(el)el.remove();
 }
 
-function ilToggleGone(mid,si,type){
+function ilToggleGone(mid,si){
   var goneEl=document.getElementById('il-gone-'+mid+'-'+si);
-  var nmEl=document.getElementById('il-nm-'+mid+'-'+si);
+  // gone-chk elements use class, find by data attributes
+  var chk=document.querySelector('.gone-chk[data-mid="'+mid+'"][data-si="'+si+'"]');
   var statusEl=document.getElementById('il-status-'+mid+'-'+si);
   var szEl=document.getElementById('il-sz-'+mid+'-'+si);
-  if(!statusEl)return;
-  var checked=type==='gone'?goneEl&&goneEl.checked:nmEl&&nmEl.checked;
-  if(checked){
-    // uncheck the other
-    if(type==='gone'&&nmEl)nmEl.checked=false;
-    if(type==='nm'&&goneEl)goneEl.checked=false;
-    statusEl.value=type;
-    if(szEl){szEl.value='';szEl.disabled=true;szEl.placeholder=type==='gone'?'Gone':'NM';}
+  if(!statusEl||!chk)return;
+  if(chk.checked){
+    statusEl.value='gone';
+    if(szEl){szEl.value='';szEl.disabled=true;szEl.placeholder='Gone';}
   } else {
     statusEl.value='ok';
     if(szEl){szEl.disabled=false;szEl.placeholder='7x8';}
@@ -554,12 +550,9 @@ function ilToggleGone(mid,si,type){
 }
 
 function ilSzInput(mid,si){
-  // If user types a size, uncheck gone/nm
-  var goneEl=document.getElementById('il-gone-'+mid+'-'+si);
-  var nmEl=document.getElementById('il-nm-'+mid+'-'+si);
+  var chk=document.querySelector('.gone-chk[data-mid="'+mid+'"][data-si="'+si+'"]');
   var statusEl=document.getElementById('il-status-'+mid+'-'+si);
-  if(goneEl)goneEl.checked=false;
-  if(nmEl)nmEl.checked=false;
+  if(chk)chk.checked=false;
   if(statusEl)statusEl.value='ok';
 }
 
@@ -568,27 +561,26 @@ function getSites(mid){
   while(true){
     var szEl=document.getElementById('il-sz-'+mid+'-'+si);if(!szEl)break;
     var sz=szEl.value.trim();
-    var loc=document.getElementById('il-loc-'+mid+'-'+si);
-    var locVal=loc?loc.value:'';
-    // also check the dropdown version for new blank rows
+    var locHid=document.getElementById('il-loc-'+mid+'-'+si);
     var locSel=document.getElementById('il-loc-sel-'+mid+'-'+si);
-    if(locSel&&locSel.value)locVal=locSel.value;
-    var isSkin=document.getElementById('il-skin-'+mid+'-'+si);
-    var skinVal=isSkin&&isSkin.value==='1'?true:false;
-    var skinChk=document.getElementById('il-skin-chk-'+mid+'-'+si);
-    if(skinChk)skinVal=skinChk.checked;
+    var locVal=(locSel&&locSel.value)?locSel.value:(locHid?locHid.value:'');
+    var isSkin=locVal==='skin';
+    var skinHid=document.getElementById('il-skin-'+mid+'-'+si);
+    if(!isSkin&&skinHid)isSkin=skinHid.value==='1';
     var statusEl=document.getElementById('il-status-'+mid+'-'+si);
     var status=statusEl?statusEl.value:'ok';
-    if(status==='gone'||status==='nm'){
-      sites.push({location:locVal,dim1:0,dim2:0,is_skin:skinVal,status:status,sort_order:si});
+    if(status==='gone'){
+      if(locVal)sites.push({location:locVal,dim1:0,dim2:0,is_skin:isSkin,status:'gone',sort_order:si});
     } else if(sz){
       var p=parseSz(sz);
-      if(p)sites.push({location:locVal,dim1:p.v1,dim2:p.v2,is_skin:skinVal,status:'ok',sort_order:si});
+      if(p&&locVal)sites.push({location:locVal,dim1:p.v1,dim2:p.v2,is_skin:isSkin,status:'ok',sort_order:si});
+      else if(p)sites.push({location:'',dim1:p.v1,dim2:p.v2,is_skin:false,status:'ok',sort_order:si});
     }
     si++;
   }
   return sites;
 }
+
 
 
 function ilK(e,eid,mid,ei){if(e.key==='Enter'){e.preventDefault();submitLog(eid,mid,ei);}}
@@ -665,6 +657,22 @@ async function editKDV(mid,eid){
   var val=prompt('KDV number:',cur);if(val===null)return;
   await sb.from('mice').update({kdv:val}).eq('id',mid);
   await loadAll(eid);renderExp(eid);
+}
+async function editTxStart(mid,eid){
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+  var cur=m&&m.tx_start?m.tx_start:'';
+  var val=prompt('Treatment start date (YYYY-MM-DD), leave blank to clear:',cur);
+  if(val===null)return;
+  await sb.from('mice').update({tx_start:val.trim()||null}).eq('id',mid);
+  if(val.trim()){
+    // log event
+    await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:val.trim(),event_type:'tx_start',label:'Treatment start date set',logged_by:uname()});
+  }
+  await loadAll(eid);renderExp(eid);
+}
+async function editTxGroup(mid,eid){
+  // Alias for editing tx without transferring group
+  return editTxStart(mid,eid);
 }
 async function editCage(mid,eid){
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
@@ -1021,7 +1029,8 @@ async function renderExp(eid){
           +'<td>'+kdvC+'</td><td>'+sbb+'</td>'
           +'<td><div style="display:flex;gap:2px;flex-wrap:wrap">'
           +(isAct?'<button class="btn btn-g btn-xs" onclick="openLogE(\''+eid+'\',\''+m.id+'\',-1)"><i class="ti ti-plus"></i> Log</button>':'')
-          +(isAct?'<button class="btn btn-xs btn-icon" title="Transfer" onclick="showTransfer(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
+          +(isAct?'<button class="btn btn-xs btn-icon" title="Transfer to group" onclick="showTransfer(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
+          +'<button class="btn btn-xs btn-icon" title="Edit tx start date" onclick="editTxStart(\''+m.id+'\',\''+eid+'\')" style="font-size:9px"><i class="ti ti-calendar-event"></i></button>'
           +'<button class="btn btn-xs btn-icon" title="History" onclick="toggleHist(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-history"></i></button>'
           +'</div></td></tr>'
           +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="11" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
@@ -1050,13 +1059,29 @@ async function renderExp(eid){
       +'<div style="display:flex;flex-wrap:wrap;gap:9px;margin-bottom:9px">'+groups.map(function(g){return'<span style="display:flex;align-items:center;gap:3px;font-size:10px"><span style="width:10px;height:2px;background:'+g.color+';display:inline-block"></span>'+g.name+'</span>'}).join('')+'</div>'
       +'<div style="height:220px"><canvas id="kmChart">Survival data.</canvas></div></div>';
   } else if(S.expTab==='sched'){
-    html+='<div class="card"><div style="font-size:11px;font-weight:500;margin-bottom:.625rem">Scheduled events by group</div>';
+    html+='<div class="card">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem">'
+      +'<div style="font-size:11px;font-weight:500">Scheduled events by group</div>'
+      +'<button class="btn btn-xs btn-p" onclick="showAddGroup(\''+eid+'\')"><i class="ti ti-plus"></i> Add group</button>'
+      +'</div>';
     groups.forEach(function(g){
       var gevts=S.events[g.id]||[];
-      html+='<div class="grp-blk"><div style="display:flex;align-items:center;gap:6px;margin-bottom:.4rem"><div class="edot" style="background:'+g.color+'"></div><span style="font-size:11px;font-weight:500">'+g.name+'</span></div>';
+      html+='<div class="grp-blk">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">'
+        +'<div style="display:flex;align-items:center;gap:6px"><div class="edot" style="background:'+g.color+'"></div>'
+        +'<span style="font-size:11px;font-weight:500">'+g.name+'</span>'
+        +'<span class="badge bgy">target: '+g.target_n+'</span></div>'
+        +'<div style="display:flex;gap:4px">'
+        +'<button class="btn btn-xs" onclick="showAddEvent(\''+g.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> Add event</button>'
+        +'<button class="btn btn-xs btn-icon" onclick="showEditGroup(\''+g.id+'\',\''+eid+'\')" title="Edit group"><i class="ti ti-pencil"></i></button>'
+        +'</div></div>';
       gevts.forEach(function(ev){
         var tc={measure:'bg',treatment:'bb',blood:'br',ivis:'bp',custom:'ba'}[ev.type]||'bgy';
-        html+='<div class="ev-blk"><div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span class="badge '+tc+'">'+ev.type+'</span><span style="font-size:11px;font-weight:500">'+(ev.label||ev.drug||'')+'</span></div>'
+        html+='<div class="ev-blk">'
+          +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
+          +'<div style="display:flex;align-items:center;gap:6px"><span class="badge '+tc+'">'+ev.type+'</span><span style="font-size:11px;font-weight:500">'+(ev.label||ev.drug||'')+'</span></div>'
+          +'<button class="btn btn-xs btn-icon" onclick="showEditEvent(\''+ev.id+'\',\''+eid+'\')" title="Edit event"><i class="ti ti-pencil"></i></button>'
+          +'</div>'
           +'<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;font-size:10px;color:var(--text2)">'
           +'<div><div style="color:var(--text3)">Schedule</div>'+(ev.schedule_type==='fixed-days'?(ev.schedule_days||[]).map(function(d){return DOW[d]}).join('+'):ev.schedule_type==='interval'?'every '+ev.interval_days+'d':ev.schedule_type)+'</div>'
           +'<div><div style="color:var(--text3)">Trigger</div>'+ev.trigger_type+(ev.trigger_value?' @ '+ev.trigger_value:ev.day_offset?' +'+ev.day_offset+'d':'')+'</div>'
@@ -1389,6 +1414,164 @@ async function saveEditExp(eid){
   closeModal();await loadAll(eid);renderExp(eid);
 }
 
+// EDIT GROUP
+function showEditGroup(gid,eid){
+  var g=(S.groups[eid]||[]).find(function(x){return x.id===gid});if(!g)return;
+  S._editGrp={gid:gid,eid:eid};
+  showModal('Edit group',
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Group name</label><input class="fi" id="eg-name" value="'+g.name+'"></div>'
+    +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="eg-n" type="number" value="'+(g.target_n||8)+'"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="saveEditGroup()"><i class="ti ti-check"></i> Save</button>');
+}
+async function saveEditGroup(){
+  var d=S._editGrp;if(!d)return;
+  var name=(document.getElementById('eg-name')&&document.getElementById('eg-name').value)||'';
+  var n=parseInt((document.getElementById('eg-n')&&document.getElementById('eg-n').value)||'8')||8;
+  await sb.from('experiment_groups').update({name:name,target_n:n}).eq('id',d.gid);
+  // Also update group_name on mice in this group
+  if(name)await sb.from('mice').update({group_name:name}).eq('group_id',d.gid);
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
+}
+
+// ADD GROUP
+function showAddGroup(eid){
+  S._addGrpEid=eid;
+  showModal('Add group to experiment',
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Group name</label><input class="fi" id="ag-name" placeholder="e.g. anti-PD1+aCTLA4" autofocus></div>'
+    +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="ag-n" type="number" value="8"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="saveAddGroup()"><i class="ti ti-check"></i> Add group</button>');
+}
+async function saveAddGroup(){
+  var eid=S._addGrpEid;if(!eid)return;
+  var name=(document.getElementById('ag-name')&&document.getElementById('ag-name').value)||'';
+  var n=parseInt((document.getElementById('ag-n')&&document.getElementById('ag-n').value)||'8')||8;
+  if(!name){alert('Enter group name');return;}
+  var sortOrder=(S.groups[eid]||[]).length;
+  var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
+  var color=colors[sortOrder%colors.length];
+  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder});
+  closeModal();await loadAll(eid);renderExp(eid);
+}
+
+// EDIT EVENT
+function showEditEvent(evid,eid){
+  var allEvts=Object.values(S.events).reduce(function(a,b){return a.concat(b)},[]);
+  var ev=allEvts.find(function(e){return e.id===evid});if(!ev)return;
+  S._editEvt={evid:evid,eid:eid};
+  var dowOpts=[1,2,3,4,5].map(function(d){
+    return'<label style="margin-right:5px"><input type="checkbox" class="ev-day-chk" value="'+d+'"'+((ev.schedule_days||[]).includes(d)?' checked':'')+'>'+DOW[d]+'</label>';
+  }).join('');
+  showModal('Edit scheduled event',
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Type</label>'
+    +'<select class="fs" id="ee-type">'
+    +['measure','treatment','blood','ivis','custom'].map(function(t){return'<option value="'+t+'"'+(ev.type===t?' selected':'')+'>'+t+'</option>'}).join('')
+    +'</select></div>'
+    +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ee-label" value="'+(ev.label||'')+'"></div>'
+    +'<div class="fg"><label class="fl">Drug</label><input class="fi" id="ee-drug" value="'+(ev.drug||'')+'"></div>'
+    +'<div class="fg"><label class="fl">Dose</label><input class="fi" id="ee-dose" value="'+(ev.dose||'')+'"></div>'
+    +'<div class="fg"><label class="fl">Route</label>'
+    +'<select class="fs" id="ee-route"><option'+(ev.route==='IP'?' selected':'')+'>IP</option><option'+(ev.route==='IV'?' selected':'')+'>IV</option><option'+(ev.route==='SC'?' selected':'')+'>SC</option><option'+(ev.route==='PO'?' selected':'')+'>PO</option></select>'
+    +'</div>'
+    +'<div class="fg"><label class="fl">Schedule</label>'
+    +'<select class="fs" id="ee-sched"><option value="fixed-days"'+(ev.schedule_type==='fixed-days'?' selected':'')+'>Fixed days</option><option value="interval"'+(ev.schedule_type==='interval'?' selected':'')+'>Every N days</option><option value="once"'+(ev.schedule_type==='once'?' selected':'')+'>Once only</option></select>'
+    +'</div>'
+    +'<div class="fg"><label class="fl">Interval days</label><input class="fi" id="ee-interval" type="number" value="'+(ev.interval_days||7)+'"></div>'
+    +'<div class="fg full"><label class="fl">Days of week</label><div style="display:flex;gap:4px;flex-wrap:wrap;padding:4px 0">'+dowOpts+'</div></div>'
+    +'<div class="fg"><label class="fl">Trigger</label>'
+    +'<select class="fs" id="ee-trigger">'+['enrollment','size','age','day-after-tx','endpoint'].map(function(t){return'<option value="'+t+'"'+(ev.trigger_type===t?' selected':'')+'>'+t+'</option>'}).join('')+'</select>'
+    +'</div>'
+    +'<div class="fg"><label class="fl">Trigger value</label><input class="fi" id="ee-trigval" value="'+(ev.trigger_value||'')+'" placeholder="e.g. 5x5"></div>'
+    +'<div class="fg"><label class="fl">Day offset</label><input class="fi" id="ee-dayoff" type="number" value="'+(ev.day_offset||0)+'"></div>'
+    +'<div class="fg"><label class="fl">Max doses</label><input class="fi" id="ee-maxdose" type="number" value="'+(ev.max_doses||'')+'" placeholder="unlimited"></div>'
+    +'</div>',
+    '<button class="btn btn-xs btn-r" onclick="deleteEvent()"><i class="ti ti-trash"></i> Delete</button>'
+    +'<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="saveEditEvent()"><i class="ti ti-check"></i> Save</button>');
+}
+async function saveEditEvent(){
+  var d=S._editEvt;if(!d)return;
+  var days=[];
+  document.querySelectorAll('.ev-day-chk:checked').forEach(function(c){days.push(parseInt(c.value));});
+  var maxDoseVal=document.getElementById('ee-maxdose')&&document.getElementById('ee-maxdose').value;
+  await sb.from('scheduled_events').update({
+    type:(document.getElementById('ee-type')&&document.getElementById('ee-type').value)||'measure',
+    label:(document.getElementById('ee-label')&&document.getElementById('ee-label').value)||'',
+    drug:(document.getElementById('ee-drug')&&document.getElementById('ee-drug').value)||'',
+    dose:(document.getElementById('ee-dose')&&document.getElementById('ee-dose').value)||'',
+    route:(document.getElementById('ee-route')&&document.getElementById('ee-route').value)||'IP',
+    schedule_type:(document.getElementById('ee-sched')&&document.getElementById('ee-sched').value)||'fixed-days',
+    schedule_days:days,
+    interval_days:parseInt((document.getElementById('ee-interval')&&document.getElementById('ee-interval').value)||'7')||null,
+    trigger_type:(document.getElementById('ee-trigger')&&document.getElementById('ee-trigger').value)||'enrollment',
+    trigger_value:(document.getElementById('ee-trigval')&&document.getElementById('ee-trigval').value)||'',
+    day_offset:parseInt((document.getElementById('ee-dayoff')&&document.getElementById('ee-dayoff').value)||'0')||0,
+    max_doses:maxDoseVal&&maxDoseVal.trim()?parseInt(maxDoseVal):null
+  }).eq('id',d.evid);
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
+}
+async function deleteEvent(){
+  var d=S._editEvt;if(!d)return;
+  if(!confirm('Delete this event?'))return;
+  await sb.from('scheduled_events').delete().eq('id',d.evid);
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
+}
+
+// ADD EVENT
+function showAddEvent(gid,eid){
+  S._addEvt={gid:gid,eid:eid};
+  var dowOpts=[1,2,3,4,5].map(function(d){
+    return'<label style="margin-right:5px"><input type="checkbox" class="ev-day-chk" value="'+d+'"'+([1,4].includes(d)?' checked':'')+'>'+DOW[d]+'</label>';
+  }).join('');
+  showModal('Add scheduled event',
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Type</label><select class="fs" id="ae-type">'+['measure','treatment','blood','ivis','custom'].map(function(t){return'<option>'+t+'</option>'}).join('')+'</select></div>'
+    +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ae-label" placeholder="e.g. anti-PD1 IP" autofocus></div>'
+    +'<div class="fg"><label class="fl">Drug</label><input class="fi" id="ae-drug"></div>'
+    +'<div class="fg"><label class="fl">Dose</label><input class="fi" id="ae-dose" placeholder="200ug"></div>'
+    +'<div class="fg"><label class="fl">Route</label><select class="fs" id="ae-route"><option>IP</option><option>IV</option><option>SC</option><option>PO</option></select></div>'
+    +'<div class="fg"><label class="fl">Schedule</label><select class="fs" id="ae-sched"><option value="fixed-days">Fixed days</option><option value="interval">Every N days</option><option value="once">Once only</option></select></div>'
+    +'<div class="fg"><label class="fl">Interval days</label><input class="fi" id="ae-interval" type="number" value="7"></div>'
+    +'<div class="fg full"><label class="fl">Days of week</label><div style="display:flex;gap:4px;flex-wrap:wrap;padding:4px 0">'+dowOpts+'</div></div>'
+    +'<div class="fg"><label class="fl">Trigger</label><select class="fs" id="ae-trigger">'+['enrollment','size','age','day-after-tx','endpoint'].map(function(t){return'<option>'+t+'</option>'}).join('')+'</select></div>'
+    +'<div class="fg"><label class="fl">Trigger value</label><input class="fi" id="ae-trigval" placeholder="e.g. 5x5"></div>'
+    +'<div class="fg"><label class="fl">Day offset</label><input class="fi" id="ae-dayoff" type="number" value="0"></div>'
+    +'<div class="fg"><label class="fl">Max doses</label><input class="fi" id="ae-maxdose" type="number" placeholder="unlimited"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="saveAddEvent()"><i class="ti ti-check"></i> Add event</button>');
+}
+async function saveAddEvent(){
+  var d=S._addEvt;if(!d)return;
+  var days=[];
+  document.querySelectorAll('.ev-day-chk:checked').forEach(function(c){days.push(parseInt(c.value));});
+  var maxDoseVal=document.getElementById('ae-maxdose')&&document.getElementById('ae-maxdose').value;
+  var sortOrder=(S.events[d.gid]||[]).length;
+  await sb.from('scheduled_events').insert({
+    group_id:d.gid,experiment_id:d.eid,
+    type:(document.getElementById('ae-type')&&document.getElementById('ae-type').value)||'measure',
+    label:(document.getElementById('ae-label')&&document.getElementById('ae-label').value)||'',
+    drug:(document.getElementById('ae-drug')&&document.getElementById('ae-drug').value)||'',
+    dose:(document.getElementById('ae-dose')&&document.getElementById('ae-dose').value)||'',
+    route:(document.getElementById('ae-route')&&document.getElementById('ae-route').value)||'IP',
+    schedule_type:(document.getElementById('ae-sched')&&document.getElementById('ae-sched').value)||'fixed-days',
+    schedule_days:days,
+    interval_days:parseInt((document.getElementById('ae-interval')&&document.getElementById('ae-interval').value)||'7')||null,
+    trigger_type:(document.getElementById('ae-trigger')&&document.getElementById('ae-trigger').value)||'enrollment',
+    trigger_value:(document.getElementById('ae-trigval')&&document.getElementById('ae-trigval').value)||'',
+    day_offset:parseInt((document.getElementById('ae-dayoff')&&document.getElementById('ae-dayoff').value)||'0')||0,
+    max_doses:maxDoseVal&&maxDoseVal.trim()?parseInt(maxDoseVal):null,
+    sort_order:sortOrder
+  });
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
+}
+
 // REACTIVATE MOUSE
 async function reactivateMouse(mid,eid){
   if(!confirm('Reactivate mouse '+mid+'? This will undo the sacrifice status.'))return;
@@ -1437,12 +1620,7 @@ function ilWireButtons(eid,mid,ei){
 // Single delegated listener for Gone/NM/Skin checkboxes only
 document.addEventListener('change',function(e){
   var t=e.target;
-  if(t.classList&&t.classList.contains('gone-chk')){ilToggleGone(t.dataset.mid,parseInt(t.dataset.si),'gone');return;}
-  if(t.classList&&t.classList.contains('nm-chk')){ilToggleGone(t.dataset.mid,parseInt(t.dataset.si),'nm');return;}
-  if(t.classList&&t.classList.contains('skin-chk-inp')){
-    var h=document.getElementById('il-skin-'+t.dataset.mid+'-'+t.dataset.si);
-    if(h)h.value=t.checked?'1':'0';return;
-  }
+  if(t.classList&&t.classList.contains('gone-chk')){ilToggleGone(t.dataset.mid,parseInt(t.dataset.si));return;}
 });
 
 // BOOT
