@@ -260,7 +260,7 @@ const COLS=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2
 const LOCS=['1R','2R','3R','4R','5R','1L','2L','3L','4L','5L','skin'];
 const TLBL2={measure:'Measurements',treatment:'Treatments',blood:'Blood draws',ivis:'IVIS / imaging',custom:'Ad hoc'};
 const TICO={measure:'ti-ruler-2',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list'};
-const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken'};
+const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
 const S={view:'daily',curExp:null,expTab:'mice',sortBy:'type',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{}};
 
@@ -419,6 +419,21 @@ function getTasksForDate(iso){
     (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&t.experiment_id===exp.id}).forEach(function(t){tasks.push({type:'custom',mouseId:t.mouse_id||'',expId:exp.id,expName:exp.name,label:t.description,note:t.note,done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});});
   });
   (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&!t.experiment_id}).forEach(function(t){tasks.push({type:'custom',mouseId:t.mouse_id||'',expId:'',label:t.description,note:t.note,done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});});
+
+  // Add distress checks for post-mastectomy mice
+  S.experiments.filter(function(e){return e.status==='active'&&e.is_mastectomy}).forEach(function(exp){
+    (S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.post_mx_status==='post_mx'}).forEach(function(m){
+      // Get last 3 distress check notes for context
+      var mevts=(S.mevents[exp.id]||{})[m.id]||[];
+      var lastChecks=mevts.filter(function(e){return e.event_type==='distress_check'}).slice(-3);
+      var lastNote=lastChecks.length?lastChecks[lastChecks.length-1].label.replace('Distress check: ','').replace('Distress check: ',''):'';
+      var daysMx=m.mx_date?Math.round((new Date(iso)-new Date(m.mx_date))/86400000):null;
+      tasks.push({type:'distress',mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,
+        label:'Distress check',lastNote:lastNote,lastChecks:lastChecks,
+        dayInTx:daysMx,m:m,exp:exp,date:iso,taskId:'dc-'+m.id+'-'+iso});
+    });
+  });
+
   return tasks;
 }
 function sortTasks(tasks){
@@ -843,6 +858,36 @@ function renderDaily(){
     +'</div>';
   var epS=new Set();
   raw.forEach(function(t){if(t.m&&nearEP(t.m.id,t.expId)&&!epS.has(t.mouseId)){epS.add(t.mouseId);var l=lastMs(t.m.id,t.expId);html+='<div class="alert"><i class="ti ti-alert-triangle"></i><span>Mouse <strong>'+t.mouseId+'</strong> ('+t.expId+') - burden '+(l?bShort(l.tumor_sites,false):'?')+' - <strong>approaching endpoint</strong></span>'+(t.exp&&t.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t.exp.harvest+'</span></span>':'')+'</div>';}});
+  // Distress checks always shown separately at top if any
+  var distressTasks=tasks.filter(function(t){return t.type==='distress'});
+  var normalTasks=tasks.filter(function(t){return t.type!=='distress'});
+  if(distressTasks.length){
+    html+='<div style="margin-bottom:.75rem">';
+    html+='<div class="task-sh"><i class="ti ti-stethoscope" style="font-size:13px;color:var(--amber)"></i>'
+      +'<span class="task-st" style="color:var(--amber)">Post-mastectomy distress checks</span>'
+      +'<span class="task-sc">'+distressTasks.length+'</span></div>';
+    var dcCols='82px 82px 1fr 1fr 90px';
+    html+='<div style="display:grid;grid-template-columns:'+dcCols+';gap:6px;padding:0 9px 3px;font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">'
+      +'<span>Mouse</span><span>WP</span><span>Recent notes</span><span>Group</span><span></span></div>';
+    distressTasks.forEach(function(t){
+      var notesHtml=t.lastChecks&&t.lastChecks.length
+        ?t.lastChecks.slice(-3).map(function(c){return'<span style="font-size:9px;color:var(--text2);margin-right:6px">'+c.event_date.slice(5)+': '+c.details.note+'</span>';}).join('')
+        :'<span style="font-size:9px;color:var(--text3)">No prior checks</span>';
+      var rsIdx=rsReg({date:t.date,label:t.label,type:t.type,mouseId:t.mouseId,expId:t.expId});
+      html+='<div class="task-row" style="grid-template-columns:'+dcCols+'">'
+        +'<span class="mono">'+t.mouseId+'</span>'
+        +'<span style="font-size:10px;color:var(--text2)">'+t.expId+'<br><span style="font-size:9px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx+' post-Mx':'')+'</span></span>'
+        +'<span style="font-size:10px">'+notesHtml+'</span>'
+        +'<span style="font-size:10px;color:var(--text2)">'+(t.m.group_name||'')+'</span>'
+        +'<div style="display:flex;gap:3px">'
+        +'<button class="btn btn-a btn-xs" onclick="logDistressCheck(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-stethoscope"></i> Check</button>'
+        +'</div></div>'
+        +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>';
+    });
+    html+='</div>';
+  }
+  var tasks=normalTasks;
+
   if(S.sortBy==='type'){
     ['measure','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],tasks.filter(function(t){return t.type===type}));});
   } else {
@@ -884,8 +929,11 @@ function renderDaily(){
     var hasMeasure=expTasks.some(function(t){return t.type==='measure'});
     var treatTasks=expTasks.filter(function(t){return t.type==='treatment'});
 
-    html+='<div style="margin-bottom:10px">';
-    html+='<div style="font-size:11px;font-weight:700;margin-bottom:2px">'+exp.id+' — '+exp.name+'</div>';
+    html+='<div style="margin-bottom:12px;page-break-inside:avoid">';
+    html+='<table style="width:100%;border-collapse:collapse;margin-bottom:2px">'
+      +'<tr><td style="font-size:11px;font-weight:700;padding:2px 0">'+exp.id+' — '+exp.name+'</td>'
+      +'<td style="font-size:8px;color:#333;text-align:right;padding:2px 0"><strong>Harvest:</strong> '+(exp.harvest||'not specified')+'</td>'
+      +'</tr></table>';
 
     // Treatment summary for today
     if(treatTasks.length){
@@ -978,10 +1026,39 @@ function renderDaily(){
 
     html+='</tbody></table>';
 
-    // Harvest protocol
-    if(exp.harvest){
-      html+='<div style="font-size:8px;color:#555;margin-top:2px;font-style:italic">Harvest: '+exp.harvest+'</div>';
+
+    // Post-Mx distress check section for this experiment
+    var postMxMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.post_mx_status==='post_mx'});
+    if(postMxMice.length){
+      postMxMice.sort(function(a,b){return(a.cage_number||'').localeCompare(b.cage_number||'',undefined,{numeric:true})});
+      html+='<div style="margin-top:4px;margin-bottom:2px;font-size:9px;font-weight:700;color:#854F0B">Post-Mx distress monitoring</div>';
+      html+='<table style="width:100%;border-collapse:collapse;font-size:9px">';
+      html+='<thead><tr style="border-bottom:1.5px solid #000">'
+        +'<th style="text-align:left;padding:2px 4px;width:55px">Mouse</th>'
+        +'<th style="text-align:left;padding:2px 4px;width:30px">Cage</th>'
+        +'<th style="text-align:left;padding:2px 4px;width:60px">Group</th>'
+        +'<th style="text-align:left;padding:2px 4px;width:35px">d-post-Mx</th>'
+        +'<th style="text-align:left;padding:2px 4px">Recent notes</th>'
+        +'<th style="text-align:left;padding:2px 4px;width:80px">Today note</th>'
+        +'</tr></thead><tbody>';
+      postMxMice.forEach(function(m,mi){
+        var mevts=(S.mevents[exp.id]||{})[m.id]||[];
+        var lastChecks=mevts.filter(function(e){return e.event_type==='distress_check'}).slice(-3);
+        var notesStr=lastChecks.map(function(c){return c.event_date.slice(5)+': '+(c.details&&c.details.note?c.details.note:c.label.replace('Distress check: ',''));}).join(' | ');
+        var daysMx=m.mx_date?Math.round((new Date(TISO)-new Date(m.mx_date))/86400000):null;
+        var bgColor=mi%2===0?'#fff':'#f9f9f9';
+        html+='<tr style="border-bottom:.5px solid #ccc;background:'+bgColor+'">'
+          +'<td style="padding:3px 4px;font-family:monospace;font-size:9px">'+m.id+'</td>'
+          +'<td style="padding:3px 4px">'+(m.cage_number||'')+'</td>'
+          +'<td style="padding:3px 4px;font-size:8px">'+(m.group_name||'')+'</td>'
+          +'<td style="padding:3px 4px">'+(daysMx!=null?'d'+daysMx:'')+'</td>'
+          +'<td style="padding:3px 4px;font-size:8px;color:#444">'+(notesStr||'—')+'</td>'
+          +'<td style="padding:3px 4px"><span style="border-bottom:1px solid #999;display:inline-block;width:100%">&nbsp;</span></td>'
+          +'</tr>';
+      });
+      html+='</tbody></table>';
     }
+
     html+='</div>';
   });
 
@@ -1088,6 +1165,7 @@ async function renderExp(eid){
     +'<div><div style="color:var(--text2);margin-bottom:1px">Active mice</div><div style="font-weight:500">'+act+'/'+mice.length+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Endpoint</div><div style="font-weight:500">'+(exp.endpoint_criterion||'--')+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Multi-site</div><div style="font-weight:500">'+(exp.multi_tumor?'Yes':'No')+'</div></div>'
+    +'<div><div style="color:var(--text2);margin-bottom:1px">Type</div><div style="font-weight:500">'+(exp.is_mastectomy?'<span class="badge ba">Mastectomy</span>':'Standard')+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Started</div><div style="font-weight:500">'+exp.started+'</div></div>'
     +'</div><hr class="div">'
     +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div></div>'
@@ -1124,11 +1202,14 @@ async function renderExp(eid){
       gM.forEach(function(m){
         var last=lastMs(m.id,eid);var days=dInTx(m);var near=nearEP(m.id,eid);var isAct=m.status==='active';
         var sbb='';
-        if(isAct)sbb='<span class="badge bg">Active</span>';
-        else if(m.cause==='endpoint')sbb='<span class="badge bgy" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Endpoint</span>';
-        else if(m.cause==='humane')sbb='<span class="badge ba" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Humane</span>';
-        else if(m.cause==='dead')sbb='<span class="badge br" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Dead</span>';
-        else sbb='<span class="badge bgy" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Sacrificed</span>';
+        var excl=m.excluded_from_analysis?'<span class="badge br" style="margin-left:2px" title="'+( m.exclusion_reason||'')+'">Excl.</span>':'';
+        if(isAct&&m.post_mx_status==='post_mx')sbb='<span class="badge ba">Post-Mx</span>'+excl;
+        else if(isAct&&m.post_mx_status==='recurrence')sbb='<span class="badge bp">Recurrence</span>'+excl;
+        else if(isAct)sbb='<span class="badge bg">Active</span>'+excl;
+        else if(m.cause==='endpoint')sbb='<span class="badge bgy" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Endpoint</span>'+excl;
+        else if(m.cause==='humane')sbb='<span class="badge ba" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Humane</span>'+excl;
+        else if(m.cause==='dead')sbb='<span class="badge br" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Dead</span>'+excl;
+        else sbb='<span class="badge bgy" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Sacrificed</span>'+excl;
         var bc=last?'<span title="'+bFull(last.tumor_sites)+'" style="'+(near?'color:var(--amber);font-weight:500':'')+'">'+(bShort(last.tumor_sites,S.inclSkin))+'</span>':'--';
         var kdvC=m.kdv?'<span class="mono" style="cursor:pointer" onclick="editKDV(\''+m.id+'\',\''+eid+'\')" title="Click to edit">'+m.kdv+'</span>':(m.status==='sacrificed'?'<button class="btn btn-xs btn-a" onclick="editKDV(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> KDV</button>':'--');
         var cageC='<span class="cage-tag" onclick="editCage(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-cage" style="font-size:10px"></i>'+(m.cage_number||'--')+'</span>';
@@ -1138,11 +1219,25 @@ async function renderExp(eid){
           +'<td style="font-size:10px">'+(last&&last.measured_at?last.measured_at:'--')+'</td>'
           +'<td style="font-size:10px">'+(m.weight?m.weight+'g':'--')+'</td>'
           +'<td>'+(last&&last.note?'<span class="npill">'+last.note+'</span>':'')+'</td>'
-          +'<td>'+kdvC+'</td><td>'+sbb+'</td>'
+          +'<td>'+kdvC+'</td>'
+          +(exp.is_mastectomy?'<td style="font-size:10px">'+(m.mx_date||'—')+'</td>':'')
+          +'<td>'+sbb+'</td>'
           +'<td><div style="display:flex;gap:2px;flex-wrap:wrap">'
-          +(isAct?'<button class="btn btn-g btn-xs" onclick="openLogE(\''+eid+'\',\''+m.id+'\',-1)"><i class="ti ti-plus"></i> Log</button>':'')
+          // Log button: shown for active non-post-mx, and recurrence mice
+          +(isAct&&m.post_mx_status!=='post_mx'?'<button class="btn btn-g btn-xs" onclick="openLogE(\''+eid+'\',\''+m.id+'\',-1)"><i class="ti ti-plus"></i> Log</button>':'')
+          // Distress check button: post-mx only
+          +(isAct&&m.post_mx_status==='post_mx'?'<button class="btn btn-g btn-xs" onclick="logDistressCheck(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-stethoscope"></i> Check</button>':'')
+          // Mastectomy button: active, pre-mx, mastectomy experiment only
+          +(isAct&&exp.is_mastectomy&&(!m.post_mx_status||m.post_mx_status==='active')?'<button class="btn btn-xs btn-a" onclick="showMastectomy(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-scissors"></i> Mx</button>':'')
+          // Recurrence button: post-mx mice only
+          +(isAct&&m.post_mx_status==='post_mx'?'<button class="btn btn-xs btn-icon" title="Recurrence detected" onclick="showRecurrence(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-refresh-alert"></i></button>':'')
+          // Transfer button: all active mice
           +(isAct?'<button class="btn btn-xs btn-icon" title="Transfer to group" onclick="showTransfer(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
+          // Tx start edit
           +'<button class="btn btn-xs btn-icon" title="Edit tx start date" onclick="editTxStart(\''+m.id+'\',\''+eid+'\')" style="font-size:9px"><i class="ti ti-calendar-event"></i></button>'
+          // Exclude from analysis toggle
+          +'<button class="btn btn-xs btn-icon '+(m.excluded_from_analysis?'btn-r':'')+'" title="'+(m.excluded_from_analysis?'Excluded from analysis — click to re-include':'Exclude from analysis')+'" onclick="toggleExclude(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-chart-line-off"></i></button>'
+          // History
           +'<button class="btn btn-xs btn-icon" title="History" onclick="toggleHist(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-history"></i></button>'
           +'</div></td></tr>'
           +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="11" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
@@ -1288,6 +1383,9 @@ function renderMouseHist(m,eid){
       var det=ev.details||{};var ds='';
       if(ev.event_type==='transferred')ds='to '+det.to_group+' | Tx: '+det.first_tx_date+' | Sched: '+det.schedule_anchor+(det.note?' | '+det.note:'');
       else if(ev.event_type==='cage_change')ds=(det.old_cage||'?')+' to '+(det.new_cage||'?');
+      else if(ev.event_type==='mastectomy')ds=(det.tumor_weight_mg?'Tumor: '+det.tumor_weight_mg+'mg':'')+( det.notes?' — '+det.notes:'');
+      else if(ev.event_type==='distress_check')ds=det.status==='clear'?'Clear':(det.status==='watch'?'Watch':'Endpoint')+(det.note?' — '+det.note:'');
+      else if(ev.event_type==='recurrence')ds=det.note?det.note:'';
       html+='<tr class="'+ec+'">'
         +'<td class="mono">'+ev.event_date+'</td>'
         +'<td><i class="ti '+icon+'" style="font-size:12px"></i></td>'
@@ -1336,7 +1434,7 @@ function drawGrowth(exp,groups){
   if(!labs.length){ctx.parentElement.innerHTML='<div class="empty">No day 0 set yet. Open mouse history and click "Set day 0" on a measurement.</div>';return;}
   var datasets=[];
   groups.forEach(function(g){
-    var mice=miceAll.filter(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date});
+    var mice=miceAll.filter(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis});
     if(S.plotMode==='individual'||S.plotMode==='both'){
       mice.forEach(function(m){
         var msl=(S.measurements[exp.id]||{})[m.id]||[];
@@ -1358,8 +1456,18 @@ function drawGrowth(exp,groups){
 function drawKM(exp,groups){
   var ctx=document.getElementById('kmChart');if(!ctx)return;
   var key='k'+exp.id;if(charts[key])charts[key].destroy();
+  var isMx=exp.is_mastectomy;
   function buildKM(mice){
-    var evs=mice.map(function(m){if(!m.tx_start)return null;var eD=m.sac_date?new Date(m.sac_date):TODAY;return{days:Math.round((eD-new Date(m.tx_start))/86400000),event:m.cause==='endpoint'?1:0};}).filter(Boolean).sort(function(a,b){return a.days-b.days});
+    // For mastectomy experiments: day 0 = mx_date, endpoint = respiratory distress sacrifice
+    // For standard experiments: day 0 = tx_start
+    // Skip excluded mice
+    var evs=mice.map(function(m){
+      if(m.excluded_from_analysis)return null;
+      var day0=isMx?(m.mx_date||null):(m.tx_start||null);
+      if(!day0)return null;
+      var eD=m.sac_date?new Date(m.sac_date):TODAY;
+      return{days:Math.round((eD-new Date(day0))/86400000),event:m.cause==='endpoint'?1:0};
+    }).filter(Boolean).sort(function(a,b){return a.days-b.days});
     var s=1,n=evs.length;var pts=[{x:0,y:1}];
     evs.forEach(function(e,i){if(e.event===1)s*=(n-i-1)/(n-i);pts.push({x:e.days,y:Math.max(0,s)});});
     return pts;
@@ -1370,7 +1478,7 @@ function drawKM(exp,groups){
     return{label:g.name,data:buildKM(mice),borderColor:g.color,backgroundColor:'transparent',stepped:'before',tension:0,fill:false,pointRadius:0,borderWidth:2};
   }).filter(Boolean);
   if(!datasets.length){ctx.parentElement.innerHTML='<div class="empty">No survival data yet</div>';return;}
-  charts[key]=new Chart(ctx,{type:'line',data:{datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{type:'linear',title:{display:true,text:'Days from tx start',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'}},y:{min:0,max:1,title:{display:true,text:'Survival',font:{size:9}},ticks:{font:{size:9},callback:function(v){return Math.round(v*100)+'%'}},grid:{color:'rgba(128,128,128,0.08)'}}}}});
+  charts[key]=new Chart(ctx,{type:'line',data:{datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{type:'linear',title:{display:true,text:isMx?'Days from mastectomy':'Days from tx start',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'}},y:{min:0,max:1,title:{display:true,text:'Survival',font:{size:9}},ticks:{font:{size:9},callback:function(v){return Math.round(v*100)+'%'}},grid:{color:'rgba(128,128,128,0.08)'}}}}});
 }
 
 // NEW EXPERIMENT
@@ -1402,6 +1510,11 @@ function newFormHTML(){
     +'</div>'
     +'<div style="padding:.4rem .75rem;background:var(--blue-bg);border-radius:var(--r);font-size:10px;color:var(--blue);margin-bottom:8px">'
     +'<i class="ti ti-info-circle"></i> All experiments support multiple tumor sites. Use the <strong>+ Add tumor site</strong> button when logging measurements.'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:.5rem .75rem;background:var(--amber-bg);border-radius:var(--r)">'
+    +'<input type="checkbox" id="nmx" style="width:14px;height:14px">'
+    +'<div><label for="nmx" style="font-size:11px;font-weight:500;cursor:pointer">Mastectomy experiment</label>'
+    +'<div style="font-size:10px;color:var(--text2)">Primary tumor removed at threshold. Post-Mx mice monitored for respiratory distress. KM survival uses mastectomy date as day 0.</div></div>'
     +'</div>'
     +'<hr class="div">'
     +'<div style="font-size:12px;font-weight:500;margin-bottom:.5rem">Endpoint & harvest</div>'
@@ -1482,8 +1595,9 @@ async function createExp(){
   var tit=((document.getElementById('ntit')&&document.getElementById('ntit').value)||'').trim();
   if(!wp||!res||!tit){alert('Fill WP number, researcher, and title');return;}
   var multi=true; // all experiments support multi-site
+  var isMx=!!(document.getElementById('nmx')&&document.getElementById('nmx').checked);
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
-  var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||''});
+  var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||''});
   if(result.error){alert('Error: '+result.error.message);if(btn)btn.disabled=false;return;}
   for(var i=0;i<NG.length;i++){
     var g=NG[i];
@@ -1508,6 +1622,7 @@ function showEditExp(eid){
     +'<div class="fg"><label class="fl">Model</label><input class="fi" id="ee-mod" value="'+(exp.model||'')+'"></div>'
     +'<div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="ee-ep" value="'+(exp.endpoint_criterion||'')+'"></div>'
     +'<div class="fg"><label class="fl">Status</label><select class="fs" id="ee-status"><option value="active"'+(exp.status==='active'?' selected':'')+'>Active</option><option value="completed"'+(exp.status==='completed'?' selected':'')+'>Completed</option><option value="archived"'+(exp.status==='archived'?' selected':'')+'>Archived</option></select></div>'
+    +'<div class="fg"><label class="fl">Type</label><div style="display:flex;align-items:center;gap:6px;padding:6px 0"><input type="checkbox" id="ee-mx"'+(exp.is_mastectomy?' checked':'')+' style="width:14px;height:14px"><label for="ee-mx" style="font-size:11px;cursor:pointer">Mastectomy experiment</label></div></div>'
     +'<div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="ee-har" rows="3" style="resize:vertical">'+( exp.harvest||'')+'</textarea></div>'
     +'<div class="fg full"><label class="fl">Strain</label><input class="fi" id="ee-str" value="'+(exp.strain||'')+'"></div>'
     +'</div>',
@@ -1522,8 +1637,124 @@ async function saveEditExp(eid){
   var har=(document.getElementById('ee-har')&&document.getElementById('ee-har').value)||'';
   var str=(document.getElementById('ee-str')&&document.getElementById('ee-str').value)||'';
   var status=(document.getElementById('ee-status')&&document.getElementById('ee-status').value)||'active';
-  await sb.from('experiments').update({researcher:res,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status}).eq('id',eid);
+  var isMx2=!!(document.getElementById('ee-mx')&&document.getElementById('ee-mx').checked);
+  await sb.from('experiments').update({researcher:res,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status,is_mastectomy:isMx2}).eq('id',eid);
   closeModal();await loadAll(eid);renderExp(eid);
+}
+
+// MASTECTOMY
+function showMastectomy(eid,mid){
+  S._mxCtx={eid:eid,mid:mid};
+  showModal('Log mastectomy — '+mid,
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Mastectomy date</label><input class="fi" id="mx-date" type="date" value="'+TISO+'"></div>'
+    +'<div class="fg"><label class="fl">Primary tumor weight (mg)</label><input class="fi" id="mx-tw" type="number" step="0.1" placeholder="optional"></div>'
+    +'<div class="fg full"><label class="fl">Harvest / sample notes</label><input class="fi" id="mx-notes" placeholder="e.g. lungs pink, no visible mets, samples taken"></div>'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--text2);background:var(--amber-bg);padding:6px 8px;border-radius:var(--r)"><i class="ti ti-info-circle"></i> Mouse will be set to Post-Mx status. Transfer to treatment group after mastectomy to start treatment tracking.</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitMastectomy()"><i class="ti ti-check"></i> Log mastectomy</button>');
+}
+async function submitMastectomy(){
+  var d=S._mxCtx;if(!d)return;
+  var mxDate=document.getElementById('mx-date')&&document.getElementById('mx-date').value||TISO;
+  var tw=parseFloat(document.getElementById('mx-tw')&&document.getElementById('mx-tw').value||'');
+  var notes=document.getElementById('mx-notes')&&document.getElementById('mx-notes').value||'';
+  await sb.from('mice').update({
+    mx_date:mxDate,
+    mx_tumor_weight:isNaN(tw)?null:tw,
+    mx_notes:notes||null,
+    post_mx_status:'post_mx'
+  }).eq('id',d.mid);
+  await sb.from('mouse_events').insert({
+    mouse_id:d.mid,experiment_id:d.eid,event_date:mxDate,
+    event_type:'mastectomy',
+    label:'Mastectomy performed'+(notes?' — '+notes:''),
+    details:{tumor_weight_mg:isNaN(tw)?null:tw,notes:notes},
+    logged_by:uname()
+  });
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
+}
+
+// RECURRENCE
+function showRecurrence(eid,mid){
+  S._mxCtx={eid:eid,mid:mid};
+  showModal('Log recurrence — '+mid,
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Recurrence detected date</label><input class="fi" id="rec-date" type="date" value="'+TISO+'"></div>'
+    +'<div class="fg full"><label class="fl">Note</label><input class="fi" id="rec-note" placeholder="e.g. 3x4mm palpable in 4R gland"></div>'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--text2)">Log button will reappear for caliper measurements. Mouse remains on survival curve.</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitRecurrence()"><i class="ti ti-check"></i> Log recurrence</button>');
+}
+async function submitRecurrence(){
+  var d=S._mxCtx;if(!d)return;
+  var recDate=document.getElementById('rec-date')&&document.getElementById('rec-date').value||TISO;
+  var note=document.getElementById('rec-note')&&document.getElementById('rec-note').value||'';
+  await sb.from('mice').update({recurrence_date:recDate,post_mx_status:'recurrence'}).eq('id',d.mid);
+  await sb.from('mouse_events').insert({
+    mouse_id:d.mid,experiment_id:d.eid,event_date:recDate,
+    event_type:'recurrence',label:'Recurrence detected'+(note?' — '+note:''),
+    details:{note:note},logged_by:uname()
+  });
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
+}
+
+// DISTRESS CHECK (Post-Mx daily check)
+function logDistressCheck(eid,mid){
+  S._mxCtx={eid:eid,mid:mid};
+  showModal('Distress check — '+mid,
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Date</label><input class="fi" id="dc-date" type="date" value="'+TISO+'"></div>'
+    +'<div class="fg"><label class="fl">Status</label>'
+    +'<select class="fs" id="dc-status">'
+    +'<option value="clear">All clear — no distress</option>'
+    +'<option value="watch">Watch — mild signs</option>'
+    +'<option value="endpoint">Respiratory endpoint — sacrifice</option>'
+    +'</select></div>'
+    +'<div class="fg full"><label class="fl">Note</label><input class="fi" id="dc-note" placeholder="e.g. slightly laboured, almost, likely 1-2 more days"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitDistressCheck()"><i class="ti ti-check"></i> Log check</button>');
+  setTimeout(function(){
+    var s=document.getElementById('dc-status');if(s)s.focus();
+  },80);
+}
+async function submitDistressCheck(){
+  var d=S._mxCtx;if(!d)return;
+  var dcDate=document.getElementById('dc-date')&&document.getElementById('dc-date').value||TISO;
+  var status=document.getElementById('dc-status')&&document.getElementById('dc-status').value||'clear';
+  var note=document.getElementById('dc-note')&&document.getElementById('dc-note').value||'';
+  var label=status==='clear'?'Distress check: clear':status==='watch'?'Distress check: watch'+(note?' — '+note:''):'Respiratory distress endpoint';
+  await sb.from('mouse_events').insert({
+    mouse_id:d.mid,experiment_id:d.eid,event_date:dcDate,
+    event_type:'distress_check',label:label,
+    details:{status:status,note:note},logged_by:uname()
+  });
+  if(status==='endpoint'){
+    await sb.from('mice').update({status:'sacrificed',cause:'endpoint',sac_date:dcDate}).eq('id',d.mid);
+    await sb.from('mouse_events').insert({mouse_id:d.mid,experiment_id:d.eid,event_date:dcDate,event_type:'sacrifice',label:'Sacrificed — respiratory endpoint',logged_by:uname()});
+  }
+  closeModal();await loadAll(d.eid);
+  if(S.view==='daily')renderDaily();else renderExp(d.eid);
+}
+
+// EXCLUDE FROM ANALYSIS
+async function toggleExclude(mid,eid){
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(!m)return;
+  if(m.excluded_from_analysis){
+    // Re-include
+    if(!confirm('Re-include '+mid+' in analysis?'))return;
+    await sb.from('mice').update({excluded_from_analysis:false,exclusion_reason:null}).eq('id',mid);
+    await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:TISO,event_type:'note',label:'Re-included in analysis',logged_by:uname()});
+  } else {
+    var reason=prompt('Reason for exclusion (required):','');
+    if(reason===null||!reason.trim()){alert('Please provide a reason.');return;}
+    await sb.from('mice').update({excluded_from_analysis:true,exclusion_reason:reason.trim()}).eq('id',mid);
+    await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:TISO,event_type:'note',label:'Excluded from analysis: '+reason.trim(),logged_by:uname()});
+  }
+  await loadAll(eid);renderExp(eid);
 }
 
 // EDIT GROUP
