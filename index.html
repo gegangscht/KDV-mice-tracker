@@ -427,25 +427,18 @@ function sortTasks(tasks){
 // LOG FORM
 var logOrder=[];
 function logHTML(eid,mid,ei){
-  // Get existing sites from LAST measurement to pre-populate rows
   var msl=(S.measurements[eid]||{})[mid]||[];
   var entry=ei>=0?msl[ei]:null;
-  var lastMs=msl.length>0?msl[msl.length-1]:null;
+  var lastMeas=msl.length>0?msl[msl.length-1]:null;
   var defD=entry?entry.measured_at:TISO;
   var defN=entry?entry.note||'':'';
-  var defW='';
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
-  if(m&&m.weight)defW=m.weight;
+  var defW=m&&m.weight?m.weight:'';
   var isEdit=ei>=0;
-
-  // Sites: if editing, use that entry's sites. If new, use last measurement's sites as template
   var templateSites=entry&&entry.tumor_sites&&entry.tumor_sites.length
     ?entry.tumor_sites
-    :(lastMs&&lastMs.tumor_sites&&lastMs.tumor_sites.length
-      ?lastMs.tumor_sites
-      :[]);
+    :(lastMeas&&lastMeas.tumor_sites&&lastMeas.tumor_sites.length?lastMeas.tumor_sites:[]);
 
-  // Build site rows
   var siteRowsHTML='';
   if(templateSites.length>0){
     templateSites.forEach(function(site,si){
@@ -453,24 +446,29 @@ function logHTML(eid,mid,ei){
       var isSkin=site.is_skin?true:false;
       var isGone=site.status==='gone';
       var isNM=site.status==='nm';
-      siteRowsHTML+='<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px">'
-        +'<span class="site-loc-label" style="font-size:10px;font-weight:500;color:var(--text2);min-width:38px;display:inline-block">'
-        +site.location+(isSkin?' <span style="font-size:8px;color:var(--amber)">(skin)</span>':'')
-        +'</span>'
-        +'<input class="sin" id="il-sz-'+mid+'-'+si+'" value="'+(isEdit?prevSz:'')+'" style="width:72px" placeholder="7x8"'
-        +' onkeydown="ilSK(event,\''+eid+'\',\''+mid+'\','+ei+','+si+')"'
-        +' oninput="ilSzInput(\''+mid+'\','+si+')">'
-        +'<label class="skin-chk" style="margin-left:4px"><input type="checkbox" id="il-gone-'+mid+'-'+si+'"'+(isGone?' checked':'')+' onchange="ilToggleGone(\''+mid+'\','+si+',\'gone\')"> Gone</label>'
-        +'<label class="skin-chk" style="margin-left:4px"><input type="checkbox" id="il-nm-'+mid+'-'+si+'"'+(isNM?' checked':'')+' onchange="ilToggleGone(\''+mid+'\','+si+',\'nm\')"> NM</label>'
+      siteRowsHTML+='<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px;display:flex;align-items:center;gap:5px">'
+        +'<span style="font-size:10px;font-weight:500;color:var(--text2);min-width:42px">'
+        +site.location+(isSkin?' <span style="font-size:8px;color:var(--amber)">(skin)</span>':'')+'</span>'
+        +'<input class="sin" id="il-sz-'+mid+'-'+si+'" value="'+(isEdit?prevSz:'')+'" style="width:72px" placeholder="7x8">'
+        +'<label class="skin-chk"><input type="checkbox" class="gone-chk" data-mid="'+mid+'" data-si="'+si+'" data-type="gone"'+(isGone?' checked':'')+'>Gone</label>'
+        +'<label class="skin-chk"><input type="checkbox" class="nm-chk" data-mid="'+mid+'" data-si="'+si+'" data-type="nm"'+(isNM?' checked':'')+'>NM</label>'
         +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="'+site.location+'">'
         +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
         +'<input type="hidden" id="il-status-'+mid+'-'+si+'" value="'+(isGone?'gone':isNM?'nm':'ok')+'">'
         +'</div>';
     });
   } else {
-    // No prior sites — show one blank row with dropdown for new tumor
     siteRowsHTML=blankSiteRowHTML(mid,0);
   }
+
+  var statusSel=!isEdit?'<div class="il-g"><div class="il-l">Status</div>'
+    +'<select class="il-in" id="il-st-'+mid+'" style="padding:3px 4px;font-size:10px">'
+    +'<option value="">Active</option>'
+    +'<option value="endpoint">Sacrifice - endpoint</option>'
+    +'<option value="humane">Sacrifice - humane EP</option>'
+    +'<option value="early">Sacrifice - early</option>'
+    +'<option value="dead">Found dead</option>'
+    +'</select></div>':'';
 
   return '<div class="il" id="il-'+mid+'">'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">'
@@ -478,38 +476,37 @@ function logHTML(eid,mid,ei){
     +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+defW+'" style="width:62px" placeholder="24.5"></div>'
     +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:62px" placeholder="C01"></div>'
     +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..."></div>'
-    +(!isEdit?'<div class="il-g"><div class="il-l">Status</div><select class="il-in" id="il-st-'+mid+'" style="padding:3px 4px;font-size:10px"><option value="">Active</option><option value="endpoint">Sacrifice - endpoint</option><option value="humane">Sacrifice - humane EP</option><option value="early">Sacrifice - early</option><option value="dead">Found dead</option></select></div>':'')
-    +'<div class="il-g"><div class="il-l">&nbsp;</div><button class="btn btn-g btn-xs" onclick="submitLog(\''+eid+'\',\''+mid+'\','+ei+')"><i class="ti ti-check"></i>'+(isEdit?' Update':' Save')+'</button></div>'
-    +'</div>'
-    +'<div id="sr-wrap-'+mid+'" style="border-top:.5px solid var(--border);padding-top:6px">'
+    +statusSel
+    +'<div class="il-g"><div class="il-l">&nbsp;</div>'
+    +'<button class="btn btn-g btn-xs" id="il-save-'+mid+'"><i class="ti ti-check"></i>'+(isEdit?' Update':' Save')+'</button>'
+    +'</div></div>'
+    +'<div style="border-top:.5px solid var(--border);padding-top:6px">'
     +'<div class="il-l" style="margin-bottom:4px">Tumor sites</div>'
-    +'<div id="sr-'+mid+'">'
-    +siteRowsHTML
-    +'</div>'
-    +'<button class="btn btn-xs" style="margin-top:3px" onclick="addBlankSite(\''+mid+'\')">'
-    +'<i class="ti ti-plus"></i> Add tumor site</button>'
+    +'<div id="sr-'+mid+'">'+siteRowsHTML+'</div>'
+    +'<button class="btn btn-xs" id="il-addsite-'+mid+'" style="margin-top:3px"><i class="ti ti-plus"></i> Add tumor site</button>'
     +'</div>'
     +'<div id="il-kdv-'+mid+'" style="display:none;margin-top:6px;padding-top:6px;border-top:.5px solid var(--border)">'
     +'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
-    +'<div class="il-g"><div class="il-l">KDV number (if formalin)</div><input class="il-in" id="il-kdv-in-'+mid+'" style="width:140px" placeholder="26KDV123" onkeydown="if(event.key===\'Enter\')saveKDV(\''+eid+'\',\''+mid+'\')"></div>'
-    +'<div class="il-g"><div class="il-l">&nbsp;</div><button class="btn btn-p btn-xs" onclick="saveKDV(\''+eid+'\',\''+mid+'\')">Save KDV</button></div>'
+    +'<div class="il-g"><div class="il-l">KDV number</div><input class="il-in" id="il-kdv-in-'+mid+'" style="width:140px" placeholder="26KDV123"></div>'
+    +'<div class="il-g"><div class="il-l">&nbsp;</div><button class="btn btn-p btn-xs" id="il-savekdv-'+mid+'">Save KDV</button></div>'
     +'</div></div></div>';
 }
 
 function blankSiteRowHTML(mid,si){
-  return '<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px">'
-    +'<select class="sin" id="il-loc-sel-'+mid+'-'+si+'" style="width:60px" onchange="document.getElementById(\'il-loc-'+mid+'-'+si+'\').value=this.value">'
+  return '<div class="site-row" id="sr-'+mid+'-'+si+'" style="margin-bottom:5px;display:flex;align-items:center;gap:5px">'
+    +'<select class="sin" id="il-loc-sel-'+mid+'-'+si+'" style="width:62px">'
     +'<option value="">loc</option>'
     +LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')
     +'</select>'
     +'<input class="sin" id="il-sz-'+mid+'-'+si+'" style="width:72px" placeholder="7x8">'
-    +'<label class="skin-chk" style="margin-left:4px"><input type="checkbox" id="il-skin-chk-'+mid+'-'+si+'" onchange="document.getElementById(\'il-skin-'+mid+'-'+si+'\').value=this.checked?\'1\':\'0\'"> skin</label>'
+    +'<label class="skin-chk"><input type="checkbox" class="skin-chk-inp" data-mid="'+mid+'" data-si="'+si+'">skin</label>'
     +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="">'
     +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="0">'
     +'<input type="hidden" id="il-status-'+mid+'-'+si+'" value="ok">'
-    +'<button class="btn btn-xs btn-icon" style="margin-left:3px" onclick="rmSiteRow(\''+mid+'\','+si+')"><i class="ti ti-x"></i></button>'
+    +'<button class="btn btn-xs btn-icon rm-site-btn" data-mid="'+mid+'" data-si="'+si+'"><i class="ti ti-x"></i></button>'
     +'</div>';
 }
+
 
 function addBlankSite(mid){
   var cont=document.getElementById('sr-'+mid);if(!cont)return;
@@ -607,8 +604,7 @@ async function submitLog(eid,mid,ei){
   var wStr=((document.getElementById('il-w-'+mid)&&document.getElementById('il-w-'+mid).value)||'').trim();
   var note=((document.getElementById('il-n-'+mid)&&document.getElementById('il-n-'+mid).value)||'').trim();
   var status=(document.getElementById('il-st-'+mid)&&document.getElementById('il-st-'+mid).value)||'';
-  var multi=exp&&exp.multi_tumor?true:false;
-  var sites=multi?getSites(mid):(function(){var sz=((document.getElementById('il-sz-'+mid+'-0')&&document.getElementById('il-sz-'+mid+'-0').value)||'').trim();if(!sz)return[];var p=parseSz(sz);return p?[{location:'',dim1:p.v1,dim2:p.v2,is_skin:false,sort_order:0}]:[];})();
+  var sites=getSites(mid);
   if(!sites.length&&!note){alert('Enter at least one measurement.');return;}
   var btn=document.querySelector('#il-'+mid+' .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<div class="spin"></div>';}
@@ -1347,6 +1343,7 @@ async function createExp(){
 // EDIT EXPERIMENT
 function showEditExp(eid){
   var exp=S.experiments.find(function(e){return e.id===eid});if(!exp)return;
+  S._editExpId=eid;
   showModal('Edit experiment — '+eid,
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Researcher(s)</label><input class="fi" id="ee-res" value="'+exp.researcher+'"></div>'
@@ -1357,9 +1354,10 @@ function showEditExp(eid){
     +'<div class="fg full"><label class="fl">Strain</label><input class="fi" id="ee-str" value="'+(exp.strain||'')+'"></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
-    +'<button class="btn btn-p btn-xs" onclick="saveEditExp(''+eid+'')"><i class="ti ti-check"></i> Save</button>');
+    +'<button class="btn btn-p btn-xs" onclick="saveEditExp()"><i class="ti ti-check"></i> Save</button>');
 }
 async function saveEditExp(eid){
+  if(!eid)eid=S._editExpId;
   var res=(document.getElementById('ee-res')&&document.getElementById('ee-res').value)||'';
   var mod=(document.getElementById('ee-mod')&&document.getElementById('ee-mod').value)||'';
   var ep=(document.getElementById('ee-ep')&&document.getElementById('ee-ep').value)||'';
@@ -1403,6 +1401,58 @@ function go(view){
     S.curExp=view.replace('exp-','');renderExp(S.curExp);
   }
 }
+
+// DELEGATED EVENT LISTENERS for dynamically created log form elements
+document.addEventListener('click',function(e){
+  var t=e.target;
+  var saveBtn=t.closest&&t.closest('[id^="il-save-"]');
+  if(saveBtn){
+    var mid2=saveBtn.id.replace('il-save-','');
+    var foundEid=null;
+    S.experiments.forEach(function(ex){if((S.mice[ex.id]||[]).find(function(m){return m.id===mid2}))foundEid=ex.id;});
+    if(foundEid)submitLog(foundEid,mid2,-1);
+    return;
+  }
+  var addBtn=t.closest&&t.closest('[id^="il-addsite-"]');
+  if(addBtn){addBlankSite(addBtn.id.replace('il-addsite-',''));return;}
+  var kdvBtn=t.closest&&t.closest('[id^="il-savekdv-"]');
+  if(kdvBtn){
+    var mid4=kdvBtn.id.replace('il-savekdv-','');
+    var foundEid2=null;
+    S.experiments.forEach(function(ex){if((S.mice[ex.id]||[]).find(function(m){return m.id===mid4}))foundEid2=ex.id;});
+    if(foundEid2)saveKDV(foundEid2,mid4);
+    return;
+  }
+  var rmBtn=t.closest&&t.closest('.rm-site-btn');
+  if(rmBtn&&rmBtn.dataset.mid)rmSiteRow(rmBtn.dataset.mid,parseInt(rmBtn.dataset.si));
+});
+document.addEventListener('change',function(e){
+  var t=e.target;
+  if(t.classList&&t.classList.contains('gone-chk')){ilToggleGone(t.dataset.mid,parseInt(t.dataset.si),'gone');return;}
+  if(t.classList&&t.classList.contains('nm-chk')){ilToggleGone(t.dataset.mid,parseInt(t.dataset.si),'nm');return;}
+  if(t.classList&&t.classList.contains('skin-chk-inp')){var h=document.getElementById('il-skin-'+t.dataset.mid+'-'+t.dataset.si);if(h)h.value=t.checked?'1':'0';return;}
+});
+
+// Wire save/addsite/kdv buttons after log opens (provides eid context)
+var _origOpenLogD=openLogD;
+openLogD=function(eid,mid){
+  _origOpenLogD(eid,mid);
+  setTimeout(function(){
+    var b=document.getElementById('il-save-'+mid);if(b)b.onclick=function(){submitLog(eid,mid,-1);};
+    var b2=document.getElementById('il-savekdv-'+mid);if(b2)b2.onclick=function(){saveKDV(eid,mid);};
+    var b3=document.getElementById('il-addsite-'+mid);if(b3)b3.onclick=function(){addBlankSite(mid);};
+  },20);
+};
+var _origOpenLogE=openLogE;
+openLogE=function(eid,mid,ei){
+  _origOpenLogE(eid,mid,ei);
+  var _ei=ei===undefined?-1:ei;
+  setTimeout(function(){
+    var b=document.getElementById('il-save-'+mid);if(b)b.onclick=function(){submitLog(eid,mid,_ei);};
+    var b2=document.getElementById('il-savekdv-'+mid);if(b2)b2.onclick=function(){saveKDV(eid,mid);};
+    var b3=document.getElementById('il-addsite-'+mid);if(b3)b3.onclick=function(){addBlankSite(mid);};
+  },20);
+};
 
 // BOOT
 // Tooltip positioning
