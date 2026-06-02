@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#f8f8f7;--surface:#fff;--surface2:#f1f0eb;--surface3:#e8e6df;
@@ -258,8 +259,8 @@ const TLBL=TODAY.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const COLS=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
 const LOCS=['1R','2R','3R','4R','5R','1L','2L','3L','4L','5L','skin'];
-const TLBL2={measure:'Measurements',treatment:'Treatments',blood:'Blood draws',ivis:'IVIS / imaging',custom:'Ad hoc'};
-const TICO={measure:'ti-ruler-2',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list'};
+const TLBL2={measure:'Tumor measurements','measure-tumor':'Tumor measurements','measure-combined':'Tumor + weight','measure-weight':'Weight checks',treatment:'Treatments',blood:'Blood draws',ivis:'IVIS / imaging',custom:'Ad hoc',distress:'Distress checks'};
+const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined':'ti-ruler-2','measure-weight':'ti-weight',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list',distress:'ti-stethoscope'};
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
 const S={view:'daily',curExp:null,expTab:'mice',sortBy:'type',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{}};
@@ -390,8 +391,9 @@ function getTasksForDate(iso){
       var enD=m.enrolled?new Date(m.enrolled):null;
       var tgtD=new Date(iso);
       gevts.forEach(function(ev){
-        if(ev.type==='measure'&&ev.schedule_type==='fixed-days'&&(ev.schedule_days||[]).includes(dow)&&enD&&tgtD>=enD){
-          tasks.push({type:'measure',mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,lastBurden:last?bShort(last.tumor_sites,S.inclSkin):'--',lastNote:last&&last.note?last.note:'',dayInTx:txD?Math.round((tgtD-txD)/86400000):null,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'meas-'+m.id+'-'+iso});
+        if((ev.type==='measure'||ev.type==='measure-tumor'||ev.type==='measure-weight')&&ev.schedule_type==='fixed-days'&&(ev.schedule_days||[]).includes(dow)&&enD&&tgtD>=enD){
+          var taskType=ev.type==='measure-weight'?'measure-weight':(ev.type==='measure-tumor'?'measure-tumor':'measure');
+          tasks.push({type:taskType,mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,lastBurden:last?bShort(last.tumor_sites,S.inclSkin):'--',lastNote:last&&last.note?last.note:'',dayInTx:txD?Math.round((tgtD-txD)/86400000):null,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'meas-'+m.id+'-'+iso});
         }
         if(ev.type==='treatment'&&ev.schedule_type==='fixed-days'){
           var ok=false;
@@ -423,7 +425,6 @@ function getTasksForDate(iso){
   // Add distress checks for post-mastectomy mice
   S.experiments.filter(function(e){return e.status==='active'&&e.is_mastectomy}).forEach(function(exp){
     (S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.post_mx_status==='post_mx'}).forEach(function(m){
-      // Get last 3 distress check notes for context
       var mevts=(S.mevents[exp.id]||{})[m.id]||[];
       var lastChecks=mevts.filter(function(e){return e.event_type==='distress_check'}).slice(-3);
       var lastNote=lastChecks.length?lastChecks[lastChecks.length-1].label.replace('Distress check: ','').replace('Distress check: ',''):'';
@@ -434,11 +435,34 @@ function getTasksForDate(iso){
     });
   });
 
+  // Merge same-day tumor+weight tasks for same mouse into one combined task
+  var measureByMouse={};
+  tasks.forEach(function(t,i){
+    if(t.type==='measure'||t.type==='measure-weight'){
+      var k=t.mouseId+'|'+t.expId;
+      if(!measureByMouse[k])measureByMouse[k]=[];
+      measureByMouse[k].push(i);
+    }
+  });
+  var skipIdx=new Set();
+  Object.keys(measureByMouse).forEach(function(k){
+    var idxs=measureByMouse[k];
+    if(idxs.length>1){
+      // Merge into first task, mark others for removal
+      var first=tasks[idxs[0]];
+      first.type='measure-combined';
+      first.label='Tumor + weight';
+      first.combinedTypes=idxs.map(function(i){return tasks[i].type});
+      for(var j=1;j<idxs.length;j++)skipIdx.add(idxs[j]);
+    }
+  });
+  if(skipIdx.size)tasks=tasks.filter(function(t,i){return !skipIdx.has(i);});
+
   return tasks;
 }
 function sortTasks(tasks){
   if(S.sortBy==='exp')return tasks.slice().sort(function(a,b){return(a.expId||'').localeCompare(b.expId||'')||(a.type||'').localeCompare(b.type||'')});
-  var o={measure:0,treatment:1,blood:2,ivis:3,custom:4};
+  var o={measure:0,'measure-combined':0,'measure-weight':0,treatment:1,blood:2,ivis:3,custom:4,distress:-1};
   return tasks.slice().sort(function(a,b){return((o[a.type]!==undefined?o[a.type]:9)-(o[b.type]!==undefined?o[b.type]:9))||(a.expId||'').localeCompare(b.expId||'')});
 }
 
@@ -599,7 +623,19 @@ function openLogD(eid,mid){
   if(c.style.display==='block'){c.style.display='none';c.innerHTML='';return;}
   c.style.display='block';c.innerHTML=logHTML(eid,mid,-1);
   ilWireButtons(eid,mid,-1);
-  setTimeout(function(){var el=document.getElementById('il-sz-'+mid+'-0');if(el)el.focus();},30);
+  // For weight-only tasks, find the task type and focus weight directly
+  var _taskType='';
+  var _allTasks=getTasksForDate(TISO);
+  var _tsk=_allTasks.find(function(t){return t.mouseId===mid&&t.expId===eid});
+  if(_tsk)_taskType=_tsk.type;
+  setTimeout(function(){
+    if(_taskType==='measure-weight'){
+      var w=document.getElementById('il-w-'+mid);if(w){w.focus();return;}
+    }
+    var el=document.getElementById('il-sz-'+mid+'-0');
+    if(el&&!el.disabled){el.focus();}
+    else{var w2=document.getElementById('il-w-'+mid);if(w2)w2.focus();}
+  },30);
 }
 function openLogE(eid,mid,ei){
   if(ei===undefined)ei=-1;
@@ -611,7 +647,19 @@ function openLogE(eid,mid,ei){
   td.style.cssText='padding:4px 6px 8px;background:var(--surface2);white-space:normal;overflow:visible';
   td.innerHTML=logHTML(eid,mid,ei);tr.appendChild(td);row.after(tr);
   ilWireButtons(eid,mid,ei);
-  setTimeout(function(){var el=document.getElementById('il-sz-'+mid+'-0');if(el)el.focus();},30);
+  // For weight-only tasks, find the task type and focus weight directly
+  var _taskType='';
+  var _allTasks=getTasksForDate(TISO);
+  var _tsk=_allTasks.find(function(t){return t.mouseId===mid&&t.expId===eid});
+  if(_tsk)_taskType=_tsk.type;
+  setTimeout(function(){
+    if(_taskType==='measure-weight'){
+      var w=document.getElementById('il-w-'+mid);if(w){w.focus();return;}
+    }
+    var el=document.getElementById('il-sz-'+mid+'-0');
+    if(el&&!el.disabled){el.focus();}
+    else{var w2=document.getElementById('il-w-'+mid);if(w2)w2.focus();}
+  },30);
 }
 async function submitLog(eid,mid,ei){
   var exp=S.experiments.find(function(e){return e.id===eid});
@@ -733,36 +781,76 @@ async function submitTransfer(eid,mid){
 
 // ENROLL
 function showEnroll(eid,gid,gname){
-  showModal('Enroll mouse - '+gname,
-    '<div class="f2">'
-    +'<div class="fg"><label class="fl">Mouse ID / barcode</label><input class="fi" id="en-id" placeholder="e.g. 2618149" autofocus></div>'
+  S._enrollCtx={eid:eid,gid:gid,gname:gname};
+  showModal('Enroll mice — '+gname,
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste one or more mouse IDs below — one per line, or separated by commas/spaces. All mice will share the same enrollment settings.</div>'
+    +'<div class="fg" style="margin-bottom:8px"><label class="fl">Mouse IDs</label>'
+    +'<textarea class="fi" id="en-ids" rows="4" placeholder="2618149&#10;2618150&#10;2618151&#10;or: 2618149, 2618150, 2618151" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea>'
+    +'</div>'
+    +'<div class="f2">'
     +'<div class="fg"><label class="fl">Cage number</label><input class="fi" id="en-cage" placeholder="e.g. C14"></div>'
     +'<div class="fg"><label class="fl">Enrolled date</label><input class="fi" id="en-date" type="date" value="'+TISO+'"></div>'
     +'<div class="fg"><label class="fl">Tx start date <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="fi" id="en-tx" type="date"></div>'
     +'<div class="fg"><label class="fl">Genotype</label><input class="fi" id="en-geno" placeholder="het.;hom.;het."></div>'
     +'<div class="fg"><label class="fl">DOB</label><input class="fi" id="en-dob" type="date"></div>'
     +'<div class="fg"><label class="fl">Weight (g)</label><input class="fi" id="en-wt" type="number" step="0.1"></div>'
-    +'<div class="fg"><label class="fl">Notes</label><input class="fi" id="en-notes" placeholder="cage buddy..."></div>'
-    +'</div>',
+    +'<div class="fg"><label class="fl">Notes</label><input class="fi" id="en-notes" placeholder="cage buddy, markings..."></div>'
+    +'</div>'
+    +'<div id="en-preview" style="font-size:10px;color:var(--text3);margin-top:4px"></div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
-    +'<button class="btn btn-p btn-xs" onclick="enrollMouse(\''+eid+'\',\''+gid+'\',\''+gname+'\')"><i class="ti ti-check"></i> Enroll</button>');
-  setTimeout(function(){var el=document.getElementById('en-id');if(el)el.focus();},50);
+    +'<button class="btn btn-p btn-xs" onclick="enrollMice()"><i class="ti ti-check"></i> Enroll</button>',true);
+  setTimeout(function(){
+    var ta=document.getElementById('en-ids');
+    if(ta){
+      ta.focus();
+      ta.addEventListener('input',function(){
+        var ids=parseMouseIds(ta.value);
+        var prev=document.getElementById('en-preview');
+        if(prev)prev.textContent=ids.length?ids.length+' mouse ID'+(ids.length>1?'s':'')+ ' detected: '+ids.join(', '):'';
+      });
+    }
+  },50);
 }
-async function enrollMouse(eid,gid,gname){
-  var mid=((document.getElementById('en-id')&&document.getElementById('en-id').value)||'').trim();
-  if(!mid){alert('Enter mouse ID');return;}
+
+function parseMouseIds(raw){
+  // Accept newlines, commas, spaces, tabs as separators
+  return raw.split(/[\n,;\s]+/).map(function(s){return s.trim();}).filter(function(s){return s.length>0;});
+}
+async function enrollMice(){
+  var d=S._enrollCtx;if(!d)return;
+  var rawIds=document.getElementById('en-ids')&&document.getElementById('en-ids').value||'';
+  var ids=parseMouseIds(rawIds);
+  if(!ids.length){alert('Enter at least one mouse ID');return;}
   var en=(document.getElementById('en-date')&&document.getElementById('en-date').value)||TISO;
-  var txRaw=document.getElementById('en-tx')&&document.getElementById('en-tx').value; var tx=txRaw&&txRaw.trim()?txRaw:null;
+  var txRaw=document.getElementById('en-tx')&&document.getElementById('en-tx').value;
+  var tx=txRaw&&txRaw.trim()?txRaw:null;
   var cage=(document.getElementById('en-cage')&&document.getElementById('en-cage').value)||'';
   var geno=(document.getElementById('en-geno')&&document.getElementById('en-geno').value)||'';
   var dob=(document.getElementById('en-dob')&&document.getElementById('en-dob').value)||null;
   var wt=parseFloat((document.getElementById('en-wt')&&document.getElementById('en-wt').value)||'');
   var notes=(document.getElementById('en-notes')&&document.getElementById('en-notes').value)||'';
-  var result=await sb.from('mice').insert({id:mid,experiment_id:eid,group_id:gid,group_name:gname,enrolled:en,tx_start:tx||null,cage_number:cage,genotype:geno,dob:dob||null,status:'active',weight:isNaN(wt)?null:wt,notes:notes,completed_events:[]});
-  if(result.error){alert('Error: '+result.error.message);return;}
-  await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:en,event_type:'enrolled',label:'Enrolled in '+gname,logged_by:uname()});
-  closeModal();await loadAll(eid);renderExp(eid);
+  var errors=[];
+  for(var i=0;i<ids.length;i++){
+    var mid=ids[i];
+    var result=await sb.from('mice').insert({
+      id:mid,experiment_id:d.eid,group_id:d.gid,group_name:d.gname,
+      enrolled:en,tx_start:tx||null,cage_number:cage,genotype:geno,
+      dob:dob||null,status:'active',weight:isNaN(wt)?null:wt,
+      notes:notes,completed_events:[],post_mx_status:'active'
+    });
+    if(result.error){errors.push(mid+': '+result.error.message);}
+    else{
+      await sb.from('mouse_events').insert({
+        mouse_id:mid,experiment_id:d.eid,event_date:en,
+        event_type:'enrolled',label:'Enrolled in '+d.gname,logged_by:uname()
+      });
+    }
+  }
+  if(errors.length)alert('Some mice could not be enrolled:\n'+errors.join('\n'));
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
 }
+// Keep old single-mouse function as alias for backward compat
+async function enrollMouse(eid,gid,gname){S._enrollCtx={eid:eid,gid:gid,gname:gname};await enrollMice();}
 
 // ADD TASK
 function showAddTask(defDate){
@@ -810,19 +898,25 @@ async function reschedTask(idx){
 function taskSection(title,icon,items){
   if(!items.length)return'';
   S._rsMap=S._rsMap||[];
-  var cols='82px 82px 1fr 90px 52px 110px';
+  var cols='82px 95px 1fr 80px 42px 120px';
   var rows=items.map(function(t){
     var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
+    var isMeasure=t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';
+    var isActive=t.m&&t.m.status==='active';
     return '<div class="task-row" style="grid-template-columns:'+cols+'">'
-      +'<span class="mono">'+(t.mouseId||'--')+'</span>'
-      +'<span style="font-size:10px;color:var(--text2)">'+(t.expId||'--')+'<br><span style="font-size:9px;color:var(--text3)">'+(t.researcher||'')+'</span></span>'
-      +'<span style="font-size:11px">'+(t.label||t.desc||'')+(t.lastNote?'<span class="npill">'+t.lastNote+'</span>':'')
-        +(t.exp&&t.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t.exp.harvest+'</span></span>':'')+'</span>'
-      +'<span class="burden-badge">'+(t.type==='measure'?(t.lastBurden||'--'):(t.dose||''))+'</span>'
+      +'<span class="mono" style="font-size:10px">'+(t.mouseId||'--')+'</span>'
+      +'<span style="font-size:10px;color:var(--text2)">'+(t.expId||'--')
+        +'<br><span style="font-size:9px;color:var(--text3)">'+(t.group||t.researcher||'')+'</span></span>'
+      +'<span style="font-size:11px">'+(t.label||t.desc||'')
+        +(t.lastNote?'<span class="npill">'+t.lastNote+'</span>':'')
+        +(t.exp&&t.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t.exp.harvest+'</span></span>':'')
+        +'</span>'
+      +'<span class="burden-badge">'+(isMeasure?(t.lastBurden||'--'):(t.dose?t.dose+(t.route?' '+t.route:''):''))+'</span>'
       +'<span style="font-size:10px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx:'')+'</span>'
-      +'<div style="display:flex;gap:3px;align-items:center">'
-        +(t.type==='measure'?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
-        +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'Done':'Done')+'</button>':'')
+      +'<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">'
+        +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
+        +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Transfer to group" onclick="showTransferFromDaily(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
+        +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="reschedTask('+rsIdx+')" title="Reschedule"><i class="ti ti-calendar-event"></i></button>'
       +'</div></div>'
       +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>';
@@ -831,7 +925,7 @@ function taskSection(title,icon,items){
     +'<div class="task-sh"><i class="ti '+icon+'" style="font-size:13px;color:var(--text2)"></i>'
     +'<span class="task-st">'+title+'</span><span class="task-sc">'+items.length+'</span></div>'
     +'<div style="display:grid;grid-template-columns:'+cols+';gap:6px;padding:0 9px 3px;font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">'
-    +'<span>Mouse</span><span>WP</span><span>Task</span><span>Burden</span><span>Day</span><span></span></div>'
+    +'<span>Mouse</span><span>WP / Group</span><span>Task</span><span>Last</span><span>Day</span><span></span></div>'
     +rows+'</div>';
 }
 
@@ -845,6 +939,7 @@ function renderDaily(){
     +'<button class="srt-btn '+(S.sortBy==='type'?'act':'')+'" onclick="S.sortBy=\'type\';renderDaily()">Type</button>'
     +'<button class="srt-btn '+(S.sortBy==='exp'?'act':'')+'" onclick="S.sortBy=\'exp\';renderDaily()">WP</button>'
     +'</div>'
+    +'<button class="btn btn-xs" onclick="showReschedAll()"><i class="ti ti-calendar-event"></i> Reschedule all</button>'
     +'<button class="btn btn-xs" onclick="showAddTask()"><i class="ti ti-plus"></i> Add task</button>'
     +'<button class="btn btn-xs" onclick="window.print()"><i class="ti ti-printer"></i> Print</button>';
   var raw=getTasksForDate(TISO);var tasks=sortTasks(raw);
@@ -889,7 +984,7 @@ function renderDaily(){
   var tasks=normalTasks;
 
   if(S.sortBy==='type'){
-    ['measure','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],tasks.filter(function(t){return t.type===type}));});
+    ['measure','measure-tumor','measure-combined','measure-weight','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],tasks.filter(function(t){return t.type===type}));});
   } else {
     var byE={};tasks.forEach(function(t){var k=t.expId||'Other';if(!byE[k])byE[k]=[];byE[k].push(t);});
     Object.keys(byE).sort().forEach(function(eid){
@@ -898,7 +993,7 @@ function renderDaily(){
         +'<span class="task-st">'+eid+' - '+(exp&&exp.name?exp.name:'')+'</span>'
         +'<span class="task-sc">'+byE[eid].length+'</span>'
         +(exp&&exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+exp.harvest+'</span></span>':'')+'</div>';
-      ['measure','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],byE[eid].filter(function(t){return t.type===type}));});
+      ['measure','measure-tumor','measure-combined','measure-weight','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],byE[eid].filter(function(t){return t.type===type}));});
     });
   }
   if(!tasks.length)html+='<div class="empty"><i class="ti ti-circle-check"></i>No tasks scheduled for today</div>';
@@ -1136,17 +1231,56 @@ function renderExps(){
   var html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">';
   S.experiments.forEach(function(exp){
     var mice=S.mice[exp.id]||[];var act=mice.filter(function(m){return m.status==='active'}).length;var tot=mice.length;var pct=tot?Math.round((tot-act)/tot*100):0;
-    html+='<div class="card" style="cursor:pointer" onclick="go(\'exp-'+exp.id+'\')">'
-      +'<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px"><div class="edot" style="background:'+exp.color+'"></div>'
-      +'<div style="font-size:12px;font-weight:500">'+exp.id+' - '+exp.name+'</div>'
-      +'<span class="badge '+(exp.status==='active'?'bg':'bgy')+'" style="margin-left:auto">'+exp.status+'</span></div>'
-      +'<div style="font-size:10px;color:var(--text2);margin-bottom:7px">'+exp.researcher+' - '+(exp.model||'')+(exp.multi_tumor?' - multi-site':'')+'</div>'
-      +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px"><span class="badge bb">'+act+' active</span><span class="badge bgy">'+(S.groups[exp.id]||[]).length+' groups</span><span class="badge bgy">'+tot+' mice</span></div>'
-      +'<div style="font-size:10px;color:var(--text3);display:flex;justify-content:space-between">'+(tot-act)+'/'+tot+' sacrificed<span>'+pct+'%</span></div>'
-      +'<div style="height:3px;background:var(--surface2);border-radius:2px;margin-top:3px"><div style="height:100%;border-radius:2px;background:'+exp.color+';width:'+pct+'%"></div></div></div>';
+    html+='<div class="card">'
+      +'<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">'
+      +'<div class="edot" style="background:'+exp.color+'"></div>'
+      +'<div style="font-size:12px;font-weight:500;flex:1;cursor:pointer" onclick="go(\'exp-'+exp.id+'\')">'+exp.id+' — '+exp.name+'</div>'
+      +'<span class="badge '+(exp.status==='active'?'bg':exp.status==='archived'?'bgy':'bb')+'">'+exp.status+'</span>'
+      // Action menu: archive/unarchive + delete
+      +'<div style="display:flex;gap:3px;margin-left:4px">'
+      +(exp.status==='active'
+        ?'<button class="btn btn-xs btn-icon" title="Archive experiment" onclick="archiveExp(\''+exp.id+'\')" style="color:var(--text3)"><i class="ti ti-archive"></i></button>'
+        :'<button class="btn btn-xs btn-icon" title="Restore to active" onclick="unarchiveExp(\''+exp.id+'\')" style="color:var(--text3)"><i class="ti ti-archive-off"></i></button>')
+      +'<button class="btn btn-xs btn-icon btn-r" title="Delete experiment and all data" onclick="deleteExp(\''+exp.id+'\')"><i class="ti ti-trash"></i></button>'
+      +'</div></div>'
+      +'<div style="font-size:10px;color:var(--text2);margin-bottom:7px;cursor:pointer" onclick="go(\'exp-'+exp.id+'\')">'+exp.researcher+' — '+(exp.model||'')+(exp.is_mastectomy?' · Mastectomy':'')+'</div>'
+      +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px;cursor:pointer" onclick="go(\'exp-'+exp.id+'\')"><span class="badge bb">'+act+' active</span><span class="badge bgy">'+(S.groups[exp.id]||[]).length+' groups</span><span class="badge bgy">'+tot+' mice</span></div>'
+      +'<div style="font-size:10px;color:var(--text3);display:flex;justify-content:space-between;cursor:pointer" onclick="go(\'exp-'+exp.id+'\' )">'+(tot-act)+'/'+tot+' sacrificed<span>'+pct+'%</span></div>'
+      +'<div style="height:3px;background:var(--surface2);border-radius:2px;margin-top:3px;cursor:pointer" onclick="go(\'exp-'+exp.id+'\')"><div style="height:100%;border-radius:2px;background:'+exp.color+';width:'+pct+'%"></div></div>'
+      +'</div>';
   });
   if(!S.experiments.length)html+='<div class="empty" style="grid-column:1/-1"><i class="ti ti-flask"></i>No experiments yet.</div>';
   html+='</div>';document.getElementById('content').innerHTML=html;
+}
+
+async function archiveExp(eid){
+  if(!confirm('Archive '+eid+'? It will be hidden from active lists but data is preserved.'))return;
+  await sb.from('experiments').update({status:'archived'}).eq('id',eid);
+  await dbLoad();renderExps();buildExpNav();
+}
+async function unarchiveExp(eid){
+  await sb.from('experiments').update({status:'active'}).eq('id',eid);
+  await dbLoad();renderExps();buildExpNav();
+}
+async function deleteExp(eid){
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  if(!confirm('PERMANENTLY DELETE '+eid+' — '+( exp?exp.name:'')+' and ALL its data (mice, measurements, events)?\n\nThis cannot be undone.'))return;
+  var conf=prompt('Type the WP number to confirm:','');
+  if(conf!==eid){alert('WP number did not match. Nothing deleted.');return;}
+  // Delete in order (FK constraints)
+  var miceIds=(S.mice[eid]||[]).map(function(m){return m.id});
+  if(miceIds.length){
+    await sb.from('mouse_events').delete().in('mouse_id',miceIds);
+    await sb.from('measurements').delete().in('mouse_id',miceIds);
+    await sb.from('mice').delete().eq('experiment_id',eid);
+  }
+  var grpIds=(S.groups[eid]||[]).map(function(g){return g.id});
+  if(grpIds.length)await sb.from('scheduled_events').delete().in('group_id',grpIds);
+  await sb.from('experiment_groups').delete().eq('experiment_id',eid);
+  await sb.from('adhoc_tasks').delete().eq('experiment_id',eid);
+  await sb.from('deviation_log').delete().eq('experiment_id',eid);
+  await sb.from('experiments').delete().eq('id',eid);
+  await dbLoad();renderExps();buildExpNav();
 }
 
 // EXPERIMENT VIEW
@@ -1155,7 +1289,7 @@ async function renderExp(eid){
   var exp=S.experiments.find(function(e){return e.id===eid});if(!exp)return;
   document.getElementById('pg-title').textContent=exp.id+' - '+exp.name;
   document.getElementById('tb-acts').innerHTML='';
-  document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs"><i class="ti ti-download"></i> Export Excel</button>';
+  document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="exportExcel(\''+eid+'\')" ><i class="ti ti-download"></i> Export Excel</button>';
   if(!S.measurements[eid]){document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';await loadAll(eid);}
   var mice=S.mice[eid]||[];var groups=S.groups[eid]||[];var act=mice.filter(function(m){return m.status==='active'}).length;
   var html='<div class="card">'
@@ -1168,7 +1302,7 @@ async function renderExp(eid){
     +'<div><div style="color:var(--text2);margin-bottom:1px">Type</div><div style="font-weight:500">'+(exp.is_mastectomy?'<span class="badge ba">Mastectomy</span>':'Standard')+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Started</div><div style="font-weight:500">'+exp.started+'</div></div>'
     +'</div><hr class="div">'
-    +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div></div>'
+    +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+(exp.harvest_updated_at?' <span class="badge ba" style="font-size:8px" title="Harvest protocol was updated on '+exp.harvest_updated_at+'"><i class="ti ti-alert-triangle"></i> Updated '+exp.harvest_updated_at+'</span>':'')+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div></div>'
     +'<div class="tabs">'
     +'<div class="tab '+(S.expTab==='mice'?'act':'')+'" onclick="ST(\'mice\')">Mice & measurements</div>'
     +'<div class="tab '+(S.expTab==='growth'?'act':'')+'" onclick="ST(\'growth\')">Tumor growth</div>'
@@ -1178,14 +1312,16 @@ async function renderExp(eid){
 
   if(S.expTab==='mice'){
     var showAllHist=S.showHist[eid]||false;
-    html+='<div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">'
+    var sortLabel=S.mouseSort==='id-asc'?'ID ↑':S.mouseSort==='id-desc'?'ID ↓':'Default order';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">'
+      +'<button class="btn btn-xs" onclick="cycleSortMice(\''+eid+'\')"><i class="ti ti-sort-ascending"></i> Sort: '+sortLabel+'</button>'
       +'<button class="btn btn-xs" onclick="S.showHist[\''+eid+'\']=!S.showHist[\''+eid+'\'];renderExp(\''+eid+'\')"><i class="ti ti-history"></i> '+(showAllHist?'Collapse all history':'Show full history for all mice')+'</button>'
       +'</div>';
     if(showAllHist){
       S.mice[eid]&&S.mice[eid].forEach(function(m){S.showAllMs[m.id]=true;});
     }
     groups.forEach(function(g){
-      var gM=mice.filter(function(m){return m.group_id===g.id||m.group_name===g.name});
+      var gM=sortMiceForDisplay(mice.filter(function(m){return m.group_id===g.id||m.group_name===g.name}));
       var actN=gM.filter(function(m){return m.status==='active'}).length;
       html+='<div class="card" style="padding:.5rem 0;margin-bottom:.625rem">'
         +'<div style="display:flex;align-items:center;justify-content:space-between;padding:0 .75rem .4rem">'
@@ -1239,6 +1375,7 @@ async function renderExp(eid){
           +'<button class="btn btn-xs btn-icon '+(m.excluded_from_analysis?'btn-r':'')+'" title="'+(m.excluded_from_analysis?'Excluded from analysis — click to re-include':'Exclude from analysis')+'" onclick="toggleExclude(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-chart-line-off"></i></button>'
           // History
           +'<button class="btn btn-xs btn-icon" title="History" onclick="toggleHist(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-history"></i></button>'
+          +'<button class="btn btn-xs btn-icon btn-r" title="Remove mouse from experiment" onclick="removeMouse(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-user-minus"></i></button>'
           +'</div></td></tr>'
           +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="11" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
       });
@@ -1488,11 +1625,11 @@ function renderNew(){
   document.getElementById('tb-acts').innerHTML='';document.getElementById('pg-acts').innerHTML='';
   NG=[
     {name:'Group 1 (Control)',n:8,color:COLS[0],events:[
-      {type:'measure',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
+      {type:'measure-tumor',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
       {type:'treatment',label:'',drug:'Control antibody',dose:'100ug',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7},
     ]},
     {name:'Group 2',n:8,color:COLS[1],events:[
-      {type:'measure',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
+      {type:'measure-tumor',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
       {type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7},
     ]},
   ];
@@ -1505,7 +1642,14 @@ function newFormHTML(){
     +'<div class="fg"><label class="fl">WP number</label><input class="fi" id="nwp" placeholder="WP12345"></div>'
     +'<div class="fg"><label class="fl">Researcher(s)</label><input class="fi" id="nres"></div>'
     +'<div class="fg full"><label class="fl">Title</label><input class="fi" id="ntit" placeholder="e.g. PIK3CA aCD25+ICB"></div>'
-    +'<div class="fg"><label class="fl">Model</label><input class="fi" id="nmod" placeholder="KEP transplant"></div>'
+    +'<div class="fg"><label class="fl">Model</label>'
+    +'<div style="display:flex;gap:3px;margin-bottom:4px;flex-wrap:wrap">'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP transplant\'">KEP transplant</button>'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'Intraductal KEP\'">Intraductal KEP</button>'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP spontaneous\'">KEP spontaneous</button>'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'MMTV-Neu\'">MMTV-Neu</button>'
+    +'</div>'
+    +'<input class="fi" id="nmod" placeholder="or type custom model name"></div>'
     +'<div class="fg"><label class="fl">Strain</label><input class="fi" id="nstr" placeholder="Kcre;EcdF;P53F"></div>'
     +'</div>'
     +'<div style="padding:.4rem .75rem;background:var(--blue-bg);border-radius:var(--r);font-size:10px;color:var(--blue);margin-bottom:8px">'
@@ -1546,31 +1690,67 @@ function renderNGGroups(){
       +(gi>0?'<button class="btn btn-xs" onclick="NG.splice('+gi+',1);document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()"><i class="ti ti-trash"></i></button>':'')
       +'</div>'
       +g.events.map(function(ev,ei){return renderNGEvent(gi,ei,ev)}).join('')
-      +'<button class="btn btn-xs" style="margin-top:3px" onclick="addNGEvent('+gi+')"><i class="ti ti-plus"></i> Add event</button>'
+      +'<div style="display:flex;gap:5px;margin-top:3px">'
+      +'<button class="btn btn-xs" onclick="addNGEvent('+gi+')"><i class="ti ti-plus"></i> Add event</button>'
+      +'<button class="btn btn-xs" onclick="duplicateNG('+gi+')"><i class="ti ti-copy"></i> Duplicate group</button>'
+      +'</div>'
       +'</div>';
   }).join('');
 }
 function renderNGEvent(gi,ei,ev){
-  var types=['measure','treatment','blood','ivis','custom'];
-  var typeSel=types.map(function(t){var sc=ev.type===t?'sel-'+t:'';return'<span class="ec '+sc+'" onclick="NG['+gi+'].events['+ei+'].type=\''+t+'\';document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()">'+t+'</span>';}).join('');
-  var dayPicker=[1,2,3,4,5].map(function(d){return'<span class="day-btn '+(ev.days&&ev.days.includes(d)?'sel':'')+'" onclick="toggleNGDay('+gi+','+ei+','+d+')">'+DOW[d]+'</span>';}).join('');
-  var trigOpts=['enrollment','size','age','day-after-tx','endpoint'].map(function(t){return'<option value="'+t+'"'+(ev.trigger===t?' selected':'')+'>'+t+'</option>';}).join('');
+  // Type definitions: which fields each type needs
+  var ALL_TYPES=['measure-tumor','measure-weight','treatment','blood','ivis','custom'];
+  var TYPE_LABELS={'measure-tumor':'Tumor measure','measure-weight':'Weight','treatment':'Treatment','blood':'Blood draw','ivis':'IVIS','custom':'Custom'};
+  // Default triggers per type
+  var DEFAULT_TRIGGERS={'measure-tumor':'enrollment','measure-weight':'enrollment','treatment':'size','blood':'day-after-tx','ivis':'day-after-tx','custom':'enrollment'};
+  var HAS_DRUG=ev.type==='treatment';
+  var HAS_DOSE=ev.type==='treatment';
+  var HAS_MAXDOSE=ev.type==='treatment';
+  var HAS_DAYOFFSET=ev.type==='blood'||ev.type==='ivis';
+  var HAS_DAYS=ev.type!=='once';
+  var TRIGGERS_FOR_TYPE={
+    'measure-tumor':['enrollment','size'],
+    'measure-weight':['enrollment','day-after-tx'],
+    treatment:['size','day-after-tx','enrollment'],
+    blood:['day-after-tx','endpoint','enrollment'],
+    ivis:['day-after-tx','endpoint','enrollment'],
+    custom:['enrollment','day-after-tx']
+  };
+  var validTriggers=TRIGGERS_FOR_TYPE[ev.type]||['enrollment'];
+  var curTrigger=validTriggers.includes(ev.trigger)?ev.trigger:validTriggers[0];
+
+  var typeSel=ALL_TYPES.map(function(t){
+    var sc=ev.type===t?'sel-'+t.replace('-',''):'';
+    return'<span class="ec '+(ev.type===t?'sel-'+ev.type.split('-')[0]:'')+'" style="'+(ev.type===t?'font-weight:500':'')+'" onclick="NG['+gi+'].events['+ei+'].type=\''+t+'\';NG['+gi+'].events['+ei+'].trigger=\''+DEFAULT_TRIGGERS[t]+'\';document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()">'+TYPE_LABELS[t]+'</span>';
+  }).join('');
+
+  var dayPicker=ev.schedule!=='once'?[1,2,3,4,5].map(function(d){
+    return'<span class="day-btn '+(ev.days&&ev.days.includes(d)?'sel':'')+'" onclick="toggleNGDay('+gi+','+ei+','+d+')">'+DOW[d]+'</span>';
+  }).join(''):'';
+
+  var trigOpts=validTriggers.map(function(t){
+    return'<option value="'+t+'"'+(curTrigger===t?' selected':'')+'>'+t+'</option>';
+  }).join('');
+
   return '<div class="ev-blk">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">'
-    +'<div>'+typeSel+'</div>'
-    +(ei>0?'<button class="btn btn-xs" onclick="NG['+gi+'].events.splice('+ei+',1);document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()"><i class="ti ti-x"></i></button>':'')
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+    +'<div style="display:flex;gap:3px;flex-wrap:wrap">'+typeSel+'</div>'
+    +(ei>0?'<button class="btn btn-xs btn-icon" onclick="NG['+gi+'].events.splice('+ei+',1);document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()"><i class="ti ti-x"></i></button>':'')
     +'</div>'
     +'<div class="f2" style="margin-bottom:5px">'
-    +'<div class="fg"><label class="fl">Label</label><input class="fi" style="font-size:10px;padding:3px 5px" value="'+(ev.label||'')+'" placeholder="e.g. anti-PD1 IP" oninput="NG['+gi+'].events['+ei+'].label=this.value"></div>'
-    +(ev.type==='treatment'?'<div class="fg"><label class="fl">Drug / dose / route</label><div style="display:flex;gap:3px">'
+    // Label always shown
+    +'<div class="fg"><label class="fl">Label</label><input class="fi" style="font-size:10px;padding:3px 5px" value="'+(ev.label||'')+'" placeholder="e.g. '+TYPE_LABELS[ev.type]+'" oninput="NG['+gi+'].events['+ei+'].label=this.value"></div>'
+    // Drug / dose / route — treatment only
+    +(HAS_DRUG?'<div class="fg"><label class="fl">Drug / dose / route</label><div style="display:flex;gap:3px">'
       +'<input class="fi" style="flex:2;font-size:10px;padding:3px 5px" value="'+(ev.drug||'')+'" placeholder="drug" oninput="NG['+gi+'].events['+ei+'].drug=this.value">'
       +'<input class="fi" style="flex:1;font-size:10px;padding:3px 4px" value="'+(ev.dose||'')+'" placeholder="dose" oninput="NG['+gi+'].events['+ei+'].dose=this.value">'
-      +'<select class="fs" style="flex:1;font-size:10px;padding:3px 3px" onchange="NG['+gi+'].events['+ei+'].route=this.value"><option>IP</option><option>IV</option><option>SC</option><option>PO</option></select>'
+      +'<select class="fs" style="flex:1;font-size:10px;padding:3px 3px" onchange="NG['+gi+'].events['+ei+'].route=this.value"><option'+(ev.route==='IP'?' selected':'')+'>IP</option><option'+(ev.route==='IV'?' selected':'')+'>IV</option><option'+(ev.route==='SC'?' selected':'')+'>SC</option><option'+(ev.route==='PO'?' selected':'')+'>PO</option></select>'
       +'</div></div>':'<div></div>')
     +'</div>'
+    // Schedule
     +'<div style="margin-bottom:5px"><div class="fl" style="margin-bottom:3px">Schedule</div>'
     +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-    +'<div>'+dayPicker+'</div>'
+    +(dayPicker?'<div>'+dayPicker+'</div>':'')
     +'<select class="fs" style="font-size:10px;padding:3px 5px" onchange="NG['+gi+'].events['+ei+'].schedule=this.value;document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()">'
     +'<option value="fixed-days"'+(ev.schedule==='fixed-days'?' selected':'')+'>Fixed days</option>'
     +'<option value="interval"'+(ev.schedule==='interval'?' selected':'')+'>Every N days</option>'
@@ -1578,16 +1758,27 @@ function renderNGEvent(gi,ei,ev){
     +'</select>'
     +(ev.schedule==='interval'?'<div style="display:flex;align-items:center;gap:3px"><span class="fl">Every</span><input class="fi" type="number" min="1" style="width:52px;font-size:10px;padding:3px 5px" value="'+(ev.intervalDays||7)+'" oninput="NG['+gi+'].events['+ei+'].intervalDays=parseInt(this.value)||7"><span class="fl">days</span></div>':'')
     +'</div></div>'
+    // Trigger + conditional extras
     +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">'
     +'<div class="fg"><label class="fl">Start trigger</label>'
     +'<select class="fs" style="font-size:10px;padding:3px 5px" onchange="NG['+gi+'].events['+ei+'].trigger=this.value;document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()">'+trigOpts+'</select></div>'
-    +(ev.trigger==='size'||ev.trigger==='age'?'<div class="fg"><label class="fl">Value</label><input class="fi" style="width:80px;font-size:10px;padding:3px 5px" value="'+(ev.triggerVal||'')+'" placeholder="'+(ev.trigger==='size'?'3x3':'14 weeks')+'" oninput="NG['+gi+'].events['+ei+'].triggerVal=this.value"></div>':'')
-    +(ev.trigger==='day-after-tx'?'<div class="fg"><label class="fl">Day offset</label><input class="fi" type="number" style="width:65px;font-size:10px;padding:3px 5px" value="'+(ev.dayOffset||0)+'" oninput="NG['+gi+'].events['+ei+'].dayOffset=parseInt(this.value)||0"></div>':'')
-    +'<div class="fg"><label class="fl">Max doses</label><input class="fi" type="number" style="width:60px;font-size:10px;padding:3px 5px" value="'+(ev.maxDoses||'')+'" placeholder="unlimited" oninput="NG['+gi+'].events['+ei+'].maxDoses=this.value?parseInt(this.value):null"></div>'
+    +(curTrigger==='size'?'<div class="fg"><label class="fl">Min size</label><input class="fi" style="width:72px;font-size:10px;padding:3px 5px" value="'+(ev.triggerVal||'3x3')+'" placeholder="3x3 mm" oninput="NG['+gi+'].events['+ei+'].triggerVal=this.value"></div>':'')
+    +(curTrigger==='age'?'<div class="fg"><label class="fl">Age</label><input class="fi" style="width:80px;font-size:10px;padding:3px 5px" value="'+(ev.triggerVal||'')+'" placeholder="14 weeks" oninput="NG['+gi+'].events['+ei+'].triggerVal=this.value"></div>':'')
+    +(curTrigger==='day-after-tx'?'<div class="fg"><label class="fl">Day offset</label><input class="fi" type="number" style="width:65px;font-size:10px;padding:3px 5px" value="'+(ev.dayOffset||0)+'" oninput="NG['+gi+'].events['+ei+'].dayOffset=parseInt(this.value)||0"></div>':'')
+    +(HAS_MAXDOSE?'<div class="fg"><label class="fl">Max doses</label><input class="fi" type="number" style="width:60px;font-size:10px;padding:3px 5px" value="'+(ev.maxDoses||'')+'" placeholder="unlimited" oninput="NG['+gi+'].events['+ei+'].maxDoses=this.value?parseInt(this.value):null"></div>':'')
     +'</div></div>';
 }
+
 function toggleNGDay(gi,ei,d){var ev=NG[gi].events[ei];if(!ev.days)ev.days=[];var idx=ev.days.indexOf(d);if(idx>=0)ev.days.splice(idx,1);else ev.days.push(d);document.getElementById('ng-cont').innerHTML=renderNGGroups();}
-function addNG(){NG.push({name:'Group '+(NG.length+1),n:8,color:COLS[NG.length%COLS.length],events:[{type:'measure',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},{type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7}]});document.getElementById('ng-cont').innerHTML=renderNGGroups();}
+function addNG(){NG.push({name:'Group '+(NG.length+1),n:8,color:COLS[NG.length%COLS.length],events:[{type:'measure-tumor',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},{type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7}]});document.getElementById('ng-cont').innerHTML=renderNGGroups();}
+function duplicateNG(gi){
+  var src=NG[gi];
+  var copy=JSON.parse(JSON.stringify(src));
+  copy.name=src.name+' (copy)';
+  copy.color=COLS[NG.length%COLS.length];
+  NG.push(copy);
+  document.getElementById('ng-cont').innerHTML=renderNGGroups();
+}
 function addNGEvent(gi){NG[gi].events.push({type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7});document.getElementById('ng-cont').innerHTML=renderNGGroups();}
 async function createExp(){
   var wp=((document.getElementById('nwp')&&document.getElementById('nwp').value)||'').trim();
@@ -1638,7 +1829,12 @@ async function saveEditExp(eid){
   var str=(document.getElementById('ee-str')&&document.getElementById('ee-str').value)||'';
   var status=(document.getElementById('ee-status')&&document.getElementById('ee-status').value)||'active';
   var isMx2=!!(document.getElementById('ee-mx')&&document.getElementById('ee-mx').checked);
-  await sb.from('experiments').update({researcher:res,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status,is_mastectomy:isMx2}).eq('id',eid);
+  var oldExp=S.experiments.find(function(e){return e.id===eid});
+  var harChanged=oldExp&&har.trim()&&har.trim()!==(oldExp.harvest||'').trim()&&oldExp.harvest;
+  var upd={researcher:res,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status,is_mastectomy:isMx2};
+  if(harChanged)upd.harvest_updated_at=TISO;
+  await sb.from('experiments').update(upd).eq('id',eid);
+  if(harChanged)await sb.from('deviation_log').insert({experiment_id:eid,mouse_id:null,event_type:'harvest_change',original_date:TISO,actual_date:TISO,reason:'Harvest changed by '+uname()+' on '+TISO+'\nOLD: '+(oldExp.harvest||'')+'\nNEW: '+har});
   closeModal();await loadAll(eid);renderExp(eid);
 }
 
@@ -1814,7 +2010,7 @@ function showEditEvent(evid,eid){
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Type</label>'
     +'<select class="fs" id="ee-type">'
-    +['measure','treatment','blood','ivis','custom'].map(function(t){return'<option value="'+t+'"'+(ev.type===t?' selected':'')+'>'+t+'</option>'}).join('')
+    +['measure','measure-tumor','measure-weight','treatment','blood','ivis','custom'].map(function(t){return'<option value="'+t+'"'+(ev.type===t?' selected':'')+'>'+t+'</option>'}).join('')
     +'</select></div>'
     +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ee-label" value="'+(ev.label||'')+'"></div>'
     +'<div class="fg"><label class="fl">Drug</label><input class="fi" id="ee-drug" value="'+(ev.drug||'')+'"></div>'
@@ -1874,7 +2070,7 @@ function showAddEvent(gid,eid){
   }).join('');
   showModal('Add scheduled event',
     '<div class="f2">'
-    +'<div class="fg"><label class="fl">Type</label><select class="fs" id="ae-type">'+['measure','treatment','blood','ivis','custom'].map(function(t){return'<option>'+t+'</option>'}).join('')+'</select></div>'
+    +'<div class="fg"><label class="fl">Type</label><select class="fs" id="ae-type">'+['measure','measure-tumor','measure-weight','treatment','blood','ivis','custom'].map(function(t){return'<option>'+t+'</option>'}).join('')+'</select></div>'
     +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ae-label" placeholder="e.g. anti-PD1 IP" autofocus></div>'
     +'<div class="fg"><label class="fl">Drug</label><input class="fi" id="ae-drug"></div>'
     +'<div class="fg"><label class="fl">Dose</label><input class="fi" id="ae-dose" placeholder="200ug"></div>'
@@ -1916,6 +2112,21 @@ async function saveAddEvent(){
 }
 
 // REACTIVATE MOUSE
+async function removeMouse(mid,eid){
+  if(!confirm('Remove mouse '+mid+' from this experiment?\n\nThis permanently deletes all measurements, events, and data for this mouse. Cannot be undone.'))return;
+  var conf=prompt('Type the mouse ID to confirm:','');
+  if(conf!==mid){alert('Mouse ID did not match. Nothing deleted.');return;}
+  await sb.from('mouse_events').delete().eq('mouse_id',mid);
+  var msData=await sb.from('measurements').select('id').eq('mouse_id',mid);
+  if(msData.data&&msData.data.length){
+    var msIds=msData.data.map(function(x){return x.id});
+    await sb.from('tumor_sites').delete().in('measurement_id',msIds);
+  }
+  await sb.from('measurements').delete().eq('mouse_id',mid);
+  await sb.from('mice').delete().eq('id',mid);
+  await loadAll(eid);renderExp(eid);
+}
+
 async function reactivateMouse(mid,eid){
   if(!confirm('Reactivate mouse '+mid+'? This will undo the sacrifice status.'))return;
   await sb.from('mice').update({status:'active',cause:null,sac_date:null,kdv:null}).eq('id',mid);
@@ -1933,8 +2144,120 @@ function showModal(title,body,footer){
 function closeModal(){var el=document.getElementById('modal-ov');if(el)el.remove();}
 
 // NAV
+// EXCEL EXPORT
+function exportExcel(eid){
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Please refresh.');return;}
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  if(!exp){return;}
+  var mice=S.mice[eid]||[];
+  var groups=S.groups[eid]||[];
+  var wb=XLSX.utils.book_new();
+
+  // Collect all measurement dates
+  var allDates=new Set();
+  mice.forEach(function(m){((S.measurements[eid]||{})[m.id]||[]).forEach(function(ms){allDates.add(ms.measured_at);});});
+  var sortedDates=Array.from(allDates).sort();
+
+  // Sheet 1: Group summary (means per date)
+  var s1=[['Group','Date','N','Mean burden excl skin (mm2)','SEM','Mean weight (g)','Mouse IDs']];
+  groups.forEach(function(g){
+    var gMice=mice.filter(function(m){return m.group_name===g.name||m.group_id===g.id});
+    sortedDates.forEach(function(date){
+      var vals=[],weights=[],ids=[];
+      gMice.forEach(function(m){
+        var ms=((S.measurements[eid]||{})[m.id]||[]).find(function(x){return x.measured_at===date});
+        if(ms&&ms.tumor_sites&&ms.tumor_sites.some(function(s){return s.dim1})){
+          vals.push(burden(ms.tumor_sites,false));
+          ids.push(m.id);
+          if(m.weight)weights.push(m.weight);
+        }
+      });
+      if(!vals.length)return;
+      var mean=vals.reduce(function(a,b){return a+b},0)/vals.length;
+      var sem=vals.length>1?Math.sqrt(vals.reduce(function(s,v){return s+Math.pow(v-mean,2)},0)/(vals.length-1))/Math.sqrt(vals.length):0;
+      var wm=weights.length?Math.round(weights.reduce(function(a,b){return a+b},0)/weights.length*10)/10:'';
+      s1.push([g.name,date,vals.length,Math.round(mean*10)/10,Math.round(sem*10)/10,wm,ids.join(', ')]);
+    });
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s1),'Summary');
+
+  // Sheet 2: Per mouse wide (burden per date as columns)
+  var h2=['Mouse ID','Group','Cage','Enrolled','Tx start','Day0','Genotype','Status','Sac date','KDV'];
+  sortedDates.forEach(function(d){h2.push('Burden '+d+' (mm2)');});
+  sortedDates.forEach(function(d){h2.push('Weight '+d+' (g)');});
+  var s2=[h2];
+  groups.forEach(function(g){
+    mice.filter(function(m){return m.group_name===g.name||m.group_id===g.id}).forEach(function(m){
+      var row=[m.id,g.name,m.cage_number||'',m.enrolled||'',m.tx_start||'',m.day0_date||'',m.genotype||'',m.status,m.sac_date||'',m.kdv||''];
+      sortedDates.forEach(function(date){
+        var ms=((S.measurements[eid]||{})[m.id]||[]).find(function(x){return x.measured_at===date});
+        row.push(ms&&ms.tumor_sites&&ms.tumor_sites.some(function(s){return s.dim1})?Math.round(burden(ms.tumor_sites,false)*10)/10:'');
+      });
+      sortedDates.forEach(function(date){
+        var ms=((S.measurements[eid]||{})[m.id]||[]).find(function(x){return x.measured_at===date});
+        row.push(ms&&ms.weight?ms.weight:(ms?m.weight||'':''));
+      });
+      s2.push(row);
+    });
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s2),'Per mouse (wide)');
+
+  // Sheet 3: Raw measurements long format
+  var s3=[['Mouse ID','Group','Date','Day in tx','Burden excl skin','Burden incl skin','N sites','Sites','Weight','Note','Logged by']];
+  groups.forEach(function(g){
+    mice.filter(function(m){return m.group_name===g.name||m.group_id===g.id}).forEach(function(m){
+      ((S.measurements[eid]||{})[m.id]||[]).forEach(function(ms){
+        var sites=ms.tumor_sites||[];
+        var detail=sites.map(function(s){return(s.location?s.location+' ':'')+s.dim1+'x'+s.dim2+(s.is_skin?'(skin)':'')+(s.status==='gone'?'(Gone)':'');}).join('+');
+        var dt=m.tx_start?Math.round((new Date(ms.measured_at)-new Date(m.tx_start))/86400000):'';
+        s3.push([m.id,g.name,ms.measured_at,dt,Math.round(burden(sites,false)*10)/10,Math.round(burden(sites,true)*10)/10,sites.length,detail,ms.weight||m.weight||'',ms.note||'',ms.logged_by||'']);
+      });
+    });
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s3),'Raw measurements');
+
+  // Sheet 4: Survival data
+  var s4=[['Mouse ID','Group','Tx start','Mx date','Sac date','Days tx->sac','Days Mx->sac','Endpoint (1=yes)','Cause','KDV','Excluded','Exclusion reason']];
+  groups.forEach(function(g){
+    mice.filter(function(m){return m.group_name===g.name||m.group_id===g.id}).forEach(function(m){
+      var dtx=m.tx_start&&m.sac_date?Math.round((new Date(m.sac_date)-new Date(m.tx_start))/86400000):'';
+      var dmx=m.mx_date&&m.sac_date?Math.round((new Date(m.sac_date)-new Date(m.mx_date))/86400000):'';
+      s4.push([m.id,g.name,m.tx_start||'',m.mx_date||'',m.sac_date||'',dtx,dmx,m.cause==='endpoint'?1:0,m.cause||'',m.kdv||'',m.excluded_from_analysis?1:0,m.exclusion_reason||'']);
+    });
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s4),'Survival data');
+
+  // Auto column widths
+  wb.SheetNames.forEach(function(name){
+    var ws=wb.Sheets[name];
+    if(!ws['!ref'])return;
+    var range=XLSX.utils.decode_range(ws['!ref']);
+    var cols=[];
+    for(var c=range.s.c;c<=range.e.c;c++){
+      var w=10;
+      for(var r=range.s.r;r<=range.e.r;r++){
+        var cell=ws[XLSX.utils.encode_cell({r:r,c:c})];
+        if(cell&&cell.v)w=Math.min(40,Math.max(w,String(cell.v).length+2));
+      }
+      cols.push({wch:w});
+    }
+    ws['!cols']=cols;
+  });
+
+  XLSX.writeFile(wb,eid+'_'+TISO+'.xlsx');
+}
+
 function buildExpNav(){
-  document.getElementById('exp-nav').innerHTML=S.experiments.filter(function(e){return e.status==='active'}).map(function(e){return'<div class="nav-exp" onclick="go(\'exp-'+e.id+'\')"><div class="edot" style="background:'+e.color+'"></div>'+e.id+'</div>';}).join('');
+  document.getElementById('exp-nav').innerHTML=S.experiments.filter(function(e){return e.status==='active'}).map(function(e){
+    return'<div class="nav-exp" onclick="go(\'exp-'+e.id+'\')" style="flex-direction:column;align-items:flex-start;padding:4px 1rem 4px 1.5rem">'
+      +'<div style="display:flex;align-items:center;gap:5px;width:100%">'
+      +'<div class="edot" style="background:'+e.color+'"></div>'
+      +'<span style="font-size:11px;font-weight:500">'+e.id+'</span>'
+      +'</div>'
+      +'<div style="font-size:9px;color:var(--text3);padding-left:12px;line-height:1.3">'+(e.name.length>22?e.name.slice(0,22)+'…':e.name)+'</div>'
+      +'<div style="font-size:9px;color:var(--text3);padding-left:12px">'+e.researcher+'</div>'
+      +'</div>';
+  }).join('');
 }
 function go(view){
   S.view=view;S.curExp=null;S.expTab='mice';
@@ -1949,7 +2272,7 @@ function go(view){
   }
 }
 
-// Wire log form buttons with correct eid context
+// Wire log form buttons and keyboard navigation
 function ilWireButtons(eid,mid,ei){
   var _ei=ei===undefined?-1:ei;
   var b=document.getElementById('il-save-'+mid);
@@ -1958,6 +2281,123 @@ function ilWireButtons(eid,mid,ei){
   if(b2)b2.onclick=function(e){e.stopPropagation();saveKDV(eid,mid);};
   var b3=document.getElementById('il-addsite-'+mid);
   if(b3)b3.onclick=function(e){e.stopPropagation();addBlankSite(mid);};
+  // Keyboard navigation: Enter moves through size fields then weight then note then save
+  var ilEl=document.getElementById('il-'+mid);
+  if(!ilEl)return;
+  var _mid=mid;
+  ilEl.addEventListener('keydown',function(e){
+    if(e.key!=='Enter')return;
+    var t=e.target;
+    if(!t||t.tagName==='SELECT'||t.tagName==='BUTTON')return;
+    var tid=t.id||'';
+    var szPrefix='il-sz-'+_mid+'-';
+    if(tid.indexOf(szPrefix)===0){
+      e.preventDefault();
+      var si=parseInt(tid.slice(szPrefix.length));
+      var next=document.getElementById('il-sz-'+_mid+'-'+(si+1));
+      if(next&&!next.disabled){next.focus();return;}
+      var wEl=document.getElementById('il-w-'+_mid);
+      if(wEl){wEl.focus();return;}
+      submitLog(eid,_mid,_ei);return;
+    }
+    if(tid==='il-w-'+_mid){
+      e.preventDefault();
+      var nEl=document.getElementById('il-n-'+_mid);
+      if(nEl){nEl.focus();}
+      return;
+    }
+    if(tid==='il-cage-'+_mid){
+      e.preventDefault();
+      var nEl2=document.getElementById('il-n-'+_mid);
+      if(nEl2){nEl2.focus();}
+      return;
+    }
+    if(tid==='il-n-'+_mid){
+      e.preventDefault();
+      submitLog(eid,_mid,_ei);
+      return;
+    }
+  });
+}
+
+// RESCHEDULE ALL TASKS IN A DAY
+function showReschedAll(){
+  S._rsMap=S._rsMap||[];
+  var tasks=getTasksForDate(TISO).filter(function(t){return t.type!=='custom'&&t.type!=='distress'});
+  if(!tasks.length){alert('No tasks to reschedule today.');return;}
+  var checkboxes=tasks.map(function(t,i){
+    var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
+    return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px">'
+      +'<input type="checkbox" class="rsall-chk" value="'+rsIdx+'" checked>'
+      +'<span class="mono" style="min-width:80px">'+(t.mouseId||'--')+'</span>'
+      +'<span style="color:var(--text2);min-width:65px">'+(t.expId||'')+'</span>'
+      +'<span>'+(t.label||t.type)+'</span>'
+      +'</label>';
+  }).join('');
+  showModal('Reschedule tasks — today',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Select tasks to reschedule. All selected tasks will move to the same new date.</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:8px">'
+    +'<button class="btn btn-xs" onclick="document.querySelectorAll(\'.rsall-chk\').forEach(function(c){c.checked=true})">Select all</button>'
+    +'<button class="btn btn-xs" onclick="document.querySelectorAll(\'.rsall-chk\').forEach(function(c){c.checked=false})">Deselect all</button>'
+    +'</div>'
+    +'<div style="max-height:240px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--r);padding:6px 8px;margin-bottom:8px">'+checkboxes+'</div>'
+    +'<div class="f2">'
+    +'<div class="fg"><label class="fl">Reschedule to</label><input class="fi" id="rsall-date" type="date" value="'+addD(TISO,1)+'"></div>'
+    +'<div class="fg"><label class="fl">Reason</label><input class="fi" id="rsall-reason" placeholder="e.g. animal facility closed"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitReschedAll()"><i class="ti ti-calendar-event"></i> Reschedule selected</button>');
+}
+async function submitReschedAll(){
+  var nd=document.getElementById('rsall-date')&&document.getElementById('rsall-date').value;
+  var reason=document.getElementById('rsall-reason')&&document.getElementById('rsall-reason').value||'';
+  if(!nd){alert('Pick a date');return;}
+  var checked=document.querySelectorAll('.rsall-chk:checked');
+  if(!checked.length){alert('Select at least one task');return;}
+  var promises=[];
+  checked.forEach(function(c){
+    var idx=parseInt(c.value);
+    var task=S._rsMap[idx];
+    if(!task)return;
+    promises.push(
+      sb.from('adhoc_tasks').insert({
+        task_date:nd,type:task.type,description:task.label,
+        mouse_id:task.mouseId||null,experiment_id:task.expId||null,
+        note:'Rescheduled from '+task.date+(reason?' — '+reason:''),
+        original_task_key:task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false
+      })
+    );
+    if(task.expId){
+      promises.push(
+        sb.from('deviation_log').insert({
+          experiment_id:task.expId,mouse_id:task.mouseId||null,
+          event_type:task.type,original_date:task.date,actual_date:nd,reason:reason
+        })
+      );
+    }
+  });
+  await Promise.all(promises);
+  closeModal();await dbLoad();renderDaily();
+}
+
+// TRANSFER FROM DAILY VIEW
+function showTransferFromDaily(eid,mid){
+  // Reuse existing transfer modal
+  showTransfer(eid,mid);
+}
+
+// SORT MOUSE ID in experiment view
+S.mouseSort='default'; // 'default' | 'id-asc' | 'id-desc'
+function cycleSortMice(eid){
+  if(S.mouseSort==='default')S.mouseSort='id-asc';
+  else if(S.mouseSort==='id-asc')S.mouseSort='id-desc';
+  else S.mouseSort='default';
+  renderExp(eid);
+}
+function sortMiceForDisplay(mice){
+  if(S.mouseSort==='id-asc')return mice.slice().sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true})});
+  if(S.mouseSort==='id-desc')return mice.slice().sort(function(a,b){return b.id.localeCompare(a.id,undefined,{numeric:true})});
+  return mice; // default: group order
 }
 
 // Single delegated listener for Gone/NM/Skin checkboxes only
@@ -2002,4 +2442,4 @@ if(saved){
 // Otherwise show password screen (default)
 </script>
 </body>
-</html>
+</html>Harvest:</span> \'+(exp.harvest||\'--\')+(exp.harvest_updated_at?\' <span class=\"badge ba\" style=\"font-size:8px\"><i class=\"ti ti-alert-triangle\"></i> Updated \'+exp.harvest_updated_at+\'</span>\':\'\')+\'</span><button class=\"btn btn-xs btn-icon\" title=\"Edit experiment\" onclick=\"showEditExp(\\\'\'+eid+\'\\\')\"><i class=\"ti ti-pencil\"></i></button></div></div>\'
