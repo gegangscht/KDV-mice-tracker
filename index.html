@@ -175,21 +175,15 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 @keyframes sp{to{transform:rotate(360deg)}}
 .loading{display:flex;align-items:center;justify-content:center;padding:3rem;gap:.5rem;color:var(--text2);font-size:12px}
 @media print{
-  #auth-screen{display:none!important}
-  .sidebar{display:none!important}
-  .topbar{display:none!important}
-  .main-hdr{display:none!important}
+  #auth-screen,#app>.topbar,.sidebar,.main-hdr,.mc-grid,.task-sh,.task-row,.alert,.btn,.hv-wrap{display:none!important}
   .body{display:block!important}
   .main{overflow:visible!important}
-  .content{overflow:visible!important;padding:.5rem!important}
-  .btn{display:none!important}
-  .task-row{break-inside:avoid;border:0.5px solid #ccc!important;margin-bottom:2px!important;padding:4px 6px!important}
-  .task-row .btn{display:none!important}
-  .mc-grid{display:none!important}
+  .content{overflow:visible!important;padding:0!important}
   .print-harvest{display:block!important}
-  .no-print{display:none!important}
-  body{font-size:11px}
-  .mono{font-size:10px}
+  body{font-size:9px;margin:0;padding:6px}
+  @page{margin:8mm;size:A4 landscape}
+  table{page-break-inside:auto}
+  tr{page-break-inside:avoid}
 }
 .print-harvest{display:none}
 .print-site-rows td{padding:2px 5px;border-bottom:0.5px solid #eee;font-size:10px}
@@ -785,8 +779,11 @@ async function toggleAdHoc(id){
   await sb.from('adhoc_tasks').update({done:!t.done}).eq('id',id);
   await dbLoad();if(S.view==='daily')renderDaily();else renderWeek();
 }
-async function reschedTask(tj){
-  var task=typeof tj==='string'?JSON.parse(tj):tj;
+S._rsMap=[];
+function rsReg(task){S._rsMap.push(task);return S._rsMap.length-1;}
+async function reschedTask(idx){
+  var task=typeof idx==='number'?S._rsMap[idx]:idx;
+  if(!task){alert('Could not find task to reschedule.');return;}
   var nd=prompt('Reschedule to (YYYY-MM-DD):',addD(task.date||TISO,1));if(!nd)return;
   var reason=prompt('Reason:','');if(reason===null)return;
   await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
@@ -797,10 +794,12 @@ async function reschedTask(tj){
 // TASK SECTION
 function taskSection(title,icon,items){
   if(!items.length)return'';
+  S._rsMap=S._rsMap||[];
   var cols='82px 82px 1fr 90px 52px 110px';
   var rows=items.map(function(t){
+    var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
     return '<div class="task-row" style="grid-template-columns:'+cols+'">'
-      +'<span class="mono">'+(t.mouseId||'--')+(t.m&&t.m.cage_number?'<br><span class="cage-tag" style="margin-top:2px" onclick="editCage(\''+t.m.id+'\',\''+t.expId+'\')"><i class="ti ti-cage" style="font-size:9px"></i>'+(t.m.cage_number||'')+'</span>':'')+'</span>'
+      +'<span class="mono">'+(t.mouseId||'--')+'</span>'
       +'<span style="font-size:10px;color:var(--text2)">'+(t.expId||'--')+'<br><span style="font-size:9px;color:var(--text3)">'+(t.researcher||'')+'</span></span>'
       +'<span style="font-size:11px">'+(t.label||t.desc||'')+(t.lastNote?'<span class="npill">'+t.lastNote+'</span>':'')
         +(t.exp&&t.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t.exp.harvest+'</span></span>':'')+'</span>'
@@ -809,25 +808,9 @@ function taskSection(title,icon,items){
       +'<div style="display:flex;gap:3px;align-items:center">'
         +(t.type==='measure'?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'Done':'Done')+'</button>':'')
-        +'<button class="btn btn-xs btn-icon" onclick="reschedTask(\''+JSON.stringify({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''}).replace(/'/g,"&#39;")+'\')">'
-        +'<i class="ti ti-calendar-event"></i></button>'
+        +'<button class="btn btn-xs btn-icon" onclick="reschedTask('+rsIdx+')" title="Reschedule"><i class="ti ti-calendar-event"></i></button>'
       +'</div></div>'
-      +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>'
-      // Print-only tumor site rows for measurement tasks
-      +(t.type==='measure'?function(){
-        var last=lastMs(t.mouseId,t.expId);
-        if(!last||!last.tumor_sites||!last.tumor_sites.length)return '';
-        var rows='<div class="print-harvest" style="padding:2px 9px 4px;font-size:9px">';
-        last.tumor_sites.forEach(function(s){
-          rows+='<div style="display:flex;align-items:center;gap:8px;padding:1px 0">'
-            +'<span style="min-width:90px;color:#555">'+(s.location||'tumor')+(s.is_skin?' (skin)':'')+':'+'</span>'
-            +'<span style="border-bottom:1px solid #999;min-width:60px;margin-right:4px">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>'
-            +'<span style="font-size:8px;color:#aaa">prev: '+(s.dim1&&s.dim2?s.dim1+'x'+s.dim2:(s.status==='gone'?'Gone':'?'))+'</span>'
-            +'</div>';
-        });
-        rows+='</div>';
-        return rows;
-      }():'');
+      +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>';
   }).join('');
   return '<div style="margin-bottom:.75rem">'
     +'<div class="task-sh"><i class="ti '+icon+'" style="font-size:13px;color:var(--text2)"></i>'
@@ -875,18 +858,134 @@ function renderDaily(){
   }
   if(!tasks.length)html+='<div class="empty"><i class="ti ti-circle-check"></i>No tasks scheduled for today</div>';
 
-  // Print-only harvest protocol section
-  var activeExps=S.experiments.filter(function(e){return e.status==='active'&&e.harvest});
-  if(activeExps.length){
-    html+='<div class="print-harvest" style="margin-top:1.5rem;border-top:1px solid #ccc;padding-top:.75rem">';
-    html+='<div style="font-size:11px;font-weight:600;margin-bottom:.5rem">Harvest protocols</div>';
-    activeExps.forEach(function(exp){
-      html+='<div style="margin-bottom:.5rem;font-size:10px">'
-        +'<span style="font-weight:600">'+exp.id+' — '+exp.name+':</span> '+exp.harvest
-        +'</div>';
+  // ── PRINT SHEET ──────────────────────────────────────────────────────────
+  var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  var todayTasks=getTasksForDate(TISO);
+
+  html+='<div class="print-harvest">';
+  html+='<div style="font-size:13px;font-weight:700;margin-bottom:6px">Daily sheet — '+today+'</div>';
+
+  // Group by experiment, sorted by WP
+  var printExps=S.experiments.filter(function(e){return e.status==='active'});
+  printExps.sort(function(a,b){return a.id.localeCompare(b.id)});
+
+  printExps.forEach(function(exp){
+    var expMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'});
+    if(!expMice.length)return;
+
+    // Sort by cage number
+    expMice.sort(function(a,b){
+      var ca=a.cage_number||'zzz',cb=b.cage_number||'zzz';
+      return ca.localeCompare(cb,undefined,{numeric:true});
     });
+
+    // Get today's tasks for this experiment
+    var expTasks=todayTasks.filter(function(t){return t.expId===exp.id});
+    var hasMeasure=expTasks.some(function(t){return t.type==='measure'});
+    var treatTasks=expTasks.filter(function(t){return t.type==='treatment'});
+
+    html+='<div style="margin-bottom:10px">';
+    html+='<div style="font-size:11px;font-weight:700;margin-bottom:2px">'+exp.id+' — '+exp.name+'</div>';
+
+    // Treatment summary for today
+    if(treatTasks.length){
+      var treatByGroup={};
+      treatTasks.forEach(function(t){
+        var k=t.group||'';
+        if(!treatByGroup[k])treatByGroup[k]={label:t.label,dose:t.dose,route:t.route,mice:[]};
+        treatByGroup[k].mice.push(t.mouseId);
+      });
+      Object.keys(treatByGroup).forEach(function(grp){
+        var tr=treatByGroup[grp];
+        html+='<div style="font-size:9px;color:#333;margin-bottom:2px;padding:2px 4px;background:#f0f0f0;border-radius:3px">'
+          +'<strong>Treatment:</strong> '+tr.label+' '+tr.dose+' '+tr.route+' — mice: '+tr.mice.join(', ')
+          +'</div>';
+      });
+    }
+
+    // Determine which sites to show (from last measurement of any mouse)
+    // Collect all unique site locations across all mice in this exp
+    var allSiteLocs=[];
+    expMice.forEach(function(m){
+      var last=lastMs(m.id,exp.id);
+      if(last&&last.tumor_sites){
+        last.tumor_sites.forEach(function(s){
+          if(s.location&&!allSiteLocs.includes(s.location))allSiteLocs.push(s.location);
+        });
+      }
+    });
+    var multiSite=allSiteLocs.length>1;
+
+    // Table header
+    html+='<table style="width:100%;border-collapse:collapse;font-size:9px">';
+    html+='<thead><tr style="border-bottom:1.5px solid #000">'
+      +'<th style="text-align:left;padding:2px 4px;width:55px">Mouse</th>'
+      +'<th style="text-align:left;padding:2px 4px;width:30px">Cage</th>'
+      +'<th style="text-align:left;padding:2px 4px;width:60px">Group</th>'
+      +'<th style="text-align:left;padding:2px 4px;width:30px">Day</th>';
+
+    // Site columns - one per known location, or just "Size" for single-tumor
+    if(multiSite){
+      allSiteLocs.forEach(function(loc){
+        var isSkin=loc==='skin';
+        html+='<th style="text-align:center;padding:2px 4px;width:52px">'
+          +(isSkin?'<span style="color:#854F0B">'+loc+'</span>':loc)
+          +'<br><span style="font-weight:400;font-size:8px">prev → new</span></th>';
+      });
+    } else {
+      html+='<th style="text-align:center;padding:2px 4px;width:65px">Size<br><span style="font-weight:400;font-size:8px">prev → new</span></th>';
+    }
+
+    html+='<th style="text-align:center;padding:2px 4px;width:40px">Weight<br><span style="font-weight:400;font-size:8px">prev→ ___</span></th>'
+      +'<th style="text-align:left;padding:2px 4px">Note</th>'
+      +'</tr></thead><tbody>';
+
+    expMice.forEach(function(m,mi){
+      var last=lastMs(m.id,exp.id);
+      var days=dInTx(m);
+      var bgColor=mi%2===0?'#fff':'#f9f9f9';
+      html+='<tr style="border-bottom:.5px solid #ccc;background:'+bgColor+'">'
+        +'<td style="padding:3px 4px;font-family:monospace;font-size:9px">'+m.id+'</td>'
+        +'<td style="padding:3px 4px">'+(m.cage_number||'')+'</td>'
+        +'<td style="padding:3px 4px;font-size:8px">'+(m.group_name||'')+'</td>'
+        +'<td style="padding:3px 4px">'+(days!=null?'d'+days:'')+'</td>';
+
+      if(multiSite){
+        allSiteLocs.forEach(function(loc){
+          var prevSite=last&&last.tumor_sites?last.tumor_sites.find(function(s){return s.location===loc}):null;
+          var prevSz=prevSite?(prevSite.status==='gone'?'Gone':prevSite.dim1&&prevSite.dim2?prevSite.dim1+'x'+prevSite.dim2:''):'';
+          html+='<td style="padding:3px 4px;text-align:center">'
+            +'<span style="font-size:8px;color:#666">'+(prevSz||'--')+'</span>'
+            +' <span style="border-bottom:1px solid #999;display:inline-block;width:36px">&nbsp;</span>'
+            +'</td>';
+        });
+      } else {
+        var prevSite=last&&last.tumor_sites&&last.tumor_sites[0]?last.tumor_sites[0]:null;
+        var prevSz=prevSite?(prevSite.status==='gone'?'Gone':prevSite.dim1&&prevSite.dim2?prevSite.dim1+'x'+prevSite.dim2:''):'';
+        html+='<td style="padding:3px 4px;text-align:center">'
+          +'<span style="font-size:8px;color:#666">'+(prevSz||'--')+'</span>'
+          +' <span style="border-bottom:1px solid #999;display:inline-block;width:36px">&nbsp;</span>'
+          +'</td>';
+      }
+
+      html+='<td style="padding:3px 4px;text-align:center">'
+        +'<span style="font-size:8px;color:#666">'+(m.weight?m.weight+'g':'')+'</span>'
+        +' <span style="border-bottom:1px solid #999;display:inline-block;width:28px">&nbsp;</span>'
+        +'</td>'
+        +'<td style="padding:3px 4px"><span style="border-bottom:.5px solid #ccc;display:inline-block;width:100%;min-width:60px">&nbsp;</span></td>'
+        +'</tr>';
+    });
+
+    html+='</tbody></table>';
+
+    // Harvest protocol
+    if(exp.harvest){
+      html+='<div style="font-size:8px;color:#555;margin-top:2px;font-style:italic">Harvest: '+exp.harvest+'</div>';
+    }
     html+='</div>';
-  }
+  });
+
+  html+='</div>'; // end print-harvest
 
   document.getElementById('content').innerHTML=html;
 }
@@ -933,11 +1032,24 @@ function renderWeek(){
   document.getElementById('content').innerHTML=html;
 }
 function wkDet(d,type,ef){
-  var tasks=getTasksForDate(d);if(type)tasks=tasks.filter(function(t){return t.type===type});if(ef)tasks=tasks.filter(function(t){return t.expId===ef});
+  S._rsMap=S._rsMap||[];
+  var tasks=getTasksForDate(d);
+  if(type)tasks=tasks.filter(function(t){return t.type===type});
+  if(ef)tasks=tasks.filter(function(t){return t.expId===ef});
   var html='<div class="card"><div style="font-size:12px;font-weight:500;margin-bottom:.5rem">'+(type?TLBL2[type]:ef)+' - '+fmtD(d)+'</div>';
-  tasks.forEach(function(t){html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);font-size:11px"><span class="mono" style="min-width:72px">'+(t.mouseId||'--')+'</span><span style="color:var(--text2);min-width:65px">'+(t.expId||'--')+'</span><span style="flex:1">'+(t.label||t.desc||'')+'</span><span class="badge bgy">'+t.type+'</span><button class="btn btn-xs" onclick="reschedTask(\''+JSON.stringify({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''}).replace(/'/g,"&#39;")+'\')" ><i class="ti ti-calendar-event"></i> Reschedule</button></div>';});
+  tasks.forEach(function(t){
+    var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);font-size:11px">'
+      +'<span class="mono" style="min-width:72px">'+(t.mouseId||'--')+'</span>'
+      +'<span style="color:var(--text2);min-width:65px">'+(t.expId||'--')+'</span>'
+      +'<span style="flex:1">'+(t.label||t.desc||'')+'</span>'
+      +'<span class="badge bgy">'+t.type+'</span>'
+      +'<button class="btn btn-xs" onclick="reschedTask('+rsIdx+')"><i class="ti ti-calendar-event"></i> Reschedule</button>'
+      +'</div>';
+  });
   if(!tasks.length)html+='<div class="empty" style="padding:1rem">No tasks</div>';
-  html+='</div>';document.getElementById('wk-det').innerHTML=html;
+  html+='</div>';
+  document.getElementById('wk-det').innerHTML=html;
 }
 
 // ALL EXPS
