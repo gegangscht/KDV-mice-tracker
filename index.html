@@ -1292,7 +1292,7 @@ async function renderExp(eid){
   document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="exportExcel(\''+eid+'\')" ><i class="ti ti-download"></i> Export Excel</button>';
   if(!S.measurements[eid]){document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';await loadAll(eid);}
   var mice=S.mice[eid]||[];var groups=S.groups[eid]||[];var act=mice.filter(function(m){return m.status==='active'}).length;
-  var html='<div class="card">'
+  var harBadge=exp.harvest_updated_at?(' <span class="badge ba" style="font-size:8px"><i class="ti ti-alert-triangle"></i> Updated '+exp.harvest_updated_at+'</span>'):'';  var html='<div class="card">'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;font-size:11px">'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Researcher</div><div style="font-weight:500">'+exp.researcher+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Model</div><div style="font-weight:500">'+(exp.model||'--')+'</div></div>'
@@ -1302,7 +1302,7 @@ async function renderExp(eid){
     +'<div><div style="color:var(--text2);margin-bottom:1px">Type</div><div style="font-weight:500">'+(exp.is_mastectomy?'<span class="badge ba">Mastectomy</span>':'Standard')+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Started</div><div style="font-weight:500">'+exp.started+'</div></div>'
     +'</div><hr class="div">'
-    +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+(exp.harvest_updated_at?' <span class="badge ba" style="font-size:8px" title="Harvest protocol was updated on '+exp.harvest_updated_at+'"><i class="ti ti-alert-triangle"></i> Updated '+exp.harvest_updated_at+'</span>':'')+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div></div>'
+    +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+harBadge+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div></div>'
     +'<div class="tabs">'
     +'<div class="tab '+(S.expTab==='mice'?'act':'')+'" onclick="ST(\'mice\')">Mice & measurements</div>'
     +'<div class="tab '+(S.expTab==='growth'?'act':'')+'" onclick="ST(\'growth\')">Tumor growth</div>'
