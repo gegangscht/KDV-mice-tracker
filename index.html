@@ -29,8 +29,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 .auth-logo{text-align:center;margin-bottom:1.5rem}
 .auth-logo h1{font-size:20px;font-weight:500;margin-bottom:.25rem}
 .auth-logo p{font-size:11px;color:var(--text2)}
-.user-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem}
-.user-btn{padding:.625rem;border:.5px solid var(--border);border-radius:var(--r);background:var(--surface2);cursor:pointer;text-align:center;font-size:12px;font-family:var(--font);color:var(--text);transition:all .1s}
+.user-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem;align-items:start}
+.user-btn{padding:.625rem .625rem .5rem;border:.5px solid var(--border);border-radius:var(--r);background:var(--surface2);cursor:pointer;text-align:center;font-size:12px;font-family:var(--font);color:var(--text);transition:all .1s;width:100%;display:block;box-sizing:border-box}
 .user-btn:hover{border-color:var(--blue);background:var(--blue-bg);color:var(--blue)}
 .user-avatar{width:32px;height:32px;border-radius:50%;margin:0 auto .375rem;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#fff}
 .auth-div{display:flex;align-items:center;gap:.5rem;color:var(--text3);font-size:11px;margin:.75rem 0}
@@ -182,7 +182,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .float-bar .btn-g{background:#3B6D11;border-color:#3B6D11}
 .mouse-chk{width:14px;height:14px;cursor:pointer;accent-color:var(--blue)}
 @media print{
-  #auth-screen,#app>.topbar,.sidebar,.main-hdr,.mc-grid,.task-sh,.task-row,.alert,.btn,.hv-wrap{display:none!important}
+  #auth-screen,#app>.topbar,.sidebar,.main-hdr,.mc-grid,.task-sh,.task-row,.cage-hdr,.alert,.btn,.hv-wrap{display:none!important}
   .body{display:block!important}
   .main{overflow:visible!important}
   .content{overflow:visible!important;padding:0!important}
@@ -329,13 +329,13 @@ async function loadUsers(){
 function renderUserGrid(){
   const g=document.getElementById('user-grid');if(!g)return;
   g.innerHTML=S.users.map(function(u){
-    return '<div style="position:relative;display:inline-flex">'
+    return '<div style="position:relative">'
       +'<button class="user-btn" onclick="selUser(\''+u.id+'\',\''+u.name+'\',\''+u.color+'\')">'
       +'<div class="user-avatar" style="background:'+u.color+'">'+u.name[0]+'</div>'
       +u.name+(u.code?'<div style="font-size:9px;font-weight:600;color:var(--blue);margin-top:1px">'+u.code+'</div>':'')
       +'<div style="font-size:9px;color:var(--text3)">'+u.role+'</div>'
       +'</button>'
-      +'<button onclick="event.stopPropagation();showEditUser(\''+u.id+'\')" style="position:absolute;top:3px;right:3px;background:none;border:none;cursor:pointer;color:var(--text3);padding:2px;line-height:1" title="Edit user"><i class="ti ti-pencil" style="font-size:11px"></i></button>'
+      +'<button onclick="event.stopPropagation();showEditUser(\''+u.id+'\')" style="position:absolute;top:4px;right:4px;background:rgba(255,255,255,.8);border:none;cursor:pointer;color:var(--text3);padding:2px 3px;border-radius:3px;line-height:1;z-index:1" title="Edit user"><i class="ti ti-pencil" style="font-size:10px"></i></button>'
       +'</div>';
   }).join('');
 }
@@ -1115,7 +1115,7 @@ function renderDaily(){
       return byMouse;
     }
     function cageHeader(cage,suffix){
-      return '<div style="background:var(--surface2);border-radius:var(--r);padding:3px 8px;margin:4px 0 2px;font-size:9px;font-weight:600;color:var(--text2);letter-spacing:.04em">Cage '+cage+(suffix?' <span style="font-weight:400;color:var(--text3)">'+ suffix+'</span>':'')+'</div>';
+      return '<div class="cage-hdr" style="background:var(--surface2);border-radius:var(--r);padding:3px 8px;margin:4px 0 2px;font-size:9px;font-weight:600;color:var(--text2);letter-spacing:.04em">Cage '+cage+(suffix?' <span style="font-weight:400;color:var(--text3)">'+suffix+'</span>':'')+' </div>';
     }
 
     // Detect cages shared across multiple WPs
