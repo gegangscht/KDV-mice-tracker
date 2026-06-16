@@ -2657,8 +2657,8 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
     if(!expTasks.length)return;
 
     // WP header
-    html+='<div style="margin-bottom:8px;page-break-inside:avoid">';
-    html+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;display:flex;justify-content:space-between">'
+    phtml+='<div style="margin-bottom:8px;page-break-inside:avoid">';
+    phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;display:flex;justify-content:space-between">'
       +'<span>'+eid+' — '+(exp?exp.name:'')+'</span>'
       +'<span style="font-size:8px;font-weight:400;color:#555">'+(exp&&exp.harvest?'Harvest: '+exp.harvest:'')+'</span>'
       +'</div>';
@@ -2685,8 +2685,8 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
       var siteLocs=getSiteLocs(cageMice,eid);
 
       // Cage sub-header
-      html+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+'</div>';
-      html+=printMiceTable(cageMice,cageMouseMap,eid,siteLocs);
+      phtml+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+'</div>';
+      phtml+=printMiceTable(cageMice,cageMouseMap,eid,siteLocs);
     });
 
     // No cage section
@@ -2696,18 +2696,18 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
       var ncMice=Object.keys(ncMouseMap).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})})
         .map(function(mid){return (S.mice[eid]||[]).find(function(m){return m.id===mid;})}).filter(Boolean);
       var ncSiteLocs=getSiteLocs(ncMice,eid);
-      html+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px;color:#666">No cage assigned</div>';
-      html+=printMiceTable(ncMice,ncMouseMap,eid,ncSiteLocs);
+      phtml+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px;color:#666">No cage assigned</div>';
+      phtml+=printMiceTable(ncMice,ncMouseMap,eid,ncSiteLocs);
     }
 
-    html+='</div>';
+    phtml+='</div>';
   });
 
   // Mixed cages section
   var ptMixedTasks=todayTasks.filter(function(t){return t.m&&t.m.cage_number&&ptMixedCages.has(t.m.cage_number);});
   if(ptMixedTasks.length){
-    html+='<div style="margin-bottom:8px;page-break-inside:avoid">';
-    html+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px">Mixed cages</div>';
+    phtml+='<div style="margin-bottom:8px;page-break-inside:avoid">';
+    phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px">Mixed cages</div>';
     var ptMixByCage={};
     ptMixedTasks.forEach(function(t){var c=t.m.cage_number;if(!ptMixByCage[c])ptMixByCage[c]=[];ptMixByCage[c].push(t);});
     Object.keys(ptMixByCage).sort().forEach(function(cage){
@@ -2720,10 +2720,10 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
       }).filter(Boolean);
       var mSiteLocs=[];
       mMice.forEach(function(m){var last=lastMs(m.id,mMap[m.id]&&mMap[m.id][0]?mMap[m.id][0].expId:'');if(last&&last.tumor_sites)last.tumor_sites.forEach(function(s){if(s.location&&!mSiteLocs.includes(s.location))mSiteLocs.push(s.location);});});
-      html+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+' <span style="font-weight:400;color:#666">('+wps+')</span></div>';
-      html+=printMiceTable(mMice,mMap,mMap[Object.keys(mMap)[0]][0].expId,mSiteLocs);
+      phtml+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+' <span style="font-weight:400;color:#666">('+wps+')</span></div>';
+      phtml+=printMiceTable(mMice,mMap,mMap[Object.keys(mMap)[0]][0].expId,mSiteLocs);
     });
-    html+='</div>';
+    phtml+='</div>';
   }
 
   // Post-Mx distress sections
@@ -2731,10 +2731,10 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
     var postMxMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.post_mx_status==='post_mx';});
     if(!postMxMice.length)return;
     postMxMice.sort(function(a,b){return(a.cage_number||'').localeCompare(b.cage_number||'',undefined,{numeric:true});});
-    html+='<div style="margin-bottom:8px;page-break-inside:avoid">';
-    html+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #854F0B;margin-bottom:3px;color:#854F0B">'+exp.id+' — Post-Mx distress monitoring</div>';
-    html+='<table style="width:100%;border-collapse:collapse;font-size:8.5px">';
-    html+='<thead><tr style="border-bottom:1px solid #000">'
+    phtml+='<div style="margin-bottom:8px;page-break-inside:avoid">';
+    phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #854F0B;margin-bottom:3px;color:#854F0B">'+exp.id+' — Post-Mx distress monitoring</div>';
+    phtml+='<table style="width:100%;border-collapse:collapse;font-size:8.5px">';
+    phtml+='<thead><tr style="border-bottom:1px solid #000">'
       +'<th style="padding:1px 3px;width:55px">Mouse</th>'
       +'<th style="padding:1px 3px;width:30px">Cage</th>'
       +'<th style="padding:1px 3px;width:55px">Group</th>'
@@ -2747,7 +2747,7 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
       var lastChecks=mevts.filter(function(e){return e.event_type==='distress_check';}).slice(-3);
       var notesStr=lastChecks.map(function(c){return c.event_date.slice(5)+': '+(c.details&&c.details.note?c.details.note:c.label.replace('Distress check: ',''));}).join(' | ');
       var daysMx=m.mx_date?Math.round((new Date(TISO)-new Date(m.mx_date))/86400000):null;
-      html+='<tr style="border-bottom:.5px solid #ddd;background:'+(mi%2===0?'#fff':'#f5f5f5')+'">'
+      phtml+='<tr style="border-bottom:.5px solid #ddd;background:'+(mi%2===0?'#fff':'#f5f5f5')+'">'
         +'<td style="padding:2px 3px;font-family:monospace;font-size:8px">'+m.id+'</td>'
         +'<td style="padding:2px 3px">'+(m.cage_number||'')+'</td>'
         +'<td style="padding:2px 3px;font-size:7.5px">'+(m.group_name||'')+'</td>'
@@ -2756,10 +2756,10 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
         +'<td style="padding:2px 3px"><span style="border-bottom:1px solid #999;display:inline-block;width:100%">&nbsp;</span></td>'
         +'</tr>';
     });
-    html+='</tbody></table></div>';
+    phtml+='</tbody></table></div>';
   });
 
-  phtml+='</div>'; // end print-harvest
+  return phtml;
 }
 
 function doPrint(){
