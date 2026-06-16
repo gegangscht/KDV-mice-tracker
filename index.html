@@ -232,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v50</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v48</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2634,7 +2634,7 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
         var pz1=ps1?(ps1.status==='gone'?'Gone':ps1.dim1&&ps1.dim2?ps1.dim1+'x'+ps1.dim2:''):'';
         h+='<td style="padding:2px 3px;text-align:center"><span style="font-size:7.5px;color:#666">'+(pz1||'--')+'</span> <span style="border-bottom:1px solid #999;display:inline-block;width:28px">&nbsp;</span></td>';
       }
-      h+='<td style="padding:2px 3px;text-align:center"><span style="font-size:7.5px;color:#666">'+(m.weight?m.weight+'g':'')+'</span> <span style="border-bottom:1px solid #999;display:inline-block;width:22px">&nbsp;</span></td>'
+      h+='<td style="padding:2px 3px;text-align:center"><span style="display:block;font-size:7.5px;color:#666;line-height:1.2">'+(m.weight?m.weight+'g':'&nbsp;')+'</span><span style="border-bottom:1px solid #999;display:inline-block;width:32px">&nbsp;</span></td>'
         +'<td style="padding:2px 3px"><span style="border-bottom:.5px solid #ccc;display:inline-block;width:100%;min-width:50px">&nbsp;</span></td>'
         +'</tr>';
     });
