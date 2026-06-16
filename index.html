@@ -181,17 +181,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .float-bar .btn:hover{background:rgba(255,255,255,.25)}
 .float-bar .btn-g{background:#3B6D11;border-color:#3B6D11}
 .mouse-chk{width:14px;height:14px;cursor:pointer;accent-color:var(--blue)}
-@media print{
-  /* Hide everything except print root — use visibility+position to avoid blank page */
-  body > *:not(#print-root){display:none!important;visibility:hidden!important;position:absolute!important;left:-9999px!important}
-  #print-root{display:block!important;visibility:visible!important;position:static!important;font-family:Arial,Helvetica,sans-serif;font-size:9px;margin:0;padding:6px;width:100%}
-  @page{margin:8mm}
-  table{page-break-inside:auto;border-collapse:collapse;width:100%}
-  tr{page-break-inside:avoid}
-  .print-harvest{display:block!important}
-}
 .print-harvest{display:none}
-#print-root{display:none}
 .print-site-rows td{padding:2px 5px;border-bottom:0.5px solid #eee;font-size:10px}
 </style>
 </head>
@@ -242,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v47</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2768,10 +2758,24 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
 }
 
 function doPrint(){
-  var pr=document.getElementById('print-root');
-  if(!pr){window.print();return;}
-  pr.innerHTML=buildPrintHTML();
-  window.print();
+  var html=buildPrintHTML();
+  var win=window.open('','_blank','width=900,height=700');
+  if(!win){alert('Please allow popups for this page to use Print.');return;}
+  win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
+    +'<title>Daily sheet — '+(S.dailyDate||TISO)+'</title>'
+    +'<style>'
+    +'body{font-family:Arial,Helvetica,sans-serif;font-size:9px;margin:0;padding:8mm}'
+    +'table{width:100%;border-collapse:collapse}'
+    +'th,td{padding:2px 3px}'
+    +'tr{page-break-inside:avoid}'
+    +'@page{margin:8mm}'
+    +'</style>'
+    +'</head><body>'
+    +html
+    +'</body></html>');
+  win.document.close();
+  win.focus();
+  setTimeout(function(){win.print();},400);
 }
 
 function buildExpNav(){
