@@ -958,17 +958,24 @@ function taskSection(title,icon,items){
 // DAILY
 function renderDaily(){
   S.view='daily';
-  document.getElementById('pg-title').textContent='Daily tasks';
+  if(!S.dailyDate)S.dailyDate=TISO;
+  var isToday=S.dailyDate===TISO;
+  document.getElementById('pg-title').textContent=isToday?'Daily tasks — today':'Daily tasks — '+fmtD(S.dailyDate);
   document.getElementById('tb-acts').innerHTML='';
   document.getElementById('pg-acts').innerHTML=
-    '<div style="display:flex;gap:3px">'
+    '<button class="btn btn-xs btn-icon" onclick="S.dailyDate=addD(S.dailyDate,-1);renderDaily()" title="Previous day"><i class="ti ti-arrow-left"></i></button>'
+    +'<input type="date" class="fs" value="'+S.dailyDate+'" onchange="S.dailyDate=this.value;renderDaily()" style="padding:3px 6px;font-size:10px;width:130px">'
+    +(isToday?'':'<button class="btn btn-xs btn-p" onclick="S.dailyDate=TISO;renderDaily()"><i class="ti ti-calendar-today"></i> Today</button>')
+    +'<button class="btn btn-xs btn-icon" onclick="S.dailyDate=addD(S.dailyDate,1);renderDaily()" title="Next day"><i class="ti ti-arrow-right"></i></button>'
+    +'<div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>'
+    +'<div style="display:flex;gap:3px">'
     +'<button class="srt-btn '+(S.sortBy==='type'?'act':'')+'" onclick="S.sortBy=\'type\';renderDaily()">Type</button>'
     +'<button class="srt-btn '+(S.sortBy==='exp'?'act':'')+'" onclick="S.sortBy=\'exp\';renderDaily()">WP</button>'
     +'</div>'
     +'<button class="btn btn-xs" onclick="showReschedAll()"><i class="ti ti-calendar-event"></i> Reschedule all</button>'
     +'<button class="btn btn-xs" onclick="showAddTask()"><i class="ti ti-plus"></i> Add task</button>'
     +'<button class="btn btn-xs" onclick="window.print()"><i class="ti ti-printer"></i> Print</button>';
-  var raw=getTasksForDate(TISO);var tasks=sortTasks(raw);
+  var raw=getTasksForDate(S.dailyDate);var tasks=sortTasks(raw);
   logOrder=tasks.filter(function(t){return t.type==='measure'}).map(function(t){return t.mouseId});
   var active=S.experiments.reduce(function(s,e){return s+(S.mice[e.id]||[]).filter(function(m){return m.status==='active'}).length},0);
   var html='<div class="mc-grid">'
@@ -1214,7 +1221,9 @@ function renderWeek(){
     var byE={};dt.forEach(function(t){var k=t.expId||'Other';if(!byE[k])byE[k]=[];byE[k].push(t);});
     html+='<div class="wk-day"><div class="wdh'+(isT?' today':'')+'">'+DOW[dayD.getDay()]+' <span style="opacity:.7;font-size:9px">'+fmtD(d)+'</span>'+(isT?'<span style="font-size:8px;background:var(--blue);color:#fff;border-radius:2px;padding:0 3px;margin-left:2px">today</span>':'')+'</div>';
     if(S.sortBy==='type'){
-      if(byTy.measure&&byTy.measure.length)html+='<div class="wt wt-m" onclick="wkDet(\''+d+'\',\'measure\')">&#128207; '+byTy.measure.length+' measure</div>';
+      // Merge all measure variants into one count
+      var measureCount=(byTy.measure||[]).length+(byTy['measure-tumor']||[]).length+(byTy['measure-combined']||[]).length+(byTy['measure-weight']||[]).length;
+      if(measureCount)html+='<div class="wt wt-m" onclick="wkDet(\''+d+'\',\'_measure\')">&#128207; '+measureCount+' measure</div>';
       if(byTy.treatment&&byTy.treatment.length)html+='<div class="wt wt-t" onclick="wkDet(\''+d+'\',\'treatment\')">&#128137; '+byTy.treatment.length+' treat</div>';
       if(byTy.blood)byTy.blood.forEach(function(t){html+='<div class="wt wt-b" onclick="wkDet(\''+d+'\',\'blood\')">&#129754; '+t.mouseId+'</div>';});
       if(byTy.ivis)byTy.ivis.forEach(function(t){html+='<div class="wt wt-i">&#128300; '+t.mouseId+'</div>';});
@@ -1231,9 +1240,14 @@ function renderWeek(){
 function wkDet(d,type,ef){
   S._rsMap=S._rsMap||[];
   var tasks=getTasksForDate(d);
-  if(type)tasks=tasks.filter(function(t){return t.type===type});
+  if(type==='_measure'){
+    tasks=tasks.filter(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';});
+  } else if(type){
+    tasks=tasks.filter(function(t){return t.type===type});
+  }
   if(ef)tasks=tasks.filter(function(t){return t.expId===ef});
-  var html='<div class="card"><div style="font-size:12px;font-weight:500;margin-bottom:.5rem">'+(type?TLBL2[type]:ef)+' - '+fmtD(d)+'</div>';
+  var title=type==='_measure'?'Measurements':(type?TLBL2[type]||type:(ef||''));
+  var html='<div class="card"><div style="font-size:12px;font-weight:500;margin-bottom:.5rem">'+title+' — '+fmtD(d)+'</div>';
   tasks.forEach(function(t){
     var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
     html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);font-size:11px">'
@@ -2291,7 +2305,7 @@ function go(view){
   S.view=view;S.curExp=null;S.expTab='mice';
   if(typeof clearSelection==='function')clearSelection();
   ['daily','week','exps','new'].forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.toggle('act',n===view);});
-  if(view==='daily')renderDaily();
+  if(view==='daily'){S.dailyDate=TISO;renderDaily();}
   else if(view==='week')renderWeek();
   else if(view==='exps')renderExps();
   else if(view==='new')renderNew();
@@ -2352,7 +2366,8 @@ function ilWireButtons(eid,mid,ei){
 // RESCHEDULE ALL TASKS IN A DAY
 function showReschedAll(){
   S._rsMap=S._rsMap||[];
-  var tasks=getTasksForDate(TISO).filter(function(t){return t.type!=='custom'&&t.type!=='distress'});
+  var viewDate=S.dailyDate||TISO;
+  var tasks=getTasksForDate(viewDate).filter(function(t){return t.type!=='custom'&&t.type!=='distress'});
   if(!tasks.length){alert('No tasks to reschedule today.');return;}
   var checkboxes=tasks.map(function(t,i){
     var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
@@ -2371,7 +2386,7 @@ function showReschedAll(){
     +'</div>'
     +'<div style="max-height:240px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--r);padding:6px 8px;margin-bottom:8px">'+checkboxes+'</div>'
     +'<div class="f2">'
-    +'<div class="fg"><label class="fl">Reschedule to</label><input class="fi" id="rsall-date" type="date" value="'+addD(TISO,1)+'"></div>'
+    +'<div class="fg"><label class="fl">Reschedule to</label><input class="fi" id="rsall-date" type="date" value="'+addD(S.dailyDate||TISO,1)+'"></div>'
     +'<div class="fg"><label class="fl">Reason</label><input class="fi" id="rsall-reason" placeholder="e.g. animal facility closed"></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
