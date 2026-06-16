@@ -213,7 +213,8 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="auth-div">or</div>
       <button class="btn" style="width:100%;justify-content:center" onclick="toggleAddUser()"><i class="ti ti-user-plus"></i> Add new user</button>
       <div class="add-user-form" id="add-user-form">
-        <input class="fi" id="new-user-name" placeholder="Your name" style="flex:1">
+        <input class="fi" id="new-user-fname" placeholder="First name" style="flex:1">
+        <input class="fi" id="new-user-lname" placeholder="Last name" style="flex:1">
         <input class="fi" id="new-user-code" placeholder="Code (TL)" style="width:70px" maxlength="3">
         <select class="fs" id="new-user-role" style="width:100px"><option value="technician">Technician</option><option value="researcher">Researcher</option><option value="pi">PI</option></select>
         <button class="btn btn-p" onclick="addUser()"><i class="ti ti-check"></i></button>
@@ -285,7 +286,7 @@ const TLBL2={measure:'Tumor measurements','measure-tumor':'Tumor measurements','
 const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined':'ti-ruler-2','measure-weight':'ti-weight',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list',distress:'ti-stethoscope'};
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
-const S={view:'daily',curExp:null,expTab:'mice',sortBy:'type',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{}};
+const S={view:'daily',curExp:null,expTab:'mice',sortBy:'exp',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{}};
 
 // HELPERS
 function parseSz(s){if(!s)return null;const m=s.toString().match(/(\d+\.?\d*)\s*[x\xd7X]\s*(\d+\.?\d*)/);return m?{v1:parseFloat(m[1]),v2:parseFloat(m[2])}:null}
@@ -327,10 +328,63 @@ async function loadUsers(){
 }
 function renderUserGrid(){
   const g=document.getElementById('user-grid');if(!g)return;
-  g.innerHTML=S.users.map(function(u){return '<button class="user-btn" onclick="selUser(\''+u.id+'\',\''+u.name+'\',\''+u.color+'\')">'
-    +'<div class="user-avatar" style="background:'+u.color+'">'+u.name[0]+'</div>'
-    +u.name+(u.code?'<div style="font-size:9px;font-weight:600;color:var(--blue);margin-top:1px">'+u.code+'</div>':'')+'<div style="font-size:9px;color:var(--text3)">'+u.role+'</div></button>'}).join('');
+  g.innerHTML=S.users.map(function(u){
+    return '<div style="position:relative;display:inline-flex">'
+      +'<button class="user-btn" onclick="selUser(\''+u.id+'\',\''+u.name+'\',\''+u.color+'\')">'
+      +'<div class="user-avatar" style="background:'+u.color+'">'+u.name[0]+'</div>'
+      +u.name+(u.code?'<div style="font-size:9px;font-weight:600;color:var(--blue);margin-top:1px">'+u.code+'</div>':'')
+      +'<div style="font-size:9px;color:var(--text3)">'+u.role+'</div>'
+      +'</button>'
+      +'<button onclick="event.stopPropagation();showEditUser(\''+u.id+'\')" style="position:absolute;top:3px;right:3px;background:none;border:none;cursor:pointer;color:var(--text3);padding:2px;line-height:1" title="Edit user"><i class="ti ti-pencil" style="font-size:11px"></i></button>'
+      +'</div>';
+  }).join('');
 }
+function showEditUser(uid){
+  var u=S.users.find(function(x){return x.id===uid});if(!u)return;
+  // Split name into first/last
+  var parts=(u.name||'').split(' ');
+  var fname=parts[0]||'';
+  var lname=parts.slice(1).join(' ')||'';
+  S._editUserId=uid;
+  // Show inline edit form below user grid
+  var existing=document.getElementById('edit-user-form');
+  if(existing)existing.remove();
+  var form=document.createElement('div');
+  form.id='edit-user-form';
+  form.style.cssText='margin-top:.75rem;padding:.75rem;background:var(--surface2);border-radius:var(--r);border:.5px solid var(--border)';
+  form.innerHTML='<div style="font-size:11px;font-weight:500;margin-bottom:.5rem">Edit: '+u.name+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.5rem">'
+    +'<input class="fi" id="eu-fname" placeholder="First name" value="'+fname+'" style="flex:1;min-width:100px">'
+    +'<input class="fi" id="eu-lname" placeholder="Last name" value="'+lname+'" style="flex:1;min-width:100px">'
+    +'<input class="fi" id="eu-code" placeholder="Code (TL)" value="'+(u.code||'')+'" style="width:70px" maxlength="3">'
+    +'</div>'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+    +'<select class="fs" id="eu-role" style="flex:1"><option value="technician"'+(u.role==='technician'?' selected':'')+'>Technician</option><option value="researcher"'+(u.role==='researcher'?' selected':'')+'>Researcher</option><option value="pi"'+(u.role==='pi'?' selected':'')+'>PI</option></select>'
+    +'<button class="btn btn-p btn-xs" onclick="saveEditUser()"><i class="ti ti-check"></i> Save</button>'
+    +'<button class="btn btn-xs" onclick="var ef=document.getElementById(\'edit-user-form\');if(ef)ef.remove()">Cancel</button>'
+    +'</div>';
+  var grid=document.getElementById('user-grid');
+  if(grid&&grid.parentNode)grid.parentNode.insertBefore(form,grid.nextSibling);
+  setTimeout(function(){var el=document.getElementById('eu-fname');if(el)el.focus();},50);
+}
+
+async function saveEditUser(){
+  var uid=S._editUserId;if(!uid)return;
+  var fname=(document.getElementById('eu-fname')&&document.getElementById('eu-fname').value||'').trim();
+  var lname=(document.getElementById('eu-lname')&&document.getElementById('eu-lname').value||'').trim();
+  var name=(fname+(lname?' '+lname:'')).trim();
+  var code=(document.getElementById('eu-code')&&document.getElementById('eu-code').value||'').trim().toUpperCase().slice(0,3);
+  var role=(document.getElementById('eu-role')&&document.getElementById('eu-role').value)||'technician';
+  if(!name){alert('Enter at least a first name');return;}
+  var r=await sb.from('lab_users').update({name:name,code:code||null,role:role}).eq('id',uid);
+  if(r.error){alert('Error: '+r.error.message);return;}
+  // Update local state
+  var u=S.users.find(function(x){return x.id===uid});
+  if(u){u.name=name;u.code=code||null;u.role=role;}
+  var form=document.getElementById('edit-user-form');if(form)form.remove();
+  renderUserGrid();
+}
+
 function checkPW(){
   var pw=(document.getElementById('pw-input')&&document.getElementById('pw-input').value)||'';
   if(pw==='NKI2026'){
@@ -348,14 +402,16 @@ function selUser(id,name,color){
 }
 function toggleAddUser(){var f=document.getElementById('add-user-form');f.classList.toggle('vis');if(f.classList.contains('vis'))document.getElementById('new-user-name').focus();}
 async function addUser(){
-  var name=(document.getElementById('new-user-name').value||'').trim();
+  var fname=(document.getElementById('new-user-fname')&&document.getElementById('new-user-fname').value||'').trim();
+  var lname=(document.getElementById('new-user-lname')&&document.getElementById('new-user-lname').value||'').trim();
+  var name=(fname+(lname?' '+lname:'')).trim();
   var code=(document.getElementById('new-user-code').value||'').trim().toUpperCase().slice(0,3);
   var role=document.getElementById('new-user-role').value;
-  if(!name)return;
+  if(!name){alert('Enter at least a first name');return;}
   var color=COLS[S.users.length%COLS.length];
   var res=await sb.from('lab_users').insert({name:name,role:role,color:color,code:code||null}).select().single();
   var data=res.data;
-  if(data){S.users.push(data);renderUserGrid();document.getElementById('add-user-form').classList.remove('vis');document.getElementById('new-user-name').value='';document.getElementById('new-user-code').value='';}
+  if(data){S.users.push(data);renderUserGrid();document.getElementById('add-user-form').classList.remove('vis');document.getElementById('new-user-fname').value='';document.getElementById('new-user-lname').value='';document.getElementById('new-user-code').value='';}
 }
 function switchUser(){sessionStorage.removeItem('mt_user');location.reload();}
 function launchApp(){
@@ -1124,160 +1180,200 @@ function renderDaily(){
 
   // ── PRINT SHEET ──────────────────────────────────────────────────────────
   var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  // Use the same tasks already sorted/filtered for this view
-  var todayTasks=tasks; // tasks = normalTasks after distress split, already sortTasks() applied
+  var todayTasks=tasks; // already sorted/filtered for this view
 
   html+='<div class="print-harvest">';
-  html+='<div style="font-size:13px;font-weight:700;margin-bottom:6px">Daily sheet — '+today+'</div>';
+  html+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1.5px solid #000;padding-bottom:3px">Daily sheet — '+today+'</div>';
 
-  // Group by experiment, sorted by WP
-  var printExps=S.experiments.filter(function(e){return e.status==='active'});
-  printExps.sort(function(a,b){return a.id.localeCompare(b.id)});
+  // Build cage→tasks map same way as daily view
+  var ptCageToExps={};
+  todayTasks.forEach(function(t){if(t.m&&t.m.cage_number){var c=t.m.cage_number;if(!ptCageToExps[c])ptCageToExps[c]=new Set();ptCageToExps[c].add(t.expId);}});
+  var ptMixedCages=new Set();
+  Object.keys(ptCageToExps).forEach(function(c){if(ptCageToExps[c].size>1)ptMixedCages.add(c);});
 
-  printExps.forEach(function(exp){
-    var expMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'});
-    if(!expMice.length)return;
+  // Group tasks by WP (excluding mixed cages)
+  var ptByExp={};
+  todayTasks.forEach(function(t){
+    if(t.m&&t.m.cage_number&&ptMixedCages.has(t.m.cage_number))return;
+    var k=t.expId||'Other';if(!ptByExp[k])ptByExp[k]=[];ptByExp[k].push(t);
+  });
 
-    // Sort by cage number
-    // Sort to match daily view sort order
-    expMice=sortMiceForDisplay(expMice);
-
-    // Get today's tasks for this experiment
-    var expTasks=todayTasks.filter(function(t){return t.expId===exp.id});
-    var hasMeasure=expTasks.some(function(t){return t.type==='measure'});
-    var treatTasks=expTasks.filter(function(t){return t.type==='treatment'});
-
-    html+='<div style="margin-bottom:12px;page-break-inside:avoid">';
-    html+='<table style="width:100%;border-collapse:collapse;margin-bottom:2px">'
-      +'<tr><td style="font-size:11px;font-weight:700;padding:2px 0">'+exp.id+' — '+exp.name+'</td>'
-      +'<td style="font-size:8px;color:#333;text-align:right;padding:2px 0"><strong>Harvest:</strong> '+(exp.harvest||'not specified')+'</td>'
-      +'</tr></table>';
-
-    // Treatment summary for today
-    if(treatTasks.length){
-      var treatByGroup={};
-      treatTasks.forEach(function(t){
-        var k=t.group||'';
-        if(!treatByGroup[k])treatByGroup[k]={label:t.label,dose:t.dose,route:t.route,mice:[]};
-        treatByGroup[k].mice.push(t.mouseId);
-      });
-      Object.keys(treatByGroup).forEach(function(grp){
-        var tr=treatByGroup[grp];
-        html+='<div style="font-size:9px;color:#333;margin-bottom:2px;padding:2px 4px;background:#f0f0f0;border-radius:3px">'
-          +'<strong>Treatment:</strong> '+tr.label+' '+tr.dose+' '+tr.route+' — mice: '+tr.mice.join(', ')
-          +'</div>';
-      });
-    }
-
-    // Determine which sites to show (from last measurement of any mouse)
-    // Collect all unique site locations across all mice in this exp
-    var allSiteLocs=[];
-    expMice.forEach(function(m){
-      var last=lastMs(m.id,exp.id);
-      if(last&&last.tumor_sites){
-        last.tumor_sites.forEach(function(s){
-          if(s.location&&!allSiteLocs.includes(s.location))allSiteLocs.push(s.location);
-        });
-      }
+  // Site locations for a set of mice (for column headers)
+  function getSiteLocs(miceList,expId){
+    var locs=[];
+    miceList.forEach(function(m){
+      var last=lastMs(m.id,expId);
+      if(last&&last.tumor_sites)last.tumor_sites.forEach(function(s){if(s.location&&!locs.includes(s.location))locs.push(s.location);});
     });
-    var multiSite=allSiteLocs.length>1;
+    return locs;
+  }
 
-    // Table header
-    html+='<table style="width:100%;border-collapse:collapse;font-size:9px">';
-    html+='<thead><tr style="border-bottom:1.5px solid #000">'
-      +'<th style="text-align:left;padding:2px 4px;width:55px">Mouse</th>'
-      +'<th style="text-align:left;padding:2px 4px;width:30px">Cage</th>'
-      +'<th style="text-align:left;padding:2px 4px;width:60px">Group</th>'
-      +'<th style="text-align:left;padding:2px 4px;width:30px">Day</th>';
-
-    // Site columns - one per known location, or just "Size" for single-tumor
+  // Render a table of mice (used per cage or per no-cage section)
+  function printMiceTable(miceList,taskMap,expId,siteLocs){
+    if(!miceList.length)return'';
+    var multiSite=siteLocs.length>1;
+    var h='<table style="width:100%;border-collapse:collapse;font-size:8.5px;margin-bottom:0">';
+    h+='<thead><tr style="border-bottom:1px solid #000">'
+      +'<th style="text-align:left;padding:1px 3px;width:55px">Mouse</th>'
+      +'<th style="text-align:left;padding:1px 3px;width:55px">Group</th>'
+      +'<th style="text-align:left;padding:1px 3px;width:28px">Day</th>'
+      +'<th style="text-align:left;padding:1px 3px;width:110px">Task today</th>';
     if(multiSite){
-      allSiteLocs.forEach(function(loc){
-        var isSkin=loc==='skin';
-        html+='<th style="text-align:center;padding:2px 4px;width:52px">'
-          +(isSkin?'<span style="color:#854F0B">'+loc+'</span>':loc)
-          +'<br><span style="font-weight:400;font-size:8px">prev → new</span></th>';
-      });
+      siteLocs.forEach(function(loc){h+='<th style="text-align:center;padding:1px 3px;width:48px">'+loc+'<br><span style="font-weight:400;font-size:7px">prev→new</span></th>';});
     } else {
-      html+='<th style="text-align:center;padding:2px 4px;width:65px">Size<br><span style="font-weight:400;font-size:8px">prev → new</span></th>';
+      h+='<th style="text-align:center;padding:1px 3px;width:55px">Size<br><span style="font-weight:400;font-size:7px">prev→new</span></th>';
     }
-
-    html+='<th style="text-align:center;padding:2px 4px;width:40px">Weight<br><span style="font-weight:400;font-size:8px">prev→ ___</span></th>'
-      +'<th style="text-align:left;padding:2px 4px">Note</th>'
+    h+='<th style="text-align:center;padding:1px 3px;width:38px">Weight<br><span style="font-weight:400;font-size:7px">prev→___</span></th>'
+      +'<th style="text-align:left;padding:1px 3px">Note</th>'
       +'</tr></thead><tbody>';
 
-    expMice.forEach(function(m,mi){
-      var last=lastMs(m.id,exp.id);
+    miceList.forEach(function(m,mi){
+      var last=lastMs(m.id,expId);
       var days=dInTx(m);
-      var bgColor=mi%2===0?'#fff':'#f9f9f9';
-      html+='<tr style="border-bottom:.5px solid #ccc;background:'+bgColor+'">'
-        +'<td style="padding:3px 4px;font-family:monospace;font-size:9px">'+m.id+'</td>'
-        +'<td style="padding:3px 4px">'+(m.cage_number||'')+'</td>'
-        +'<td style="padding:3px 4px;font-size:8px">'+(m.group_name||'')+'</td>'
-        +'<td style="padding:3px 4px">'+(days!=null?'d'+days:'')+'</td>';
-
+      var mTasks=(taskMap[m.id]||[]);
+      // Build task text
+      var taskParts=[];
+      mTasks.forEach(function(t){
+        if(t.type==='measure'||t.type==='measure-tumor')taskParts.push('Measure tumor');
+        else if(t.type==='measure-weight')taskParts.push('Measure weight');
+        else if(t.type==='measure-combined')taskParts.push('Measure tumor+weight');
+        else if(t.type==='treatment')taskParts.push((t.dose?t.dose+' ':'')+( t.route||'')+(t.label?' ('+t.label+')':''));
+        else if(t.type==='blood')taskParts.push('Blood draw');
+        else if(t.type==='ivis')taskParts.push('IVIS');
+        else taskParts.push(t.label||t.type);
+      });
+      var taskText=taskParts.join(' + ')||(mTasks.length?mTasks[0].label:'—');
+      var bg=mi%2===0?'#fff':'#f5f5f5';
+      h+='<tr style="border-bottom:.5px solid #ddd;background:'+bg+'">'
+        +'<td style="padding:2px 3px;font-family:monospace;font-size:8px">'+m.id+'</td>'
+        +'<td style="padding:2px 3px;font-size:7.5px">'+(m.group_name||'')+'</td>'
+        +'<td style="padding:2px 3px">'+(days!=null?'d'+days:'')+'</td>'
+        +'<td style="padding:2px 3px;font-size:8px">'+taskText+'</td>';
       if(multiSite){
-        allSiteLocs.forEach(function(loc){
-          var prevSite=last&&last.tumor_sites?last.tumor_sites.find(function(s){return s.location===loc}):null;
-          var prevSz=prevSite?(prevSite.status==='gone'?'Gone':prevSite.dim1&&prevSite.dim2?prevSite.dim1+'x'+prevSite.dim2:''):'';
-          html+='<td style="padding:3px 4px;text-align:center">'
-            +'<span style="font-size:8px;color:#666">'+(prevSz||'--')+'</span>'
-            +' <span style="border-bottom:1px solid #999;display:inline-block;width:36px">&nbsp;</span>'
-            +'</td>';
+        siteLocs.forEach(function(loc){
+          var ps2=last&&last.tumor_sites?last.tumor_sites.find(function(s){return s.location===loc}):null;
+          var pz=ps2?(ps2.status==='gone'?'Gone':ps2.dim1&&ps2.dim2?ps2.dim1+'x'+ps2.dim2:''):'';
+          h+='<td style="padding:2px 3px;text-align:center"><span style="font-size:7.5px;color:#666">'+(pz||'--')+'</span> <span style="border-bottom:1px solid #999;display:inline-block;width:28px">&nbsp;</span></td>';
         });
       } else {
-        var prevSite=last&&last.tumor_sites&&last.tumor_sites[0]?last.tumor_sites[0]:null;
-        var prevSz=prevSite?(prevSite.status==='gone'?'Gone':prevSite.dim1&&prevSite.dim2?prevSite.dim1+'x'+prevSite.dim2:''):'';
-        html+='<td style="padding:3px 4px;text-align:center">'
-          +'<span style="font-size:8px;color:#666">'+(prevSz||'--')+'</span>'
-          +' <span style="border-bottom:1px solid #999;display:inline-block;width:36px">&nbsp;</span>'
-          +'</td>';
+        var ps1=last&&last.tumor_sites&&last.tumor_sites[0]?last.tumor_sites[0]:null;
+        var pz1=ps1?(ps1.status==='gone'?'Gone':ps1.dim1&&ps1.dim2?ps1.dim1+'x'+ps1.dim2:''):'';
+        h+='<td style="padding:2px 3px;text-align:center"><span style="font-size:7.5px;color:#666">'+(pz1||'--')+'</span> <span style="border-bottom:1px solid #999;display:inline-block;width:28px">&nbsp;</span></td>';
       }
-
-      html+='<td style="padding:3px 4px;text-align:center">'
-        +'<span style="font-size:8px;color:#666">'+(m.weight?m.weight+'g':'')+'</span>'
-        +' <span style="border-bottom:1px solid #999;display:inline-block;width:28px">&nbsp;</span>'
-        +'</td>'
-        +'<td style="padding:3px 4px"><span style="border-bottom:.5px solid #ccc;display:inline-block;width:100%;min-width:60px">&nbsp;</span></td>'
+      h+='<td style="padding:2px 3px;text-align:center"><span style="font-size:7.5px;color:#666">'+(m.weight?m.weight+'g':'')+'</span> <span style="border-bottom:1px solid #999;display:inline-block;width:22px">&nbsp;</span></td>'
+        +'<td style="padding:2px 3px"><span style="border-bottom:.5px solid #ccc;display:inline-block;width:100%;min-width:50px">&nbsp;</span></td>'
         +'</tr>';
     });
+    h+='</tbody></table>';
+    return h;
+  }
 
-    html+='</tbody></table>';
+  Object.keys(ptByExp).sort().forEach(function(eid){
+    var exp=S.experiments.find(function(e){return e.id===eid});
+    var expTasks=ptByExp[eid];
+    if(!expTasks.length)return;
 
+    // WP header
+    html+='<div style="margin-bottom:8px;page-break-inside:avoid">';
+    html+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;display:flex;justify-content:space-between">'
+      +'<span>'+eid+' — '+(exp?exp.name:'')+'</span>'
+      +'<span style="font-size:8px;font-weight:400;color:#555">'+(exp&&exp.harvest?'Harvest: '+exp.harvest:'')+'</span>'
+      +'</div>';
 
-    // Post-Mx distress check section for this experiment
-    var postMxMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.post_mx_status==='post_mx'});
-    if(postMxMice.length){
-      postMxMice.sort(function(a,b){return(a.cage_number||'').localeCompare(b.cage_number||'',undefined,{numeric:true})});
-      html+='<div style="margin-top:4px;margin-bottom:2px;font-size:9px;font-weight:700;color:#854F0B">Post-Mx distress monitoring</div>';
-      html+='<table style="width:100%;border-collapse:collapse;font-size:9px">';
-      html+='<thead><tr style="border-bottom:1.5px solid #000">'
-        +'<th style="text-align:left;padding:2px 4px;width:55px">Mouse</th>'
-        +'<th style="text-align:left;padding:2px 4px;width:30px">Cage</th>'
-        +'<th style="text-align:left;padding:2px 4px;width:60px">Group</th>'
-        +'<th style="text-align:left;padding:2px 4px;width:35px">d-post-Mx</th>'
-        +'<th style="text-align:left;padding:2px 4px">Recent notes</th>'
-        +'<th style="text-align:left;padding:2px 4px;width:80px">Today note</th>'
-        +'</tr></thead><tbody>';
-      postMxMice.forEach(function(m,mi){
-        var mevts=(S.mevents[exp.id]||{})[m.id]||[];
-        var lastChecks=mevts.filter(function(e){return e.event_type==='distress_check'}).slice(-3);
-        var notesStr=lastChecks.map(function(c){return c.event_date.slice(5)+': '+(c.details&&c.details.note?c.details.note:c.label.replace('Distress check: ',''));}).join(' | ');
-        var daysMx=m.mx_date?Math.round((new Date(TISO)-new Date(m.mx_date))/86400000):null;
-        var bgColor=mi%2===0?'#fff':'#f9f9f9';
-        html+='<tr style="border-bottom:.5px solid #ccc;background:'+bgColor+'">'
-          +'<td style="padding:3px 4px;font-family:monospace;font-size:9px">'+m.id+'</td>'
-          +'<td style="padding:3px 4px">'+(m.cage_number||'')+'</td>'
-          +'<td style="padding:3px 4px;font-size:8px">'+(m.group_name||'')+'</td>'
-          +'<td style="padding:3px 4px">'+(daysMx!=null?'d'+daysMx:'')+'</td>'
-          +'<td style="padding:3px 4px;font-size:8px;color:#444">'+(notesStr||'—')+'</td>'
-          +'<td style="padding:3px 4px"><span style="border-bottom:1px solid #999;display:inline-block;width:100%">&nbsp;</span></td>'
-          +'</tr>';
-      });
-      html+='</tbody></table>';
+    // Group tasks by cage
+    var ptByCage={};
+    var ptNoCage=[];
+    expTasks.forEach(function(t){
+      if(t.m&&t.m.cage_number){
+        var c=t.m.cage_number;if(!ptByCage[c])ptByCage[c]=[];ptByCage[c].push(t);
+      } else {
+        ptNoCage.push(t);
+      }
+    });
+
+    // Per cage
+    Object.keys(ptByCage).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){
+      var cageTasks=ptByCage[cage];
+      // Merge tasks per mouse
+      var cageMouseMap={};
+      cageTasks.forEach(function(t){if(!cageMouseMap[t.mouseId])cageMouseMap[t.mouseId]=[];cageMouseMap[t.mouseId].push(t);});
+      var cageMice=Object.keys(cageMouseMap).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})})
+        .map(function(mid){return (S.mice[eid]||[]).find(function(m){return m.id===mid;})}).filter(Boolean);
+      var siteLocs=getSiteLocs(cageMice,eid);
+
+      // Cage sub-header
+      html+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+'</div>';
+      html+=printMiceTable(cageMice,cageMouseMap,eid,siteLocs);
+    });
+
+    // No cage section
+    if(ptNoCage.length){
+      var ncMouseMap={};
+      ptNoCage.forEach(function(t){if(!ncMouseMap[t.mouseId])ncMouseMap[t.mouseId]=[];ncMouseMap[t.mouseId].push(t);});
+      var ncMice=Object.keys(ncMouseMap).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})})
+        .map(function(mid){return (S.mice[eid]||[]).find(function(m){return m.id===mid;})}).filter(Boolean);
+      var ncSiteLocs=getSiteLocs(ncMice,eid);
+      html+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px;color:#666">No cage assigned</div>';
+      html+=printMiceTable(ncMice,ncMouseMap,eid,ncSiteLocs);
     }
 
     html+='</div>';
+  });
+
+  // Mixed cages section
+  var ptMixedTasks=todayTasks.filter(function(t){return t.m&&t.m.cage_number&&ptMixedCages.has(t.m.cage_number);});
+  if(ptMixedTasks.length){
+    html+='<div style="margin-bottom:8px;page-break-inside:avoid">';
+    html+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px">Mixed cages</div>';
+    var ptMixByCage={};
+    ptMixedTasks.forEach(function(t){var c=t.m.cage_number;if(!ptMixByCage[c])ptMixByCage[c]=[];ptMixByCage[c].push(t);});
+    Object.keys(ptMixByCage).sort().forEach(function(cage){
+      var cTasks=ptMixByCage[cage];
+      var wps=[...new Set(cTasks.map(function(t){return t.expId}))].join(', ');
+      var mMap={};cTasks.forEach(function(t){if(!mMap[t.mouseId])mMap[t.mouseId]=[];mMap[t.mouseId].push(t);});
+      var mMice=Object.keys(mMap).sort().map(function(mid){
+        var expId=mMap[mid][0].expId;
+        return (S.mice[expId]||[]).find(function(m){return m.id===mid;});
+      }).filter(Boolean);
+      var mSiteLocs=[];
+      mMice.forEach(function(m){var last=lastMs(m.id,mMap[m.id]&&mMap[m.id][0]?mMap[m.id][0].expId:'');if(last&&last.tumor_sites)last.tumor_sites.forEach(function(s){if(s.location&&!mSiteLocs.includes(s.location))mSiteLocs.push(s.location);});});
+      html+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+' <span style="font-weight:400;color:#666">('+wps+')</span></div>';
+      html+=printMiceTable(mMice,mMap,mMap[Object.keys(mMap)[0]][0].expId,mSiteLocs);
+    });
+    html+='</div>';
+  }
+
+  // Post-Mx distress sections
+  S.experiments.filter(function(e){return e.status==='active'&&e.is_mastectomy;}).forEach(function(exp){
+    var postMxMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.post_mx_status==='post_mx';});
+    if(!postMxMice.length)return;
+    postMxMice.sort(function(a,b){return(a.cage_number||'').localeCompare(b.cage_number||'',undefined,{numeric:true});});
+    html+='<div style="margin-bottom:8px;page-break-inside:avoid">';
+    html+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #854F0B;margin-bottom:3px;color:#854F0B">'+exp.id+' — Post-Mx distress monitoring</div>';
+    html+='<table style="width:100%;border-collapse:collapse;font-size:8.5px">';
+    html+='<thead><tr style="border-bottom:1px solid #000">'
+      +'<th style="padding:1px 3px;width:55px">Mouse</th>'
+      +'<th style="padding:1px 3px;width:30px">Cage</th>'
+      +'<th style="padding:1px 3px;width:55px">Group</th>'
+      +'<th style="padding:1px 3px;width:30px">d-post-Mx</th>'
+      +'<th style="padding:1px 3px">Recent notes</th>'
+      +'<th style="padding:1px 3px;width:70px">Today</th>'
+      +'</tr></thead><tbody>';
+    postMxMice.forEach(function(m,mi){
+      var mevts=(S.mevents[exp.id]||{})[m.id]||[];
+      var lastChecks=mevts.filter(function(e){return e.event_type==='distress_check';}).slice(-3);
+      var notesStr=lastChecks.map(function(c){return c.event_date.slice(5)+': '+(c.details&&c.details.note?c.details.note:c.label.replace('Distress check: ',''));}).join(' | ');
+      var daysMx=m.mx_date?Math.round((new Date(TISO)-new Date(m.mx_date))/86400000):null;
+      html+='<tr style="border-bottom:.5px solid #ddd;background:'+(mi%2===0?'#fff':'#f5f5f5')+'">'
+        +'<td style="padding:2px 3px;font-family:monospace;font-size:8px">'+m.id+'</td>'
+        +'<td style="padding:2px 3px">'+(m.cage_number||'')+'</td>'
+        +'<td style="padding:2px 3px;font-size:7.5px">'+(m.group_name||'')+'</td>'
+        +'<td style="padding:2px 3px">'+(daysMx!=null?'d'+daysMx:'')+'</td>'
+        +'<td style="padding:2px 3px;font-size:8px;color:#444">'+(notesStr||'—')+'</td>'
+        +'<td style="padding:2px 3px"><span style="border-bottom:1px solid #999;display:inline-block;width:100%">&nbsp;</span></td>'
+        +'</tr>';
+    });
+    html+='</tbody></table></div>';
   });
 
   html+='</div>'; // end print-harvest
