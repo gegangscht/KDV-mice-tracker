@@ -214,7 +214,8 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <button class="btn" style="width:100%;justify-content:center" onclick="toggleAddUser()"><i class="ti ti-user-plus"></i> Add new user</button>
       <div class="add-user-form" id="add-user-form">
         <input class="fi" id="new-user-name" placeholder="Your name" style="flex:1">
-        <select class="fs" id="new-user-role" style="width:110px"><option value="technician">Technician</option><option value="researcher">Researcher</option><option value="pi">PI</option></select>
+        <input class="fi" id="new-user-code" placeholder="Code (TL)" style="width:70px" maxlength="3">
+        <select class="fs" id="new-user-role" style="width:100px"><option value="technician">Technician</option><option value="researcher">Researcher</option><option value="pi">PI</option></select>
         <button class="btn btn-p" onclick="addUser()"><i class="ti ti-check"></i></button>
       </div>
     </div>
@@ -231,6 +232,8 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
     <span style="font-size:11px">Note:</span>
     <input id="float-note-in" placeholder="Add note to all selected..." onkeydown="if(event.key==='Enter')bulkAddNote()">
     <button class="btn btn-xs" onclick="bulkAddNote()"><i class="ti ti-check"></i> Add</button>
+    <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
+    <button class="btn btn-xs" onclick="showBulkCage()"><i class="ti ti-cage"></i> Change cage</button>
     <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
     <button class="btn btn-xs" onclick="clearSelection()" style="color:rgba(255,255,255,.6)"><i class="ti ti-x"></i></button>
   </div>
@@ -326,7 +329,7 @@ function renderUserGrid(){
   const g=document.getElementById('user-grid');if(!g)return;
   g.innerHTML=S.users.map(function(u){return '<button class="user-btn" onclick="selUser(\''+u.id+'\',\''+u.name+'\',\''+u.color+'\')">'
     +'<div class="user-avatar" style="background:'+u.color+'">'+u.name[0]+'</div>'
-    +u.name+'<div style="font-size:9px;color:var(--text3);margin-top:1px">'+u.role+'</div></button>'}).join('');
+    +u.name+(u.code?'<div style="font-size:9px;font-weight:600;color:var(--blue);margin-top:1px">'+u.code+'</div>':'')+'<div style="font-size:9px;color:var(--text3)">'+u.role+'</div></button>'}).join('');
 }
 function checkPW(){
   var pw=(document.getElementById('pw-input')&&document.getElementById('pw-input').value)||'';
@@ -345,12 +348,14 @@ function selUser(id,name,color){
 }
 function toggleAddUser(){var f=document.getElementById('add-user-form');f.classList.toggle('vis');if(f.classList.contains('vis'))document.getElementById('new-user-name').focus();}
 async function addUser(){
-  const name=(document.getElementById('new-user-name').value||'').trim();
-  const role=document.getElementById('new-user-role').value;
+  var name=(document.getElementById('new-user-name').value||'').trim();
+  var code=(document.getElementById('new-user-code').value||'').trim().toUpperCase().slice(0,3);
+  var role=document.getElementById('new-user-role').value;
   if(!name)return;
-  const color=COLS[S.users.length%COLS.length];
-  const{data}=await sb.from('lab_users').insert({name:name,role:role,color:color}).select().single();
-  if(data){S.users.push(data);renderUserGrid();document.getElementById('add-user-form').classList.remove('vis');document.getElementById('new-user-name').value='';}
+  var color=COLS[S.users.length%COLS.length];
+  var res=await sb.from('lab_users').insert({name:name,role:role,color:color,code:code||null}).select().single();
+  var data=res.data;
+  if(data){S.users.push(data);renderUserGrid();document.getElementById('add-user-form').classList.remove('vis');document.getElementById('new-user-name').value='';document.getElementById('new-user-code').value='';}
 }
 function switchUser(){sessionStorage.removeItem('mt_user');location.reload();}
 function launchApp(){
@@ -941,7 +946,7 @@ function taskSection(title,icon,items){
       +'<span style="font-size:10px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx:'')+'</span>'
       +'<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">'
         +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
-        +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Transfer to group" onclick="showTransferFromDaily(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
+        +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="reschedTask('+rsIdx+')" title="Reschedule"><i class="ti ti-calendar-event"></i></button>'
       +'</div></div>'
@@ -1018,18 +1023,104 @@ function renderDaily(){
 
   if(S.sortBy==='type'){
     ['measure','measure-tumor','measure-combined','measure-weight','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],tasks.filter(function(t){return t.type===type}));});
+    if(!tasks.length)html+='<div class="empty"><i class="ti ti-circle-check"></i>No tasks scheduled for today</div>';
   } else {
-    var byE={};tasks.forEach(function(t){var k=t.expId||'Other';if(!byE[k])byE[k]=[];byE[k].push(t);});
+    // WP sort: cage-grouped layout
+    function taskLabel(t){
+      if(t.type==='measure'||t.type==='measure-tumor')return'Measure tumor';
+      if(t.type==='measure-weight')return'Measure weight';
+      if(t.type==='measure-combined')return'Measure tumor + weight';
+      if(t.type==='treatment')return'Treatment: '+(t.dose?t.dose+' ':'')+( t.route||'')+(t.label?' ('+t.label+')':'');
+      if(t.type==='blood')return'Blood draw';
+      if(t.type==='ivis')return'IVIS';
+      return t.label||t.type;
+    }
+    function isMeasureType(type){return type==='measure'||type==='measure-tumor'||type==='measure-combined'||type==='measure-weight';}
+    function renderCageMouseRow(mid,mTasks,expId){
+      var t0=mTasks[0];
+      var allLabels=mTasks.map(taskLabel).join(' + ');
+      var hasMeasure=mTasks.some(function(t){return isMeasureType(t.type);});
+      var rsIdx=rsReg({date:t0.date,label:allLabels,type:t0.type,mouseId:mid,expId:expId});
+      return '<div class="task-row" style="grid-template-columns:100px 1fr 72px 40px 110px;margin-bottom:2px">'
+        +'<span class="mono" style="font-size:10px">'+mid+'<br><span style="font-size:9px;color:var(--text3)">'+(t0.group||t0.expId||'')+'</span></span>'
+        +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+(t0.exp&&t0.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t0.exp.harvest+'</span></span>':'')+'</span>'
+        +'<span class="burden-badge">'+(t0.lastBurden||'--')+'</span>'
+        +'<span style="font-size:10px;color:var(--text3)">'+(t0.dayInTx!=null?'d'+t0.dayInTx:'')+'</span>'
+        +'<div style="display:flex;gap:3px">'
+        +(hasMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+expId+'\',\''+mid+'\')"><i class="ti ti-plus"></i> Log</button>':'')
+        +'<button class="btn btn-xs btn-icon" onclick="showCageTransfer(\''+expId+'\',\''+mid+'\')"><i class="ti ti-arrows-exchange"></i></button>'
+        +'<button class="btn btn-xs btn-icon" onclick="reschedTask('+rsIdx+')"><i class="ti ti-calendar-event"></i></button>'
+        +'</div></div>'
+        +'<div id="ilc-d-'+mid+'" style="display:none;padding:0 9px 4px"></div>';
+    }
+    function mergeMiceTasks(taskList){
+      var byMouse={};
+      taskList.forEach(function(t){if(!byMouse[t.mouseId])byMouse[t.mouseId]=[];byMouse[t.mouseId].push(t);});
+      return byMouse;
+    }
+    function cageHeader(cage,suffix){
+      return '<div style="background:var(--surface2);border-radius:var(--r);padding:3px 8px;margin:4px 0 2px;font-size:9px;font-weight:600;color:var(--text2);letter-spacing:.04em">Cage '+cage+(suffix?' <span style="font-weight:400;color:var(--text3)">'+ suffix+'</span>':'')+'</div>';
+    }
+
+    // Detect cages shared across multiple WPs
+    var cageToExps2={};
+    tasks.forEach(function(t){if(t.m&&t.m.cage_number){var c=t.m.cage_number;if(!cageToExps2[c])cageToExps2[c]=new Set();cageToExps2[c].add(t.expId);}});
+    var mixedCages2=new Set();
+    Object.keys(cageToExps2).forEach(function(c){if(cageToExps2[c].size>1)mixedCages2.add(c);});
+
+    var byE={};
+    tasks.forEach(function(t){
+      if(t.m&&t.m.cage_number&&mixedCages2.has(t.m.cage_number))return; // skip mixed, shown at bottom
+      var k=t.expId||'Other';if(!byE[k])byE[k]=[];byE[k].push(t);
+    });
+
     Object.keys(byE).sort().forEach(function(eid){
       var exp=S.experiments.find(function(e){return e.id===eid});
+      var expTasks=byE[eid];
       html+='<div class="task-sh"><div class="edot" style="background:'+(exp&&exp.color?exp.color:'#888')+'"></div>'
-        +'<span class="task-st">'+eid+' - '+(exp&&exp.name?exp.name:'')+'</span>'
-        +'<span class="task-sc">'+byE[eid].length+'</span>'
-        +(exp&&exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+exp.harvest+'</span></span>':'')+'</div>';
-      ['measure','measure-tumor','measure-combined','measure-weight','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],byE[eid].filter(function(t){return t.type===type}));});
+        +'<span class="task-st">'+eid+' — '+(exp&&exp.name?exp.name:'')+'</span>'
+        +'<span class="task-sc">'+expTasks.length+'</span>'
+        +(exp&&exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+exp.harvest+'</span></span>':'')
+        +'</div>';
+      var withCage=expTasks.filter(function(t){return t.m&&t.m.cage_number;});
+      var noCage=expTasks.filter(function(t){return !t.m||!t.m.cage_number;});
+      // Group by cage, sort numerically
+      var byCage={};
+      withCage.forEach(function(t){var c=t.m.cage_number;if(!byCage[c])byCage[c]=[];byCage[c].push(t);});
+      Object.keys(byCage).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){
+        html+=cageHeader(cage,'');
+        var byMouse=mergeMiceTasks(byCage[cage]);
+        Object.keys(byMouse).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(mid){
+          html+=renderCageMouseRow(mid,byMouse[mid],eid);
+        });
+      });
+      if(noCage.length){
+        html+=cageHeader('—','no cage assigned');
+        var byMouse2=mergeMiceTasks(noCage);
+        Object.keys(byMouse2).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(mid){
+          html+=renderCageMouseRow(mid,byMouse2[mid],eid);
+        });
+      }
     });
+
+    // Mixed cage section
+    var mixedTasks=tasks.filter(function(t){return t.m&&t.m.cage_number&&mixedCages2.has(t.m.cage_number);});
+    if(mixedTasks.length){
+      html+='<div class="task-sh"><span class="task-st" style="color:var(--amber)">Mixed cages</span><span class="task-sc">'+mixedTasks.length+'</span></div>';
+      var mixByCage={};
+      mixedTasks.forEach(function(t){var c=t.m.cage_number;if(!mixByCage[c])mixByCage[c]=[];mixByCage[c].push(t);});
+      Object.keys(mixByCage).sort().forEach(function(cage){
+        var cTasks=mixByCage[cage];
+        var wps=[...new Set(cTasks.map(function(t){return t.expId}))].join(', ');
+        html+=cageHeader(cage,'('+wps+')');
+        var byMouse3=mergeMiceTasks(cTasks);
+        Object.keys(byMouse3).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(mid){
+          html+=renderCageMouseRow(mid,byMouse3[mid],byMouse3[mid][0].expId);
+        });
+      });
+    }
+    if(!tasks.length)html+='<div class="empty"><i class="ti ti-circle-check"></i>No tasks scheduled for today</div>';
   }
-  if(!tasks.length)html+='<div class="empty"><i class="ti ti-circle-check"></i>No tasks scheduled for today</div>';
 
   // ── PRINT SHEET ──────────────────────────────────────────────────────────
   var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -1333,7 +1424,14 @@ async function renderExp(eid){
   var mice=S.mice[eid]||[];var groups=S.groups[eid]||[];var act=mice.filter(function(m){return m.status==='active'}).length;
   var harBadge=exp.harvest_updated_at?(' <span class="badge ba" style="font-size:8px"><i class="ti ti-alert-triangle"></i> Updated '+exp.harvest_updated_at+'</span>'):'';  var html='<div class="card">'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;font-size:11px">'
-    +'<div><div style="color:var(--text2);margin-bottom:1px">Researcher</div><div style="font-weight:500">'+exp.researcher+'</div></div>'
+    +(function(){
+      var resUser=getResearcherForExp(eid);
+      var resDisplay=resUser?(resUser.code?resUser.code+' — '+resUser.name:resUser.name):(exp.researcher||'--');
+      var cagePrefix=getCagePrefix(eid);
+      var slot=getCageSlot(eid);
+      return '<div><div style="color:var(--text2);margin-bottom:1px">Researcher</div><div style="font-weight:500">'+resDisplay+'</div></div>'
+        +'<div><div style="color:var(--text2);margin-bottom:1px">Cage prefix</div><div style="font-weight:500;font-family:var(--mono)">'+cagePrefix+'xx <span style="font-size:9px;color:var(--text3)">(slot '+slot+')</span></div></div>';
+    })()
     +'<div><div style="color:var(--text2);margin-bottom:1px">Model</div><div style="font-weight:500">'+(exp.model||'--')+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Active mice</div><div style="font-weight:500">'+act+'/'+mice.length+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Endpoint</div><div style="font-weight:500">'+(exp.endpoint_criterion||'--')+'</div></div>'
@@ -1409,7 +1507,7 @@ async function renderExp(eid){
           // Recurrence button: post-mx mice only
           +(isAct&&m.post_mx_status==='post_mx'?'<button class="btn btn-xs btn-icon" title="Recurrence detected" onclick="showRecurrence(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-refresh-alert"></i></button>':'')
           // Transfer button: all active mice
-          +(isAct?'<button class="btn btn-xs btn-icon" title="Transfer to group" onclick="showTransfer(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
+          +(isAct?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
           // Tx start edit
           +'<button class="btn btn-xs btn-icon" title="Edit tx start date" onclick="editTxStart(\''+m.id+'\',\''+eid+'\')" style="font-size:9px"><i class="ti ti-calendar-event"></i></button>'
           // Exclude from analysis toggle
@@ -1681,7 +1779,11 @@ function newFormHTML(){
     +'<div style="font-size:12px;font-weight:500;margin-bottom:.625rem">Experiment details</div>'
     +'<div class="f2">'
     +'<div class="fg"><label class="fl">WP number</label><input class="fi" id="nwp" placeholder="WP12345"></div>'
-    +'<div class="fg"><label class="fl">Researcher(s)</label><input class="fi" id="nres"></div>'
+    +'<div class="fg"><label class="fl">Responsible researcher</label>'
+    +'<select class="fs" id="nres">'
+    +'<option value="">Select researcher...</option>'
+    +S.users.map(function(u){return'<option value="'+u.id+'|'+(u.code||'??')+'|'+u.name+'">'+(u.code?u.code+' — ':'')+u.name+'</option>';}).join('')
+    +'</select></div>'
     +'<div class="fg full"><label class="fl">Title</label><input class="fi" id="ntit" placeholder="e.g. PIK3CA aCD25+ICB"></div>'
     +'<div class="fg"><label class="fl">Model</label>'
     +'<div style="display:flex;gap:3px;margin-bottom:4px;flex-wrap:wrap">'
@@ -1823,13 +1925,17 @@ function duplicateNG(gi){
 function addNGEvent(gi){NG[gi].events.push({type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7});document.getElementById('ng-cont').innerHTML=renderNGGroups();}
 async function createExp(){
   var wp=((document.getElementById('nwp')&&document.getElementById('nwp').value)||'').trim();
-  var res=((document.getElementById('nres')&&document.getElementById('nres').value)||'').trim();
+  var resRaw=(document.getElementById('nres')&&document.getElementById('nres').value)||'';
+  var resParts=resRaw.split('|');
+  var resId=resParts[0]||null;
+  var resCode=resParts[1]||'';
+  var resName=resParts[2]||'';
   var tit=((document.getElementById('ntit')&&document.getElementById('ntit').value)||'').trim();
-  if(!wp||!res||!tit){alert('Fill WP number, researcher, and title');return;}
+  if(!wp||!resId||!tit){alert('Fill WP number, researcher, and title');return;}
   var multi=true; // all experiments support multi-site
   var isMx=!!(document.getElementById('nmx')&&document.getElementById('nmx').checked);
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
-  var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||''});
+  var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||''});
   if(result.error){alert('Error: '+result.error.message);if(btn)btn.disabled=false;return;}
   for(var i=0;i<NG.length;i++){
     var g=NG[i];
@@ -1841,7 +1947,7 @@ async function createExp(){
       await sb.from('scheduled_events').insert({group_id:gD.id,experiment_id:wp,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',schedule_type:ev.schedule,schedule_days:ev.days||[],interval_days:ev.schedule==='interval'?ev.intervalDays:null,trigger_type:ev.trigger,trigger_value:ev.triggerVal||'',day_offset:ev.dayOffset||0,max_doses:ev.maxDoses||null,sort_order:j});
     }
   }
-  await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
+  await assignCageSlot(wp);await assignCageSlot(wp);await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
 }
 
 // EDIT EXPERIMENT
@@ -1850,7 +1956,11 @@ function showEditExp(eid){
   S._editExpId=eid;
   showModal('Edit experiment — '+eid,
     '<div class="f2">'
-    +'<div class="fg"><label class="fl">Researcher(s)</label><input class="fi" id="ee-res" value="'+exp.researcher+'"></div>'
+    +'<div class="fg"><label class="fl">Responsible researcher</label>'
+    +'<select class="fs" id="ee-res">'
+    +'<option value="">Select...</option>'
+    +S.users.map(function(u){return'<option value="'+u.id+'|'+(u.code||'??')+'|'+u.name+'"'+(exp.researcher_id===u.id?' selected':'')+'>'+( u.code?u.code+' — ':'')+u.name+'</option>';}).join('')
+    +'</select></div>'
     +'<div class="fg"><label class="fl">Model</label><input class="fi" id="ee-mod" value="'+(exp.model||'')+'"></div>'
     +'<div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="ee-ep" value="'+(exp.endpoint_criterion||'')+'"></div>'
     +'<div class="fg"><label class="fl">Status</label><select class="fs" id="ee-status"><option value="active"'+(exp.status==='active'?' selected':'')+'>Active</option><option value="completed"'+(exp.status==='completed'?' selected':'')+'>Completed</option><option value="archived"'+(exp.status==='archived'?' selected':'')+'>Archived</option></select></div>'
@@ -1863,7 +1973,10 @@ function showEditExp(eid){
 }
 async function saveEditExp(eid){
   if(!eid)eid=S._editExpId;
-  var res=(document.getElementById('ee-res')&&document.getElementById('ee-res').value)||'';
+  var resRawE=(document.getElementById('ee-res')&&document.getElementById('ee-res').value)||'';
+  var resPartsE=resRawE.split('|');
+  var resIdE=resPartsE[0]||null;
+  var resNameE=resPartsE[2]||resRawE;
   var mod=(document.getElementById('ee-mod')&&document.getElementById('ee-mod').value)||'';
   var ep=(document.getElementById('ee-ep')&&document.getElementById('ee-ep').value)||'';
   var har=(document.getElementById('ee-har')&&document.getElementById('ee-har').value)||'';
@@ -1872,7 +1985,7 @@ async function saveEditExp(eid){
   var isMx2=!!(document.getElementById('ee-mx')&&document.getElementById('ee-mx').checked);
   var oldExp=S.experiments.find(function(e){return e.id===eid});
   var harChanged=oldExp&&har.trim()&&har.trim()!==(oldExp.harvest||'').trim()&&oldExp.harvest;
-  var upd={researcher:res,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status,is_mastectomy:isMx2};
+  var upd={researcher:resNameE,researcher_id:resIdE,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status,is_mastectomy:isMx2};
   if(harChanged)upd.harvest_updated_at=TISO;
   await sb.from('experiments').update(upd).eq('id',eid);
   if(harChanged)await sb.from('deviation_log').insert({experiment_id:eid,mouse_id:null,event_type:'harvest_change',original_date:TISO,actual_date:TISO,reason:'Harvest changed by '+uname()+' on '+TISO+'\nOLD: '+(oldExp.harvest||'')+'\nNEW: '+har});
@@ -2287,6 +2400,263 @@ function exportExcel(eid){
   });
 
   XLSX.writeFile(wb,eid+'_'+TISO+'.xlsx');
+}
+
+// CAGE MANAGEMENT HELPERS
+function getUserCode(userId){
+  var u=S.users.find(function(x){return x.id===userId});
+  return u&&u.code?u.code:'??';
+}
+function getResearcherForExp(eid){
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  if(!exp)return null;
+  if(exp.researcher_id){var u=S.users.find(function(x){return x.id===exp.researcher_id});return u||null;}
+  return null;
+}
+function getResearcherCode(eid){
+  var u=getResearcherForExp(eid);
+  return u&&u.code?u.code:'??';
+}
+function getCageSlot(eid){
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  return exp&&exp.researcher_cage_slot?exp.researcher_cage_slot:1;
+}
+function getCagePrefix(eid){
+  // TL + slot (1-9) + 'xx' — e.g. TL1xx means prefix "TL1"
+  var code=getResearcherCode(eid);
+  var slot=getCageSlot(eid);
+  return code+slot;
+}
+function suggestNextCage(eid){
+  // Find highest cage number with this prefix, suggest next
+  var prefix=getCagePrefix(eid);
+  var allCages=[];
+  S.experiments.forEach(function(exp){
+    (S.mice[exp.id]||[]).forEach(function(m){
+      if(m.cage_number&&m.cage_number.indexOf(prefix)===0)allCages.push(m.cage_number);
+    });
+  });
+  if(!allCages.length)return prefix+'01';
+  var nums=allCages.map(function(c){return parseInt(c.slice(prefix.length))||0}).filter(function(n){return!isNaN(n)});
+  var maxN=nums.length?Math.max.apply(null,nums):0;
+  return prefix+String(maxN+1).padStart(2,'0');
+}
+function getOccupiedCagesInExp(eid){
+  // Returns [{cage, group, count, mice}] for all occupied cages in this experiment
+  var byC={};
+  (S.mice[eid]||[]).filter(function(m){return m.status==='active'&&m.cage_number}).forEach(function(m){
+    if(!byC[m.cage_number])byC[m.cage_number]={cage:m.cage_number,group:m.group_name,mice:[]};
+    byC[m.cage_number].mice.push(m);
+  });
+  return Object.values(byC).sort(function(a,b){return a.cage.localeCompare(b.cage,undefined,{numeric:true})});
+}
+function getOccupiedCagesOtherExps(eid){
+  // Returns cages from other active experiments (for cross-exp transfer)
+  var byC={};
+  S.experiments.filter(function(e){return e.status==='active'&&e.id!==eid}).forEach(function(exp){
+    (S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.cage_number}).forEach(function(m){
+      if(!byC[m.cage_number])byC[m.cage_number]={cage:m.cage_number,expId:exp.id,expName:exp.name,mice:[]};
+      byC[m.cage_number].mice.push(m);
+    });
+  });
+  return Object.values(byC).sort(function(a,b){return a.cage.localeCompare(b.cage,undefined,{numeric:true})});
+}
+async function assignCageSlot(eid){
+  // Auto-assign lowest available slot for this researcher
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  if(!exp||!exp.researcher_id)return;
+  // Find all slots used by this researcher's active experiments
+  var usedSlots=S.experiments
+    .filter(function(e){return e.researcher_id===exp.researcher_id&&e.status==='active'&&e.id!==eid&&e.researcher_cage_slot})
+    .map(function(e){return e.researcher_cage_slot});
+  // Find lowest available slot 1-9
+  var slot=1;
+  while(usedSlots.includes(slot)&&slot<10)slot++;
+  await sb.from('experiments').update({researcher_cage_slot:slot}).eq('id',eid);
+  exp.researcher_cage_slot=slot;
+  return slot;
+}
+
+// UNIFIED CAGE + GROUP TRANSFER MODAL
+function showCageTransfer(eid,mid){
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+  if(!exp||!m)return;
+  S._cageCtx={eid:eid,mid:mid};
+  var groups=S.groups[eid]||[];
+  var otherGroups=groups.filter(function(g){return g.id!==m.group_id&&g.name!==m.group_name});
+  var occupiedCages=getOccupiedCagesInExp(eid);
+  var nextCage=suggestNextCage(eid);
+  var prefix=getCagePrefix(eid);
+
+  // Cage pills for cages in this experiment
+  var cagePillsHtml=occupiedCages.map(function(c){
+    var isCurrent=c.cage===m.cage_number;
+    return '<button class="btn btn-xs '+(isCurrent?'btn-p':'')+' cage-pill" data-cage="'+c.cage+'" onclick="selectCagePill(this)" style="margin:2px">'
+      +c.cage+' <span style="font-size:9px;opacity:.7">'+c.mice.length+' mice · '+c.group+'</span>'
+      +'</button>';
+  }).join('');
+
+  var groupOptsHtml='<option value="">Keep current group ('+m.group_name+')</option>'
+    +otherGroups.map(function(g){return'<option value="'+g.id+'|'+g.name+'">'+g.name+'</option>';}).join('');
+
+  var nxtMon=addD(TISO,((8-new Date(TISO).getDay())%7)||7);
+
+  showModal('Move mouse — '+mid,
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:10px">Currently: group <strong>'+m.group_name+'</strong>'+(m.cage_number?' · cage <strong>'+m.cage_number+'</strong>':'· no cage')+'</div>'
+    // CAGE SECTION
+    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Cage</div>'
+    +'<div style="margin-bottom:6px">'
+    +(cagePillsHtml||'<span style="font-size:10px;color:var(--text3)">No cages in use yet</span>')
+    +'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<button class="btn btn-xs cage-pill" data-cage="'+nextCage+'" onclick="selectCagePill(this)"><i class="ti ti-plus"></i> New cage: '+nextCage+'</button>'
+    +'<button class="btn btn-xs" onclick="toggleOtherCages()" id="other-cages-btn">Other experiment...</button>'
+    +'</div>'
+    +'<div id="other-cages-panel" style="display:none;margin-bottom:8px;padding:6px 8px;background:var(--surface2);border-radius:var(--r)">'
+    +'<input class="fi" id="cage-search" placeholder="Search cages (e.g. AB1)" oninput="filterOtherCages(\''+eid+'\')" style="width:100%;margin-bottom:6px;font-size:11px">'
+    +'<div id="other-cages-list" style="max-height:120px;overflow-y:auto"></div>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">'
+    +'<span style="font-size:10px;color:var(--text2)">Selected cage:</span>'
+    +'<input class="fi" id="tr-cage-val" value="'+(m.cage_number||'')+'" style="width:90px;font-size:11px" placeholder="none">'
+    +'<button class="btn btn-xs" onclick="clearCagePill()">Clear</button>'
+    +'</div>'
+    // GROUP SECTION
+    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Group (optional)</div>'
+    +'<div class="f2">'
+    +'<div class="fg full"><select class="fs" id="tr-grp">'+groupOptsHtml+'</select></div>'
+    +'<div class="fg"><label class="fl">Transfer date</label><input class="fi" id="tr-date" type="date" value="'+TISO+'"></div>'
+    +'<div class="fg"><label class="fl">Tx start date</label><input class="fi" id="tr-tx" type="date" value="'+TISO+'"></div>'
+    +'<div class="fg full"><label class="fl">Schedule resumes from</label><input class="fi" id="tr-sched" type="date" value="'+nxtMon+'"></div>'
+    +'<div class="fg full"><label class="fl">Note</label><input class="fi" id="tr-note" placeholder="optional"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitCageTransfer()"><i class="ti ti-check"></i> Save</button>',
+    true
+  );
+  // Pre-select current cage pill
+  setTimeout(function(){
+    if(m.cage_number){
+      var pill=document.querySelector('.cage-pill[data-cage="'+m.cage_number+'"]');
+      if(pill)pill.classList.add('btn-p');
+    }
+    // Init other cages list
+    filterOtherCages(eid);
+  },50);
+}
+
+function selectCagePill(btn){
+  document.querySelectorAll('.cage-pill').forEach(function(b){b.classList.remove('btn-p');});
+  btn.classList.add('btn-p');
+  var cageIn=document.getElementById('tr-cage-val');if(cageIn)cageIn.value=btn.dataset.cage;
+}
+function clearCagePill(){
+  document.querySelectorAll('.cage-pill').forEach(function(b){b.classList.remove('btn-p');});
+  var cageIn=document.getElementById('tr-cage-val');if(cageIn)cageIn.value='';
+}
+
+function toggleOtherCages(){
+  var panel=document.getElementById('other-cages-panel');
+  if(panel)panel.style.display=panel.style.display==='none'?'block':'none';
+}
+
+function filterOtherCages(eid){
+  var q=(document.getElementById('cage-search')&&document.getElementById('cage-search').value||'').toLowerCase();
+  var other=getOccupiedCagesOtherExps(eid);
+  var list=document.getElementById('other-cages-list');if(!list)return;
+  var filtered=q?other.filter(function(c){return c.cage.toLowerCase().indexOf(q)>=0;}):other;
+  list.innerHTML=filtered.slice(0,20).map(function(c){
+    return '<button class="btn btn-xs cage-pill" data-cage="'+c.cage+'" onclick="selectCagePill(this)" style="margin:2px">'
+      +c.cage+' <span style="font-size:9px;opacity:.7">'+c.expId+' · '+c.mice.length+' mice</span></button>';
+  }).join('')||'<div style="font-size:10px;color:var(--text3)">No cages found</div>';
+}
+
+async function submitCageTransfer(){
+  var d=S._cageCtx;if(!d)return;
+  var eid=d.eid,mid=d.mid;
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+  var newCage=(document.getElementById('tr-cage-val')&&document.getElementById('tr-cage-val').value||'').trim();
+  var gv=(document.getElementById('tr-grp')&&document.getElementById('tr-grp').value)||'';
+  var td=(document.getElementById('tr-date')&&document.getElementById('tr-date').value)||TISO;
+  var txs=(document.getElementById('tr-tx')&&document.getElementById('tr-tx').value)||TISO;
+  var sched=(document.getElementById('tr-sched')&&document.getElementById('tr-sched').value)||TISO;
+  var note=(document.getElementById('tr-note')&&document.getElementById('tr-note').value)||'';
+
+  var updates={};
+  var events=[];
+  var cageChanged=newCage&&newCage!==m.cage_number;
+  var groupChanged=gv&&gv!=='';
+
+  // Apply cage change
+  if(cageChanged){updates.cage_number=newCage;}
+  
+  // Apply group change
+  if(groupChanged){
+    var parts=gv.split('|'),ngid=parts[0],ngname=parts[1];
+    updates.group_id=ngid;updates.group_name=ngname;
+    updates.tx_start=txs;
+    updates.original_group_id=m.group_id;
+    updates.original_group_name=m.group_name;
+    events.push({mouse_id:mid,experiment_id:eid,event_date:td,event_type:'transferred',
+      label:'Transferred by '+uname()+': '+m.group_name+' to '+ngname+(cageChanged?' · cage '+m.cage_number+' to '+newCage:''),
+      details:{from_group:m.group_name,to_group:ngname,from_cage:m.cage_number,to_cage:newCage||m.cage_number,first_tx_date:txs,schedule_anchor:sched,note:note},
+      logged_by:uname()});
+    if(txs)events.push({mouse_id:mid,experiment_id:eid,event_date:txs,event_type:'tx_start',label:'Treatment started',details:{schedule_anchor:sched},logged_by:uname()});
+  } else if(cageChanged){
+    events.push({mouse_id:mid,experiment_id:eid,event_date:td,event_type:'cage_change',
+      label:'Cage: '+(m.cage_number||'none')+' to '+newCage,
+      details:{old_cage:m.cage_number,new_cage:newCage},logged_by:uname()});
+  } else if(!cageChanged&&!groupChanged){
+    closeModal();return;
+  }
+
+  if(Object.keys(updates).length)await sb.from('mice').update(updates).eq('id',mid);
+  if(events.length)await sb.from('mouse_events').insert(events);
+
+  closeModal();await loadAll(eid);renderExp(eid);
+}
+
+// Bulk cage change from floating bar
+function showBulkCage(){
+  var mids=Object.keys(S._selectedMice);
+  if(!mids.length)return;
+  var eid=Object.values(S._selectedMice)[0];
+  S._cageCtx={eid:eid,mids:mids};
+  var occupiedCages=getOccupiedCagesInExp(eid);
+  var nextCage=suggestNextCage(eid);
+  var cagePillsHtml=occupiedCages.map(function(c){
+    return '<button class="btn btn-xs cage-pill" data-cage="'+c.cage+'" onclick="selectCagePill(this)" style="margin:2px">'
+      +c.cage+' <span style="font-size:9px;opacity:.7">'+c.mice.length+' mice</span></button>';
+  }).join('');
+  showModal('Change cage — '+mids.length+' mice',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">'+mids.join(', ')+'</div>'
+    +'<div style="margin-bottom:6px">'+(cagePillsHtml||'')+'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:8px">'
+    +'<button class="btn btn-xs cage-pill" data-cage="'+nextCage+'" onclick="selectCagePill(this)"><i class="ti ti-plus"></i> New: '+nextCage+'</button>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:6px">'
+    +'<span style="font-size:10px;color:var(--text2)">Cage:</span>'
+    +'<input class="fi" id="tr-cage-val" style="width:90px;font-size:11px" placeholder="cage number">'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitBulkCage()"><i class="ti ti-check"></i> Assign</button>');
+}
+async function submitBulkCage(){
+  var d=S._cageCtx;if(!d||!d.mids)return;
+  var newCage=(document.getElementById('tr-cage-val')&&document.getElementById('tr-cage-val').value||'').trim();
+  if(!newCage){alert('Enter a cage number');return;}
+  var events=[];
+  for(var i=0;i<d.mids.length;i++){
+    var mid=d.mids[i];
+    var m=(S.mice[d.eid]||[]).find(function(x){return x.id===mid});
+    await sb.from('mice').update({cage_number:newCage}).eq('id',mid);
+    if(m)events.push({mouse_id:mid,experiment_id:d.eid,event_date:TISO,event_type:'cage_change',
+      label:'Cage: '+(m.cage_number||'none')+' to '+newCage,
+      details:{old_cage:m.cage_number,new_cage:newCage},logged_by:uname()});
+  }
+  if(events.length)await sb.from('mouse_events').insert(events);
+  closeModal();clearSelection();await loadAll(d.eid);renderExp(d.eid);
 }
 
 function buildExpNav(){
