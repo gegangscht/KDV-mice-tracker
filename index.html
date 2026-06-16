@@ -232,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v49</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v50</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2557,7 +2557,7 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
   var todayTasks=tasks; // already sorted/filtered for this view
 
   var phtml='';
-  phtml+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1.5px solid #000;padding-bottom:3px">Daily sheet — '+today+'</div>';
+  phtml+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1.5px solid #000;padding-bottom:3px;page-break-after:avoid;break-after:avoid">Daily sheet — '+today+'</div>';
 
   // Build cage→tasks map same way as daily view
   var ptCageToExps={};
