@@ -182,10 +182,10 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .float-bar .btn-g{background:#3B6D11;border-color:#3B6D11}
 .mouse-chk{width:14px;height:14px;cursor:pointer;accent-color:var(--blue)}
 @media print{
-  /* Hide everything except the dedicated print root */
-  body > *:not(#print-root){display:none!important}
-  #print-root{display:block!important;font-family:Arial,sans-serif;font-size:9px;margin:0;padding:6px}
-  @page{margin:8mm;size:A4 landscape}
+  /* Hide everything except print root — use visibility+position to avoid blank page */
+  body > *:not(#print-root){display:none!important;visibility:hidden!important;position:absolute!important;left:-9999px!important}
+  #print-root{display:block!important;visibility:visible!important;position:static!important;font-family:Arial,Helvetica,sans-serif;font-size:9px;margin:0;padding:6px;width:100%}
+  @page{margin:8mm}
   table{page-break-inside:auto;border-collapse:collapse;width:100%}
   tr{page-break-inside:avoid}
   .print-harvest{display:block!important}
@@ -2759,6 +2759,10 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
     phtml+='</tbody></table></div>';
   });
 
+  // If nothing was added, show a message
+  if(phtml.length < 200){
+    phtml+='<div style="padding:2rem;text-align:center;color:#666;font-size:11px">No tasks scheduled for '+(S.dailyDate||TISO)+'</div>';
+  }
   return phtml;
 }
 
@@ -3057,6 +3061,5 @@ if(saved){
 }
 // Otherwise show password screen (default)
 </script>
-<div id="print-root" style="display:none"></div>
 </body>
 </html>
