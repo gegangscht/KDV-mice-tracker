@@ -232,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v48</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v51</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -774,7 +774,9 @@ async function submitLog(eid,mid,ei){
         neid=neid?neid.id:eid;
         var cc=document.getElementById('ilc-d-'+mid);
         if(cc)cc.innerHTML='<div style="padding:3px 9px 6px;font-size:11px;color:var(--green)"><i class="ti ti-check"></i> Saved'+(sites[0]?' - '+sites[0].dim1+'x'+sites[0].dim2:'')+'</div>';
-        await loadAll(eid);openLogD(neid,nid);return;
+        await loadAll(eid);
+        if(neid!==eid)await loadAll(neid);
+        openLogD(neid,nid);return;
       }
     }
     await loadAll(eid);if(S.view==='daily')renderDaily();else renderExp(eid);
@@ -1026,7 +1028,7 @@ function renderDaily(){
     +'<button class="btn btn-xs" onclick="showAddTask()"><i class="ti ti-plus"></i> Add task</button>'
     +'<button class="btn btn-xs" onclick="doPrint()"><i class="ti ti-printer"></i> Print</button>';
   var raw=getTasksForDate(S.dailyDate);var tasks=sortTasks(raw);
-  logOrder=tasks.filter(function(t){return t.type==='measure'}).map(function(t){return t.mouseId});
+  logOrder=tasks.filter(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-weight'||t.type==='measure-combined';}).map(function(t){return t.mouseId});
   var active=S.experiments.reduce(function(s,e){return s+(S.mice[e.id]||[]).filter(function(m){return m.status==='active'}).length},0);
   var html='<div class="mc-grid">'
     +'<div class="mc"><div class="mc-l">Active mice</div><div class="mc-v">'+active+'</div></div>'
