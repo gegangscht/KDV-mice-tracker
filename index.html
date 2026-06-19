@@ -232,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v51</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v54</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -303,6 +303,11 @@ function bFull(sites){
   return p+(sites.length>1?' = '+t+'mm2'+(tn!==t?' ('+tn+'mm2 excl. skin)':''):'');
 }
 function lastMs(mid,eid){var ms=((S.measurements[eid]||{})[mid]||[]).filter(function(x){return x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1})});return ms.length?ms[ms.length-1]:null}
+function findTodaysMeasureIdx(eid,mid,dateIso){
+  var msl=(S.measurements[eid]||{})[mid]||[];
+  for(var i=msl.length-1;i>=0;i--){if(msl[i].measured_at===dateIso)return i;}
+  return -1;
+}
 function nearEP(mid,eid){var l=lastMs(mid,eid);return l?burden(l.tumor_sites,false)>=81:false}
 function dInTx(m){if(!m.tx_start)return null;return Math.round((new Date(TISO)-new Date(m.tx_start))/86400000)}
 function addD(iso,n){var d=new Date(iso);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
@@ -537,11 +542,11 @@ function sortTasks(tasks){
 
 // LOG FORM
 var logOrder=[];
-function logHTML(eid,mid,ei){
+function logHTML(eid,mid,ei,viewDate){
   var msl=(S.measurements[eid]||{})[mid]||[];
   var entry=ei>=0?msl[ei]:null;
   var lastMeas=msl.length>0?msl[msl.length-1]:null;
-  var defD=entry?entry.measured_at:TISO;
+  var defD=entry?entry.measured_at:(viewDate||TISO);
   var defN=entry?entry.note||'':'';
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
   var defW=m&&m.weight?m.weight:'';
@@ -557,10 +562,10 @@ function logHTML(eid,mid,ei){
     templateSites.forEach(function(site,si){
       var isSkin=site.location==='skin'||site.is_skin;
       var isGone=site.status==='gone';
-      var prevSz=entry?'':(site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'');
+      var prevSz=site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'';
       siteCols+='<div class="il-g" id="sr-'+mid+'-'+si+'" style="min-width:80px">'
         +'<div class="il-l" style="color:'+(isSkin?'var(--amber)':'var(--text3)')+'">'+site.location+'</div>'
-        +'<input class="il-in" id="il-sz-'+mid+'-'+si+'" value="'+(isEdit?prevSz:'')+'" style="width:72px" placeholder="7x8" tabindex="'+(si+1)+'"'+(isGone?' disabled':'')+'>'
+        +'<input class="il-in" id="il-sz-'+mid+'-'+si+'" value="'+(isEdit?prevSz:'')+'" style="width:72px" placeholder="7x8" tabindex="'+(si+2)+'"'+(isGone?' disabled':'')+'>'
         +'<div style="margin-top:2px"><label class="skin-chk"><input type="checkbox" class="gone-chk" data-mid="'+mid+'" data-si="'+si+'"'+(isGone?' checked':'')+'>Gone</label></div>'
         +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="'+site.location+'">'
         +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
@@ -583,10 +588,10 @@ function logHTML(eid,mid,ei){
 
   return '<div class="il" id="il-'+mid+'">'
     +'<div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap">'
-    +'<div class="il-g"><div class="il-l">Date</div><input class="il-in" id="il-d-'+mid+'" type="date" value="'+defD+'" style="width:128px" tabindex="0"></div>'
+    +'<div class="il-g"><div class="il-l">Date</div><input class="il-in" id="il-d-'+mid+'" type="date" value="'+defD+'" style="width:128px" tabindex="1"></div>'
     +siteCols
     +'<button class="btn btn-xs btn-icon" id="il-addsite-'+mid+'" title="Add tumor site" style="margin-top:14px;align-self:flex-start"><i class="ti ti-plus"></i></button>'
-    +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="" style="width:58px" placeholder="'+(defW||'g')+'" tabindex="50" data-lastw="'+(defW||'')+'"></div>'
+    +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+(isEdit&&entry&&entry.weight!=null?entry.weight:'')+'" style="width:58px" placeholder="'+(defW||'g')+'" tabindex="50" data-lastw="'+(defW||'')+'"></div>'
     +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:52px" placeholder="C01" tabindex="51"></div>'
     +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..." tabindex="52"></div>'
     +statusSel
@@ -610,7 +615,7 @@ function blankSiteRowHTML(mid,si){
     +'<option value="">select</option>'
     +LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')
     +'</select>'
-    +'<input class="il-in" id="il-sz-'+mid+'-'+si+'" style="width:72px" placeholder="7x8" tabindex="'+(si+1)+'">'
+    +'<input class="il-in" id="il-sz-'+mid+'-'+si+'" style="width:72px" placeholder="7x8" tabindex="'+(si+2)+'">'
     +'<div style="margin-top:2px"><label class="skin-chk"><input type="checkbox" class="gone-chk" data-mid="'+mid+'" data-si="'+si+'">Gone</label></div>'
     +'<input type="hidden" id="il-loc-'+mid+'-'+si+'" value="">'
     +'<input type="hidden" id="il-skin-'+mid+'-'+si+'" value="0">'
@@ -690,8 +695,9 @@ function ilSK(e,eid,mid,ei,si){if(e.key==='Enter'){e.preventDefault();var n=docu
 function openLogD(eid,mid){
   var c=document.getElementById('ilc-d-'+mid);if(!c)return;
   if(c.style.display==='block'){c.style.display='none';c.innerHTML='';return;}
-  c.style.display='block';c.innerHTML=logHTML(eid,mid,-1);
-  ilWireButtons(eid,mid,-1);
+  var todayIdx=findTodaysMeasureIdx(eid,mid,S.dailyDate||TISO);
+  c.style.display='block';c.innerHTML=logHTML(eid,mid,todayIdx,S.dailyDate||TISO);
+  ilWireButtons(eid,mid,todayIdx);
   // For weight-only tasks, find the task type and focus weight directly
   var _taskType='';
   var _allTasks=getTasksForDate(TISO);
@@ -981,6 +987,7 @@ function taskSection(title,icon,items){
     var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
     var isMeasure=t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';
     var isActive=t.m&&t.m.status==='active';
+    var loggedToday=isMeasure&&t.mouseId&&findTodaysMeasureIdx(t.expId,t.mouseId,t.date)>=0;
     return '<div class="task-row" style="grid-template-columns:'+cols+'">'
       +'<span class="mono" style="font-size:10px">'+(t.mouseId||'--')+(t.m&&t.m.cage_number?'<br><span class="cage-tag" style="margin-top:1px;font-size:9px"><i class="ti ti-cage" style="font-size:9px"></i>'+t.m.cage_number+'</span>':'')+'</span>'
       +'<span style="font-size:10px;color:var(--text2)">'+(t.expId||'--')
@@ -992,6 +999,7 @@ function taskSection(title,icon,items){
       +'<span class="burden-badge">'+(isMeasure?(t.lastBurden||'--'):(t.dose?t.dose+(t.route?' '+t.route:''):''))+'</span>'
       +'<span style="font-size:10px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx:'')+'</span>'
       +'<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">'
+        +(loggedToday?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>':'')
         +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
@@ -1008,6 +1016,53 @@ function taskSection(title,icon,items){
 }
 
 // DAILY
+// Builds the mouse-log order matching exactly what's visually rendered in renderDaily,
+// for both Type-sort and WP/cage-sort layouts. Keep in sync with renderDaily's grouping.
+function isMeasureType(type){return type==='measure'||type==='measure-tumor'||type==='measure-combined'||type==='measure-weight';}
+function buildVisibleLogOrder(tasks){
+  var measureTasks=tasks.filter(function(t){return isMeasureType(t.type);});
+  var order=[];
+  function pushMice(taskList){
+    var byMouse={};
+    taskList.forEach(function(t){if(!byMouse[t.mouseId])byMouse[t.mouseId]=[];byMouse[t.mouseId].push(t);});
+    Object.keys(byMouse).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(mid){
+      if(order.indexOf(mid)===-1)order.push(mid);
+    });
+  }
+  if(S.sortBy==='type'){
+    pushMice(measureTasks);
+    return order;
+  }
+  // WP/cage sort: mirror renderDaily's grouping exactly
+  var cageToExps={};
+  measureTasks.forEach(function(t){if(t.m&&t.m.cage_number){var c=t.m.cage_number;if(!cageToExps[c])cageToExps[c]=new Set();cageToExps[c].add(t.expId);}});
+  var mixedCages=new Set();
+  Object.keys(cageToExps).forEach(function(c){if(cageToExps[c].size>1)mixedCages.add(c);});
+
+  var byE={};
+  measureTasks.forEach(function(t){
+    if(t.m&&t.m.cage_number&&mixedCages.has(t.m.cage_number))return;
+    var k=t.expId||'Other';if(!byE[k])byE[k]=[];byE[k].push(t);
+  });
+  Object.keys(byE).sort().forEach(function(eid){
+    var expTasks=byE[eid];
+    var withCage=expTasks.filter(function(t){return t.m&&t.m.cage_number;});
+    var noCage=expTasks.filter(function(t){return !t.m||!t.m.cage_number;});
+    var byCage={};
+    withCage.forEach(function(t){var c=t.m.cage_number;if(!byCage[c])byCage[c]=[];byCage[c].push(t);});
+    Object.keys(byCage).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){
+      pushMice(byCage[cage]);
+    });
+    if(noCage.length)pushMice(noCage);
+  });
+  var mixedTasks=measureTasks.filter(function(t){return t.m&&t.m.cage_number&&mixedCages.has(t.m.cage_number);});
+  if(mixedTasks.length){
+    var mixByCage={};
+    mixedTasks.forEach(function(t){var c=t.m.cage_number;if(!mixByCage[c])mixByCage[c]=[];mixByCage[c].push(t);});
+    Object.keys(mixByCage).sort().forEach(function(cage){pushMice(mixByCage[cage]);});
+  }
+  return order;
+}
 function renderDaily(){
   S.view='daily';
   if(!S.dailyDate)S.dailyDate=TISO;
@@ -1028,7 +1083,7 @@ function renderDaily(){
     +'<button class="btn btn-xs" onclick="showAddTask()"><i class="ti ti-plus"></i> Add task</button>'
     +'<button class="btn btn-xs" onclick="doPrint()"><i class="ti ti-printer"></i> Print</button>';
   var raw=getTasksForDate(S.dailyDate);var tasks=sortTasks(raw);
-  logOrder=tasks.filter(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-weight'||t.type==='measure-combined';}).map(function(t){return t.mouseId});
+  logOrder=buildVisibleLogOrder(tasks);
   var active=S.experiments.reduce(function(s,e){return s+(S.mice[e.id]||[]).filter(function(m){return m.status==='active'}).length},0);
   var html='<div class="mc-grid">'
     +'<div class="mc"><div class="mc-l">Active mice</div><div class="mc-v">'+active+'</div></div>'
@@ -1082,18 +1137,19 @@ function renderDaily(){
       if(t.type==='ivis')return'IVIS';
       return t.label||t.type;
     }
-    function isMeasureType(type){return type==='measure'||type==='measure-tumor'||type==='measure-combined'||type==='measure-weight';}
     function renderCageMouseRow(mid,mTasks,expId){
       var t0=mTasks[0];
       var allLabels=mTasks.map(taskLabel).join(' + ');
       var hasMeasure=mTasks.some(function(t){return isMeasureType(t.type);});
+      var loggedToday=hasMeasure&&findTodaysMeasureIdx(expId,mid,t0.date)>=0;
       var rsIdx=rsReg({date:t0.date,label:allLabels,type:t0.type,mouseId:mid,expId:expId});
       return '<div class="task-row" style="grid-template-columns:100px 1fr 72px 40px 110px;margin-bottom:2px">'
         +'<span class="mono" style="font-size:10px">'+mid+'<br><span style="font-size:9px;color:var(--text3)">'+(t0.group||t0.expId||'')+'</span></span>'
         +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+(t0.exp&&t0.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t0.exp.harvest+'</span></span>':'')+'</span>'
         +'<span class="burden-badge">'+(t0.lastBurden||'--')+'</span>'
         +'<span style="font-size:10px;color:var(--text3)">'+(t0.dayInTx!=null?'d'+t0.dayInTx:'')+'</span>'
-        +'<div style="display:flex;gap:3px">'
+        +'<div style="display:flex;gap:3px;align-items:center">'
+        +(loggedToday?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>':'')
         +(hasMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+expId+'\',\''+mid+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="showCageTransfer(\''+expId+'\',\''+mid+'\')"><i class="ti ti-arrows-exchange"></i></button>'
         +'<button class="btn btn-xs btn-icon" onclick="reschedTask('+rsIdx+')"><i class="ti ti-calendar-event"></i></button>'
@@ -2821,7 +2877,8 @@ function ilWireButtons(eid,mid,ei){
   if(b2)b2.onclick=function(e){e.stopPropagation();saveKDV(eid,mid);};
   var b3=document.getElementById('il-addsite-'+mid);
   if(b3)b3.onclick=function(e){e.stopPropagation();addBlankSite(mid);};
-  // Keyboard navigation: Enter moves through size fields then weight then note then save
+  // Keyboard navigation: Tab moves between fields (native, via tabindex already set on inputs).
+  // Enter always saves immediately, regardless of which field has focus.
   var ilEl=document.getElementById('il-'+mid);
   if(!ilEl)return;
   var _mid=mid;
@@ -2829,34 +2886,8 @@ function ilWireButtons(eid,mid,ei){
     if(e.key!=='Enter')return;
     var t=e.target;
     if(!t||t.tagName==='SELECT'||t.tagName==='BUTTON')return;
-    var tid=t.id||'';
-    var szPrefix='il-sz-'+_mid+'-';
-    if(tid.indexOf(szPrefix)===0){
-      e.preventDefault();
-      var si=parseInt(tid.slice(szPrefix.length));
-      var next=document.getElementById('il-sz-'+_mid+'-'+(si+1));
-      if(next&&!next.disabled){next.focus();return;}
-      var wEl=document.getElementById('il-w-'+_mid);
-      if(wEl){wEl.focus();return;}
-      submitLog(eid,_mid,_ei);return;
-    }
-    if(tid==='il-w-'+_mid){
-      e.preventDefault();
-      var nEl=document.getElementById('il-n-'+_mid);
-      if(nEl){nEl.focus();}
-      return;
-    }
-    if(tid==='il-cage-'+_mid){
-      e.preventDefault();
-      var nEl2=document.getElementById('il-n-'+_mid);
-      if(nEl2){nEl2.focus();}
-      return;
-    }
-    if(tid==='il-n-'+_mid){
-      e.preventDefault();
-      submitLog(eid,_mid,_ei);
-      return;
-    }
+    e.preventDefault();
+    submitLog(eid,_mid,_ei);
   });
 }
 
