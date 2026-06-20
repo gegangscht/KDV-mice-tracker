@@ -232,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v55</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v56</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1532,9 +1532,11 @@ async function renderExp(eid){
         var tr=document.getElementById('hist-tr-'+m.id);
         if(tr&&tr.dataset.open!=='1'){toggleHist(eid,m.id);}
       });
-    },50);
+      window.scrollTo(0,_scrollY);
+    },60);
+  } else {
+    requestAnimationFrame(function(){window.scrollTo(0,_scrollY);});
   }
-  requestAnimationFrame(function(){window.scrollTo(0,_scrollY);});
 }
 function ST(t){S.expTab=t;renderExp(S.curExp);}
 
