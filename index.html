@@ -166,6 +166,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .ec.sel-custom{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-border)}
 .modal-ov{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:500}
 .modal{background:var(--surface);border-radius:var(--rl);border:.5px solid var(--border);width:460px;max-height:88vh;overflow-y:auto;padding:1.25rem}
+.modal-wide{width:560px}
 .modal-t{font-size:13px;font-weight:500;margin-bottom:.875rem}
 .modal-f{display:flex;gap:7px;justify-content:flex-end;margin-top:.875rem;padding-top:.875rem;border-top:.5px solid var(--border)}
 .pt-btn{padding:2px 8px;font-size:10px;border-radius:var(--r);cursor:pointer;border:.5px solid var(--border2);color:var(--text2);background:var(--surface)}
@@ -237,7 +238,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v62</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v63</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1028,6 +1029,24 @@ async function enrollMice(){
 async function enrollMouse(eid,gid,gname){S._enrollCtx={eid:eid,gid:gid,gname:gname};await enrollMice();}
 
 // ADD TASK
+// Quick way to flag a note on a mouse that's already on the schedule for the day, without
+// reopening the full Add Task modal and re-picking WP/group/mouse from scratch.
+function quickAddNote(eid,mid,date){
+  showModal('Add note — '+mid+' ('+eid+')',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">This note will show as a flag on '+mid+'\'s row for '+fmtD(date)+', separate from the standing protocol notes.</div>'
+    +'<div class="fg full"><label class="fl">Note</label><textarea class="fi" id="qan-note" rows="2" style="resize:vertical" autofocus></textarea>'
+    +'<select class="fs" id="qan-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitQuickAddNote(\''+eid+'\',\''+mid+'\',\''+date+'\')"><i class="ti ti-check"></i> Add note</button>');
+}
+async function submitQuickAddNote(eid,mid,date){
+  var note=((document.getElementById('qan-note')&&document.getElementById('qan-note').value)||'').trim();
+  var level=(document.getElementById('qan-level')&&document.getElementById('qan-level').value)||'standard';
+  if(!note){alert('Enter a note');return;}
+  await sb.from('adhoc_tasks').insert({task_date:date,type:'custom',description:'',mouse_id:mid,group_id:null,experiment_id:eid,note:note,note_level:level,done:false});
+  await dbLoad();closeModal();if(S.view==='daily')renderDaily();else if(S.view==='week')renderWeek();
+}
 function showAddTask(defDate){
   var activeExps=S.experiments.filter(function(e){return e.status==='active'});
   showModal('Add task or note',
@@ -1035,12 +1054,10 @@ function showAddTask(defDate){
     +'<div class="fg"><label class="fl">Date</label><input class="fi" id="at-date" type="date" value="'+(defDate||TISO)+'"></div>'
     +'<div class="fg"><label class="fl">Type</label><select class="fs" id="at-type"><option value="custom">General</option><option value="measure">Measurement</option><option value="blood">Blood draw</option><option value="treatment">Treatment</option><option value="ivis">IVIS</option></select></div>'
     +'</div>'
-    +'<div class="f2" style="margin-top:.5rem">'
-    +'<div class="fg"><label class="fl">WP <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select class="fs" id="at-wp" onchange="atWpChanged()"><option value="">All / none specific</option>'+activeExps.map(function(e){return'<option value="'+e.id+'">'+e.id+' — '+e.name+'</option>';}).join('')+'</select></div>'
-    +'<div class="fg"><label class="fl">Group <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select class="fs" id="at-group" onchange="atGroupChanged()" disabled><option value="">Select a WP first</option></select></div>'
-    +'</div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">WP <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select class="fs" id="at-wp" onchange="atWpChanged()" style="width:100%"><option value="">All / none specific</option>'+activeExps.map(function(e){return'<option value="'+e.id+'">'+e.id+' — '+e.name+'</option>';}).join('')+'</select></div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Group <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select class="fs" id="at-group" onchange="atGroupChanged()" disabled style="width:100%"><option value="">Select a WP first</option></select></div>'
     +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Mice <span style="font-weight:400;color:var(--text3)">(optional — leave empty to target the whole WP or group above)</span></label>'
-    +'<select class="fs" id="at-mice" multiple style="height:90px" disabled><option value="">Select a WP first</option></select>'
+    +'<select class="fs" id="at-mice" multiple style="height:220px;width:100%" disabled><option value="">Select a WP first</option></select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Ctrl/Cmd-click to select multiple mice. Leave empty to target every mouse in the selected group, or the whole WP if no group is selected either.</div>'
     +'</div>'
     +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Description <span style="font-weight:400;color:var(--text3)">(creates an actual task — leave blank for a note-only flag)</span></label><input class="fi" id="at-desc" placeholder="e.g. extra blood draw" autofocus></div>'
@@ -1049,7 +1066,7 @@ function showAddTask(defDate){
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">This note appears as a distinct flag, separate from the standing protocol notes above — use it to call out something specific to today.</div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
-    +'<button class="btn btn-p btn-xs" onclick="submitAddTask()"><i class="ti ti-check"></i> Add</button>');
+    +'<button class="btn btn-p btn-xs" onclick="submitAddTask()"><i class="ti ti-check"></i> Add</button>',true);
 }
 function atWpChanged(){
   var eid=document.getElementById('at-wp').value;
@@ -1224,6 +1241,7 @@ function taskSection(title,icon,items){
         +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
+        +(t.mouseId&&t.expId?'<button class="btn btn-xs btn-icon" onclick="quickAddNote(\''+t.expId+'\',\''+t.mouseId+'\',\''+t.date+'\')" title="Add a note for today"><i class="ti ti-pin"></i></button>':'')
         +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>'
       +'</div></div>'
       +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>';
@@ -1445,6 +1463,7 @@ function renderDaily(){
         +(loggedToday?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>':'')
         +(hasMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+expId+'\',\''+mid+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="showCageTransfer(\''+expId+'\',\''+mid+'\')"><i class="ti ti-arrows-exchange"></i></button>'
+        +'<button class="btn btn-xs btn-icon" onclick="quickAddNote(\''+expId+'\',\''+mid+'\',\''+t0.date+'\')" title="Add a note for today"><i class="ti ti-pin"></i></button>'
         +actionBtn
         +'</div></div>'
         +'<div id="ilc-d-'+mid+'" style="display:none;padding:0 9px 4px"></div>';
@@ -2671,10 +2690,10 @@ async function reactivateMouse(mid,eid){
 }
 
 // MODAL
-function showModal(title,body,footer){
+function showModal(title,body,footer,wide){
   closeModal();
   var ov=document.createElement('div');ov.id='modal-ov';ov.className='modal-ov';
-  ov.innerHTML='<div class="modal"><div class="modal-t">'+title+'</div>'+body+'<div class="modal-f">'+footer+'</div></div>';
+  ov.innerHTML='<div class="modal'+(wide?' modal-wide':'')+'"><div class="modal-t">'+title+'</div>'+body+'<div class="modal-f">'+footer+'</div></div>';
   document.getElementById('app').appendChild(ov);
 }
 function closeModal(){var el=document.getElementById('modal-ov');if(el)el.remove();}
