@@ -232,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v58</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v59</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1037,8 +1037,11 @@ function taskActionMenuMulti(idxs,key){
   }).join('<div style="height:1px;background:var(--border);margin:1px 0"></div>');
   document.body.appendChild(menu);
   var r=btn.getBoundingClientRect();
+  var menuW=menu.offsetWidth;
+  var left=r.right+window.scrollX-menuW; // right-align to button by default
+  if(left<window.scrollX+4)left=Math.min(r.left+window.scrollX,window.scrollX+window.innerWidth-menuW-4);
   menu.style.top=(r.bottom+window.scrollY+3)+'px';
-  menu.style.left=(r.left+window.scrollX)+'px';
+  menu.style.left=left+'px';
   function closeOnOutside(e){if(!menu.contains(e.target)&&e.target!==btn){menu.remove();document.removeEventListener('click',closeOnOutside);}}
   setTimeout(function(){document.addEventListener('click',closeOnOutside);},0);
 }
@@ -1056,8 +1059,11 @@ function taskActionMenu(idx){
     +'<button class="btn btn-xs btn-r" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();deleteTask('+idx+')"><i class="ti ti-trash"></i> Delete</button>';
   document.body.appendChild(menu);
   var r=btn.getBoundingClientRect();
+  var menuW=menu.offsetWidth;
+  var left=r.right+window.scrollX-menuW; // right-align to button by default
+  if(left<window.scrollX+4)left=Math.min(r.left+window.scrollX,window.scrollX+window.innerWidth-menuW-4);
   menu.style.top=(r.bottom+window.scrollY+3)+'px';
-  menu.style.left=(r.left+window.scrollX)+'px';
+  menu.style.left=left+'px';
   function closeOnOutside(e){if(!menu.contains(e.target)&&e.target!==btn){menu.remove();document.removeEventListener('click',closeOnOutside);}}
   setTimeout(function(){document.addEventListener('click',closeOnOutside);},0);
 }
@@ -1403,15 +1409,23 @@ function wkDet(d,type,ef){
   Object.keys(byExp).sort().forEach(function(eid){
     var expTasks=byExp[eid];
     var expName=expTasks[0].expName||eid;
-    html+='<div style="font-size:11px;font-weight:600;color:var(--text);margin:10px 0 4px;padding-top:6px;border-top:1px solid var(--border)">'+(eid==='(no WP)'?'General':eid+' — '+expName)+'</div>';
+    var expKey=eid.replace(/[^a-zA-Z0-9_-]/g,'_');
+    html+='<div style="display:flex;align-items:center;gap:6px;margin:10px 0 4px;padding-top:6px;border-top:1px solid var(--border)">'
+      +'<input type="checkbox" class="wk-sel-exp" data-exp-key="'+expKey+'" onchange="wkSelectExpScope(this,\''+expKey+'\')" title="Select all in this WP">'
+      +'<span style="font-size:11px;font-weight:600;color:var(--text)">'+(eid==='(no WP)'?'General':eid+' — '+expName)+'</span>'
+      +'</div>';
     var byGroup={};
     expTasks.forEach(function(t){var gk=resolveGroup(t);if(!byGroup[gk])byGroup[gk]=[];byGroup[gk].push(t);});
     Object.keys(byGroup).sort().forEach(function(gname){
-      html+='<div style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:6px 0 3px 6px">'+gname+'</div>';
+      var groupKey=expKey+'__'+gname.replace(/[^a-zA-Z0-9_-]/g,'_');
+      html+='<div style="display:flex;align-items:center;gap:6px;margin:6px 0 3px 6px">'
+        +'<input type="checkbox" class="wk-sel-group" data-group-key="'+groupKey+'" onchange="wkSelectGroupScope(this,\''+groupKey+'\')" title="Select all in this group">'
+        +'<span style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">'+gname+'</span>'
+        +'</div>';
       byGroup[gname].forEach(function(t){
         var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
         html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 6px;border-bottom:.5px solid var(--border);font-size:11px">'
-          +'<input type="checkbox" class="wk-chk" value="'+rsIdx+'" onchange="wkSelChange()">'
+          +'<input type="checkbox" class="wk-chk" value="'+rsIdx+'" data-exp-scope="'+expKey+'" data-group-scope="'+groupKey+'" onchange="wkSelChange()">'
           +'<span class="mono" style="min-width:72px">'+(t.mouseId||'--')+'</span>'
           +'<span style="flex:1">'+(t.label||t.desc||'')+'</span>'
           +'<span class="badge bgy">'+t.type+'</span>'
@@ -1424,10 +1438,27 @@ function wkDet(d,type,ef){
   html+='</div>';
   document.getElementById('wk-det').innerHTML=html;
 }
+function wkSelectExpScope(checkboxEl,expKey){
+  document.querySelectorAll('[data-exp-scope="'+expKey+'"]').forEach(function(c){c.checked=checkboxEl.checked;});
+  wkSelChange();
+}
+function wkSelectGroupScope(checkboxEl,groupKey){
+  document.querySelectorAll('[data-group-scope="'+groupKey+'"]').forEach(function(c){c.checked=checkboxEl.checked;});
+  wkSelChange();
+}
 function wkSelChange(){
   var chks=document.querySelectorAll('.wk-chk');
   var sel=Array.from(chks).filter(function(c){return c.checked}).map(function(c){return parseInt(c.value)});
   S._wkSel=new Set(sel);
+  // Keep group/WP select-all checkboxes in sync (checked only if every child in scope is checked)
+  document.querySelectorAll('.wk-sel-group').forEach(function(g){
+    var kids=document.querySelectorAll('[data-group-scope="'+g.dataset.groupKey+'"]');
+    g.checked=kids.length>0&&Array.from(kids).every(function(c){return c.checked});
+  });
+  document.querySelectorAll('.wk-sel-exp').forEach(function(g){
+    var kids=document.querySelectorAll('[data-exp-scope="'+g.dataset.expKey+'"]');
+    g.checked=kids.length>0&&Array.from(kids).every(function(c){return c.checked});
+  });
   var bar=document.getElementById('wk-bulkbar');
   var cnt=document.getElementById('wk-sel-count');
   if(sel.length){bar.style.display='flex';bar.style.alignItems='center';cnt.textContent=sel.length+' selected';}
