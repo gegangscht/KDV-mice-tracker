@@ -94,6 +94,10 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .task-row:hover{background:var(--surface2)}
 .npill{background:var(--amber-bg);color:var(--amber);border-radius:3px;padding:0 4px;font-size:9px;margin-left:3px}
 .gn-pill{border-radius:3px;padding:0 4px;font-size:9px;margin-left:3px;font-weight:500}
+.dn-pill{display:inline-flex;align-items:center;gap:3px;color:#fff;border-radius:3px;padding:1px 6px;font-size:9px;margin-left:3px;font-weight:500}
+.dn-pill .ti{font-size:10px}
+.dn-banner{display:flex;align-items:center;gap:6px;color:#fff;border-radius:var(--r);padding:4px 8px;font-size:11px;font-weight:500;margin-bottom:4px}
+.dn-banner .ti{font-size:13px}
 .hv-wrap{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--surface2);color:var(--text3);cursor:pointer;font-size:11px;position:relative;vertical-align:middle;margin-left:4px}
 .hv-wrap:hover .hv-tip{display:block}
 .hv-tip{display:none;position:fixed;background:var(--text);color:#fff;font-size:10px;border-radius:var(--r);padding:6px 9px;width:300px;z-index:9999;line-height:1.5;white-space:normal;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3);top:auto;left:auto}
@@ -233,7 +237,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v61</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v62</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -272,8 +276,8 @@ const TLBL=TODAY.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const COLS=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
 const LOCS=['1R','2R','3R','4R','5R','1L','2L','3L','4L','5L','skin'];
-const TLBL2={measure:'Tumor measurements','measure-tumor':'Tumor measurements','measure-combined':'Tumor + weight','measure-weight':'Weight checks',treatment:'Treatments',blood:'Blood draws',ivis:'IVIS / imaging',custom:'Ad hoc',distress:'Distress checks'};
-const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined':'ti-ruler-2','measure-weight':'ti-weight',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list',distress:'ti-stethoscope'};
+const TLBL2={measure:'Tumor measurements','measure-tumor':'Tumor measurements','measure-combined':'Tumor + weight','measure-weight':'Weight checks',treatment:'Treatments',blood:'Blood draws',ivis:'IVIS / imaging',custom:'Ad hoc',distress:'Distress checks','note-only':'Notes (no scheduled task)'};
+const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined':'ti-ruler-2','measure-weight':'ti-weight',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list',distress:'ti-stethoscope','note-only':'ti-pin'};
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
 const S={view:'daily',curExp:null,expTab:'mice',sortBy:'exp',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{}};
@@ -459,6 +463,9 @@ async function init(){
 // TASK GENERATOR
 function getTasksForDate(iso){
   var d=new Date(iso),dow=d.getDay(),tasks=[];
+  S._dailyNotes={};
+  S._wpBanners=S._wpBanners||{};
+  S._wpBanners[iso]={};
   S.experiments.filter(function(e){return e.status==='active'}).forEach(function(exp){
     (S.mice[exp.id]||[]).filter(function(m){return m.status==='active'}).forEach(function(m){
       var g=(S.groups[exp.id]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});if(!g)return;
@@ -495,9 +502,52 @@ function getTasksForDate(iso){
         }
       });
     });
-    (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&t.experiment_id===exp.id}).forEach(function(t){tasks.push({type:'custom',mouseId:t.mouse_id||'',expId:exp.id,expName:exp.name,label:t.description,note:t.note,done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});});
+    // Adhoc tasks/notes targeted at this WP specifically (mouse_id and group_id both null).
+    // These never attach to a mouse row — they become a WP-level banner instead.
+    var wpLevelAdhoc=(S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&t.experiment_id===exp.id&&!t.mouse_id&&!t.group_id;});
+    wpLevelAdhoc.forEach(function(t){
+      if(t.description){
+        // A genuine WP-wide task still needs somewhere to live — show it as a general row for this WP.
+        tasks.push({type:'custom',mouseId:'',expId:exp.id,expName:exp.name,label:t.description,note:'',done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});
+      }
+      if(t.note){
+        S._wpBanners=S._wpBanners||{};
+        if(!S._wpBanners[iso])S._wpBanners[iso]={};
+        if(!S._wpBanners[iso][exp.id])S._wpBanners[iso][exp.id]=[];
+        S._wpBanners[iso][exp.id].push({note:t.note,level:t.note_level||'standard',adHocId:t.id});
+      }
+    });
+
+    // Adhoc tasks/notes targeted at a specific group within this WP (group_id set, mouse_id null).
+    // Expand to every active mouse currently in that group.
+    var groupLevelAdhoc=(S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&t.experiment_id===exp.id&&t.group_id&&!t.mouse_id;});
+    groupLevelAdhoc.forEach(function(t){
+      var grp=(S.groups[exp.id]||[]).find(function(g){return g.id===t.group_id});if(!grp)return;
+      var grpMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&(m.group_id===grp.id||m.group_name===grp.name);});
+      grpMice.forEach(function(m){
+        if(t.description)tasks.push({type:'custom',mouseId:m.id,expId:exp.id,expName:exp.name,group:grp.name,label:t.description,note:'',done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id+'-'+m.id});
+        if(t.note){
+          S._dailyNotes=S._dailyNotes||{};
+          var k=iso+'|'+exp.id+'|'+m.id;
+          if(!S._dailyNotes[k])S._dailyNotes[k]=[];
+          S._dailyNotes[k].push({note:t.note,level:t.note_level||'standard'});
+        }
+      });
+    });
+
+    // Adhoc tasks/notes targeted at one specific mouse (mouse_id set).
+    (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&t.experiment_id===exp.id&&t.mouse_id;}).forEach(function(t){
+      if(t.description)tasks.push({type:'custom',mouseId:t.mouse_id,expId:exp.id,expName:exp.name,label:t.description,note:'',done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});
+      if(t.note){
+        S._dailyNotes=S._dailyNotes||{};
+        var k2=iso+'|'+exp.id+'|'+t.mouse_id;
+        if(!S._dailyNotes[k2])S._dailyNotes[k2]=[];
+        S._dailyNotes[k2].push({note:t.note,level:t.note_level||'standard'});
+      }
+    });
   });
-  (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&!t.experiment_id}).forEach(function(t){tasks.push({type:'custom',mouseId:t.mouse_id||'',expId:'',label:t.description,note:t.note,done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});});
+  // Fully general notes/tasks (no mouse, no group, no experiment at all) — unchanged from before.
+  (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&!t.experiment_id&&!t.mouse_id&&!t.group_id;}).forEach(function(t){if(t.description)tasks.push({type:'custom',mouseId:'',expId:'',label:t.description,note:t.note||'',done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});});
 
   // Add distress checks for post-mastectomy mice
   S.experiments.filter(function(e){return e.status==='active'&&e.is_mastectomy}).forEach(function(exp){
@@ -511,6 +561,30 @@ function getTasksForDate(iso){
         dayInTx:daysMx,m:m,exp:exp,date:iso,taskId:'dc-'+m.id+'-'+iso});
     });
   });
+
+  // Attach collected daily notes (from group/mouse-level adhoc entries above) to every
+  // existing task row for that mouse+experiment+date, so the pin pill shows wherever
+  // that mouse's row already renders.
+  if(S._dailyNotes){
+    tasks.forEach(function(t){
+      if(!t.mouseId||!t.expId)return;
+      var k=iso+'|'+t.expId+'|'+t.mouseId;
+      if(S._dailyNotes[k])t.dailyNotes=S._dailyNotes[k];
+    });
+    // For a mouse that has a note but no other task at all that day, synthesize a
+    // lightweight row so the note doesn't get silently dropped from the daily view.
+    Object.keys(S._dailyNotes).forEach(function(k){
+      var parts=k.split('|');if(parts[0]!==iso)return;
+      var kExpId=parts[1],kMouseId=parts[2];
+      var already=tasks.some(function(t){return t.expId===kExpId&&t.mouseId===kMouseId;});
+      if(already)return;
+      var exp2=S.experiments.find(function(e){return e.id===kExpId});
+      var m2=(S.mice[kExpId]||[]).find(function(x){return x.id===kMouseId});
+      if(!m2||m2.status!=='active')return;
+      var g2=(S.groups[kExpId]||[]).find(function(g){return g.id===m2.group_id||g.name===m2.group_name});
+      tasks.push({type:'note-only',mouseId:kMouseId,expId:kExpId,expName:exp2?exp2.name:'',group:g2?g2.name:'',g:g2,m:m2,exp:exp2,label:'',date:iso,taskId:'note-'+kMouseId+'-'+iso,dailyNotes:S._dailyNotes[k]});
+    });
+  }
 
   // Merge same-day tumor+weight tasks for same mouse into one combined task
   var measureByMouse={};
@@ -955,26 +1029,80 @@ async function enrollMouse(eid,gid,gname){S._enrollCtx={eid:eid,gid:gid,gname:gn
 
 // ADD TASK
 function showAddTask(defDate){
-  var allM=[];S.experiments.forEach(function(e){(S.mice[e.id]||[]).filter(function(m){return m.status==='active'}).forEach(function(m){allM.push({id:m.id,eid:e.id});});});
-  showModal('Add task',
+  var activeExps=S.experiments.filter(function(e){return e.status==='active'});
+  showModal('Add task or note',
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Date</label><input class="fi" id="at-date" type="date" value="'+(defDate||TISO)+'"></div>'
     +'<div class="fg"><label class="fl">Type</label><select class="fs" id="at-type"><option value="custom">General</option><option value="measure">Measurement</option><option value="blood">Blood draw</option><option value="treatment">Treatment</option><option value="ivis">IVIS</option></select></div>'
-    +'<div class="fg full"><label class="fl">Description</label><input class="fi" id="at-desc" placeholder="e.g. extra blood draw" autofocus></div>'
-    +'<div class="fg full"><label class="fl">Mouse (blank = general)</label><select class="fs" id="at-mouse"><option value="">No specific mouse</option>'+allM.map(function(m){return'<option value="'+m.id+'|'+m.eid+'">'+m.id+' ('+m.eid+')</option>'}).join('')+'</select></div>'
-    +'</div><div class="fg"><label class="fl">Note</label><input class="fi" id="at-note"></div>',
+    +'</div>'
+    +'<div class="f2" style="margin-top:.5rem">'
+    +'<div class="fg"><label class="fl">WP <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select class="fs" id="at-wp" onchange="atWpChanged()"><option value="">All / none specific</option>'+activeExps.map(function(e){return'<option value="'+e.id+'">'+e.id+' — '+e.name+'</option>';}).join('')+'</select></div>'
+    +'<div class="fg"><label class="fl">Group <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select class="fs" id="at-group" onchange="atGroupChanged()" disabled><option value="">Select a WP first</option></select></div>'
+    +'</div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Mice <span style="font-weight:400;color:var(--text3)">(optional — leave empty to target the whole WP or group above)</span></label>'
+    +'<select class="fs" id="at-mice" multiple style="height:90px" disabled><option value="">Select a WP first</option></select>'
+    +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Ctrl/Cmd-click to select multiple mice. Leave empty to target every mouse in the selected group, or the whole WP if no group is selected either.</div>'
+    +'</div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Description <span style="font-weight:400;color:var(--text3)">(creates an actual task — leave blank for a note-only flag)</span></label><input class="fi" id="at-desc" placeholder="e.g. extra blood draw" autofocus></div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Note <span style="font-weight:400;color:var(--text3)">(shown as a flag, separate from any task above)</span></label><textarea class="fi" id="at-note" rows="2" style="resize:vertical"></textarea>'
+    +'<select class="fs" id="at-note-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
+    +'<div style="font-size:9px;color:var(--text3);margin-top:2px">This note appears as a distinct flag, separate from the standing protocol notes above — use it to call out something specific to today.</div>'
+    +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitAddTask()"><i class="ti ti-check"></i> Add</button>');
+}
+function atWpChanged(){
+  var eid=document.getElementById('at-wp').value;
+  var gSel=document.getElementById('at-group');
+  var mSel=document.getElementById('at-mice');
+  if(!eid){
+    gSel.innerHTML='<option value="">Select a WP first</option>';gSel.disabled=true;
+    mSel.innerHTML='<option value="">Select a WP first</option>';mSel.disabled=true;
+    return;
+  }
+  var groups=S.groups[eid]||[];
+  gSel.innerHTML='<option value="">All groups</option>'+groups.map(function(g){return'<option value="'+g.id+'">'+g.name+'</option>';}).join('');
+  gSel.disabled=false;
+  atGroupChanged();
+}
+function atGroupChanged(){
+  var eid=document.getElementById('at-wp').value;
+  var gid=document.getElementById('at-group').value;
+  var mSel=document.getElementById('at-mice');
+  if(!eid){mSel.innerHTML='<option value="">Select a WP first</option>';mSel.disabled=true;return;}
+  var mice=(S.mice[eid]||[]).filter(function(m){return m.status==='active';});
+  if(gid)mice=mice.filter(function(m){return m.group_id===gid||(S.groups[eid]||[]).find(function(g){return g.id===gid&&g.name===m.group_name});});
+  mSel.innerHTML=mice.map(function(m){return'<option value="'+m.id+'">'+m.id+' — '+(m.group_name||'')+'</option>';}).join('');
+  mSel.disabled=false;
 }
 async function submitAddTask(){
   var date=(document.getElementById('at-date')&&document.getElementById('at-date').value)||TISO;
   var type=(document.getElementById('at-type')&&document.getElementById('at-type').value)||'custom';
   var desc=((document.getElementById('at-desc')&&document.getElementById('at-desc').value)||'').trim();
-  var mv=(document.getElementById('at-mouse')&&document.getElementById('at-mouse').value)||'';
-  var note=(document.getElementById('at-note')&&document.getElementById('at-note').value)||'';
-  if(!desc){alert('Enter description');return;}
-  var mid=null,eid=null;if(mv){var p=mv.split('|');mid=p[0];eid=p[1];}
-  await sb.from('adhoc_tasks').insert({task_date:date,type:type,description:desc,mouse_id:mid,experiment_id:eid,note:note,done:false});
+  var note=((document.getElementById('at-note')&&document.getElementById('at-note').value)||'').trim();
+  var noteLevel=(document.getElementById('at-note-level')&&document.getElementById('at-note-level').value)||'standard';
+  var eid=(document.getElementById('at-wp')&&document.getElementById('at-wp').value)||'';
+  var gid=(document.getElementById('at-group')&&document.getElementById('at-group').value)||'';
+  var mSel=document.getElementById('at-mice');
+  var mids=mSel&&!mSel.disabled?Array.from(mSel.selectedOptions).map(function(o){return o.value}).filter(Boolean):[];
+  if(!desc&&!note){alert('Enter a description (to create a task) or a note (to flag something), or both.');return;}
+  var rows=[];
+  if(mids.length){
+    // One or more specific mice selected — each gets its own row.
+    mids.forEach(function(mid){
+      rows.push({task_date:date,type:type,description:desc||'',mouse_id:mid,group_id:null,experiment_id:eid||null,note:note||'',note_level:note?noteLevel:null,done:false});
+    });
+  } else if(gid){
+    // Whole group, no specific mice picked.
+    rows.push({task_date:date,type:type,description:desc||'',mouse_id:null,group_id:gid,experiment_id:eid||null,note:note||'',note_level:note?noteLevel:null,done:false});
+  } else if(eid){
+    // Whole WP, no group or mice picked.
+    rows.push({task_date:date,type:type,description:desc||'',mouse_id:null,group_id:null,experiment_id:eid,note:note||'',note_level:note?noteLevel:null,done:false});
+  } else {
+    // Fully general, no WP/group/mouse at all.
+    rows.push({task_date:date,type:type,description:desc||'',mouse_id:null,group_id:null,experiment_id:null,note:note||'',note_level:note?noteLevel:null,done:false});
+  }
+  await sb.from('adhoc_tasks').insert(rows);
   await dbLoad();closeModal();if(S.view==='daily')renderDaily();else if(S.view==='week')renderWeek();
 }
 async function toggleAdHoc(id){
@@ -1086,6 +1214,7 @@ function taskSection(title,icon,items){
       +'<span style="font-size:11px">'+(t.label||t.desc||'')
         +(t.lastNote?'<span class="npill">'+t.lastNote+'</span>':'')
         +groupNoteHTML(t.g)
+        +dailyNoteHTML(t.dailyNotes)
         +harvestTipHTML(t.exp)
         +'</span>'
       +'<span class="burden-badge">'+(isMeasure?(t.lastBurden||'--'):(t.dose?t.dose+(t.route?' '+t.route:''):''))+'</span>'
@@ -1143,6 +1272,26 @@ function groupNoteHTML(g){
   if(!g||!g.note)return'';
   var lv=noteLevelStyle(g.note_level);
   return '<span class="gn-pill" style="background:'+lv.bg+';color:'+lv.fg+';border:.5px solid '+lv.border+'" title="'+lv.label+'">'+g.note+'</span>';
+}
+// Builds the dark pin-pill for a one-off daily note (added via "Add task or note"), shown on
+// the affected mouse's row. Visually distinct from standing protocol notes (groupNoteHTML /
+// harvestTipHTML) — dark background, white text, pin icon — so it always reads as "something
+// flagged for today" rather than a severity level of the underlying protocol.
+function dailyNoteHTML(dailyNotes){
+  if(!dailyNotes||!dailyNotes.length)return'';
+  return dailyNotes.map(function(n){
+    var bg=n.level==='critical'?'#A32D2D':n.level==='unusual'?'#B45309':'#4B5563';
+    return '<span class="dn-pill" style="background:'+bg+'"><i class="ti ti-pin"></i>'+n.note+'</span>';
+  }).join('');
+}
+// Builds the full-width WP-level banner for a daily note targeted at an entire WP (no mouse,
+// no group). Shown once in the WP header, not repeated per mouse.
+function wpBannerHTML(banners){
+  if(!banners||!banners.length)return'';
+  return banners.map(function(b){
+    var bg=b.level==='critical'?'#A32D2D':b.level==='unusual'?'#B45309':'#4B5563';
+    return '<div class="dn-banner" style="background:'+bg+'"><i class="ti ti-pin"></i>'+b.note+'</div>';
+  }).join('');
 }
 function isMeasureType(type){return type==='measure'||type==='measure-tumor'||type==='measure-combined'||type==='measure-weight';}
 function buildVisibleLogOrder(tasks){
@@ -1250,7 +1399,16 @@ function renderDaily(){
   var tasks=normalTasks;
 
   if(S.sortBy==='type'){
-    ['measure','measure-tumor','measure-combined','measure-weight','treatment','blood','ivis','custom'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],tasks.filter(function(t){return t.type===type}));});
+    // No per-WP header in Type-sort mode — show all WP-level banners for today together up top.
+    var allBannersToday=S._wpBanners[S.dailyDate]||{};
+    Object.keys(allBannersToday).forEach(function(eid){
+      var exp3=S.experiments.find(function(e){return e.id===eid});
+      var labelPrefix=exp3?eid+' — '+exp3.name+': ':'';
+      allBannersToday[eid].forEach(function(b){
+        html+=wpBannerHTML([{note:labelPrefix+b.note,level:b.level}]);
+      });
+    });
+    ['measure','measure-tumor','measure-combined','measure-weight','treatment','blood','ivis','custom','note-only'].forEach(function(type){html+=taskSection(TLBL2[type],TICO[type],tasks.filter(function(t){return t.type===type}));});
     if(!tasks.length)html+='<div class="empty"><i class="ti ti-circle-check"></i>No tasks scheduled for today</div>';
   } else {
     // WP sort: cage-grouped layout
@@ -1261,6 +1419,7 @@ function renderDaily(){
       if(t.type==='treatment')return'Treatment: '+(t.dose?t.dose+' ':'')+( t.route||'')+(t.label?' ('+t.label+')':'');
       if(t.type==='blood')return'Blood draw';
       if(t.type==='ivis')return'IVIS';
+      if(t.type==='note-only')return'';
       return t.label||t.type;
     }
     function renderCageMouseRow(mid,mTasks,expId){
@@ -1279,7 +1438,7 @@ function renderDaily(){
       }
       return '<div class="task-row" style="grid-template-columns:100px 1fr 72px 40px 110px;margin-bottom:2px">'
         +'<span class="mono" style="font-size:10px">'+mid+'<br><span style="font-size:9px;color:var(--text3)">'+(t0.group||t0.expId||'')+'</span></span>'
-        +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+groupNoteHTML(t0.g)+harvestTipHTML(t0.exp)+'</span>'
+        +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+groupNoteHTML(t0.g)+dailyNoteHTML(t0.dailyNotes)+harvestTipHTML(t0.exp)+'</span>'
         +'<span class="burden-badge">'+(t0.lastBurden||'--')+'</span>'
         +'<span style="font-size:10px;color:var(--text3)">'+(t0.dayInTx!=null?'d'+t0.dayInTx:'')+'</span>'
         +'<div style="display:flex;gap:3px;align-items:center">'
@@ -1318,7 +1477,8 @@ function renderDaily(){
         +'<span class="task-st">'+eid+' — '+(exp&&exp.name?exp.name:'')+'</span>'
         +'<span class="task-sc">'+expTasks.length+'</span>'
         +harvestTipHTML(exp)
-        +'</div>';
+        +'</div>'
+        +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
       var withCage=expTasks.filter(function(t){return t.m&&t.m.cage_number;});
       var noCage=expTasks.filter(function(t){return !t.m||!t.m.cage_number;});
       // Group by cage, sort numerically
@@ -1398,6 +1558,7 @@ function renderWeek(){
       if(byTy.blood)byTy.blood.forEach(function(t){html+='<div class="wt wt-b" onclick="wkDet(\''+d+'\',\'blood\')">&#129754; '+t.mouseId+'</div>';});
       if(byTy.ivis)byTy.ivis.forEach(function(t){html+='<div class="wt wt-i">&#128300; '+t.mouseId+'</div>';});
       if(byTy.custom)byTy.custom.forEach(function(t){html+='<div class="wt wt-c">&#128203; '+(t.label||'').substring(0,16)+'</div>';});
+      if(byTy['note-only']&&byTy['note-only'].length)html+='<div class="wt" style="background:#4B5563;color:#fff" onclick="wkDet(\''+d+'\',\'note-only\')">📌 '+byTy['note-only'].length+' note'+(byTy['note-only'].length>1?'s':'')+'</div>';
     } else {
       Object.keys(byE).sort().forEach(function(eid){var exp=S.experiments.find(function(e){return e.id===eid});var n=byE[eid].length;html+='<div class="wt" style="background:'+(exp&&exp.color?exp.color:'#888')+'22;color:'+(exp&&exp.color?exp.color:'#444')+'" onclick="wkDet(\''+d+'\',\'\',\''+eid+'\')">'+eid+': '+n+'</div>';});
     }
@@ -2956,6 +3117,13 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
         var gLv=grp.note_level==='critical'?'#C0392B':grp.note_level==='unusual'?'#B45309':'#4B5563';
         taskText='<span style="color:'+gLv+';font-weight:600">'+(grp.note_level&&grp.note_level!=='standard'?'⚠ ':'')+grp.note+'</span><br>'+taskText;
       }
+      var mDailyNotes=mTasks.length&&mTasks[0].dailyNotes?mTasks[0].dailyNotes:null;
+      if(mDailyNotes&&mDailyNotes.length){
+        mDailyNotes.forEach(function(n){
+          var dnBg=n.level==='critical'?'#A32D2D':n.level==='unusual'?'#B45309':'#4B5563';
+          taskText='<span style="color:#fff;background:'+dnBg+';padding:0 4px;border-radius:2px;font-size:7.5px">📌 '+n.note+'</span><br>'+taskText;
+        });
+      }
       var bg=mi%2===0?'#fff':'#f5f5f5';
       h+='<tr style="border-bottom:.5px solid #ddd;background:'+bg+'">'
         +'<td style="padding:2px 3px;font-family:monospace;font-size:8px">'+m.id+'</td>'
@@ -2995,6 +3163,13 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
     if(exp&&exp.notes){
       var ptLv=exp.notes_level==='critical'?{bg:'#C0392B',fg:'#fff'}:exp.notes_level==='unusual'?{bg:'#F59E0B',fg:'#fff'}:{bg:'#E5E7EB',fg:'#374151'};
       phtml+='<div style="font-size:9px;font-weight:600;color:'+ptLv.fg+';background:'+ptLv.bg+';padding:2px 6px;border-radius:2px;margin-bottom:4px">'+(exp.notes_level!=='standard'?'⚠ ':'')+'NOTE: '+exp.notes+'</div>';
+    }
+    var ptWpBanners=(S._wpBanners[viewDate]||{})[eid];
+    if(ptWpBanners&&ptWpBanners.length){
+      ptWpBanners.forEach(function(b){
+        var dnBg=b.level==='critical'?'#A32D2D':b.level==='unusual'?'#B45309':'#4B5563';
+        phtml+='<div style="font-size:9px;font-weight:600;color:#fff;background:'+dnBg+';padding:2px 6px;border-radius:2px;margin-bottom:4px">📌 TODAY: '+b.note+'</div>';
+      });
     }
 
     // Group tasks by cage
@@ -3180,7 +3355,7 @@ function ilWireButtons(eid,mid,ei){
 function showReschedAll(){
   S._rsMap=S._rsMap||[];
   var viewDate=S.dailyDate||TISO;
-  var tasks=getTasksForDate(viewDate).filter(function(t){return t.type!=='custom'&&t.type!=='distress'});
+  var tasks=getTasksForDate(viewDate).filter(function(t){return t.type!=='custom'&&t.type!=='distress'&&t.type!=='note-only'});
   if(!tasks.length){alert('No tasks today.');return;}
   function resolveGroup(t){
     if(t.group)return t.group;
