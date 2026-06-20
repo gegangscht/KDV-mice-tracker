@@ -238,7 +238,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v63</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v64</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1031,6 +1031,42 @@ async function enrollMouse(eid,gid,gname){S._enrollCtx={eid:eid,gid:gid,gname:gn
 // ADD TASK
 // Quick way to flag a note on a mouse that's already on the schedule for the day, without
 // reopening the full Add Task modal and re-picking WP/group/mouse from scratch.
+// Quick way to flag a WP-wide note (shown as a banner) for one specific day.
+function quickAddWpNote(eid,date){
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  showModal('Add note — '+eid+(exp?' — '+exp.name:''),
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">This note will show as a banner in the '+eid+' header for '+fmtD(date)+', not on individual mice.</div>'
+    +'<div class="fg full"><label class="fl">Note</label><textarea class="fi" id="qan-note" rows="2" style="resize:vertical" autofocus></textarea>'
+    +'<select class="fs" id="qan-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitQuickAddWpNote(\''+eid+'\',\''+date+'\')"><i class="ti ti-check"></i> Add note</button>');
+}
+async function submitQuickAddWpNote(eid,date){
+  var note=((document.getElementById('qan-note')&&document.getElementById('qan-note').value)||'').trim();
+  var level=(document.getElementById('qan-level')&&document.getElementById('qan-level').value)||'standard';
+  if(!note){alert('Enter a note');return;}
+  await sb.from('adhoc_tasks').insert({task_date:date,type:'custom',description:'',mouse_id:null,group_id:null,experiment_id:eid,note:note,note_level:level,done:false});
+  await dbLoad();closeModal();if(S.view==='daily')renderDaily();else if(S.view==='week')renderWeek();
+}
+// Quick way to flag a note for every mouse in a group, for one specific day, without
+// opening the full Add Task modal and re-picking WP/group from scratch.
+function quickAddGroupNote(eid,gid,gname,date){
+  showModal('Add note — '+gname+' ('+eid+')',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">This note will show as a flag on every mouse in '+gname+' for '+fmtD(date)+', separate from the standing protocol notes.</div>'
+    +'<div class="fg full"><label class="fl">Note</label><textarea class="fi" id="qan-note" rows="2" style="resize:vertical" autofocus></textarea>'
+    +'<select class="fs" id="qan-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitQuickAddGroupNote(\''+eid+'\',\''+gid+'\',\''+date+'\')"><i class="ti ti-check"></i> Add note</button>');
+}
+async function submitQuickAddGroupNote(eid,gid,date){
+  var note=((document.getElementById('qan-note')&&document.getElementById('qan-note').value)||'').trim();
+  var level=(document.getElementById('qan-level')&&document.getElementById('qan-level').value)||'standard';
+  if(!note){alert('Enter a note');return;}
+  await sb.from('adhoc_tasks').insert({task_date:date,type:'custom',description:'',mouse_id:null,group_id:gid,experiment_id:eid,note:note,note_level:level,done:false});
+  await dbLoad();closeModal();if(S.view==='daily')renderDaily();else if(S.view==='week')renderWeek();
+}
 function quickAddNote(eid,mid,date){
   showModal('Add note — '+mid+' ('+eid+')',
     '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">This note will show as a flag on '+mid+'\'s row for '+fmtD(date)+', separate from the standing protocol notes.</div>'
@@ -1169,10 +1205,13 @@ function taskActionMenuMulti(idxs,key){
   if(el){el.remove();return;}
   var btn=document.querySelector('[data-tam-btn="'+key+'"]');
   if(!btn)return;
+  var firstTask=S._rsMap[idxs[0]];
   var menu=document.createElement('div');
   menu.id=id;
   menu.style.cssText='position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:1000;padding:4px;display:flex;flex-direction:column;gap:4px;min-width:200px';
-  menu.innerHTML=idxs.map(function(idx){
+  menu.innerHTML=(firstTask&&firstTask.mouseId&&firstTask.expId?'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();quickAddNote(\''+firstTask.expId+'\',\''+firstTask.mouseId+'\',\''+firstTask.date+'\')"><i class="ti ti-pin"></i> Add note</button>'
+    +'<div style="height:1px;background:var(--border);margin:1px 0"></div>':'')
+    +idxs.map(function(idx){
     var t=S._rsMap[idx];
     var lbl=t?(t.label||t.type):'Task';
     return '<div style="font-size:9px;font-weight:600;color:var(--text3);padding:2px 4px 0">'+lbl+'</div>'
@@ -1198,10 +1237,12 @@ function taskActionMenu(idx){
   if(el){el.remove();return;}
   var btn=document.querySelector('[data-tam-btn="'+idx+'"]');
   if(!btn)return;
+  var task=S._rsMap[idx];
   var menu=document.createElement('div');
   menu.id=id;
   menu.style.cssText='position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:1000;padding:3px;display:flex;flex-direction:column;gap:2px;min-width:130px';
-  menu.innerHTML='<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();reschedTask('+idx+')"><i class="ti ti-calendar-event"></i> Reschedule</button>'
+  menu.innerHTML=(task&&task.mouseId&&task.expId?'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();quickAddNote(\''+task.expId+'\',\''+task.mouseId+'\',\''+task.date+'\')"><i class="ti ti-pin"></i> Add note</button>':'')
+    +'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();reschedTask('+idx+')"><i class="ti ti-calendar-event"></i> Reschedule</button>'
     +'<button class="btn btn-xs btn-r" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();deleteTask('+idx+')"><i class="ti ti-trash"></i> Delete</button>';
   document.body.appendChild(menu);
   var r=btn.getBoundingClientRect();
@@ -1241,8 +1282,7 @@ function taskSection(title,icon,items){
         +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
-        +(t.mouseId&&t.expId?'<button class="btn btn-xs btn-icon" onclick="quickAddNote(\''+t.expId+'\',\''+t.mouseId+'\',\''+t.date+'\')" title="Add a note for today"><i class="ti ti-pin"></i></button>':'')
-        +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>'
+        +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule, delete, or add note"><i class="ti ti-dots-vertical"></i></button>'
       +'</div></div>'
       +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>';
   }).join('');
@@ -1463,7 +1503,6 @@ function renderDaily(){
         +(loggedToday?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>':'')
         +(hasMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+expId+'\',\''+mid+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="showCageTransfer(\''+expId+'\',\''+mid+'\')"><i class="ti ti-arrows-exchange"></i></button>'
-        +'<button class="btn btn-xs btn-icon" onclick="quickAddNote(\''+expId+'\',\''+mid+'\',\''+t0.date+'\')" title="Add a note for today"><i class="ti ti-pin"></i></button>'
         +actionBtn
         +'</div></div>'
         +'<div id="ilc-d-'+mid+'" style="display:none;padding:0 9px 4px"></div>';
@@ -1496,6 +1535,7 @@ function renderDaily(){
         +'<span class="task-st">'+eid+' — '+(exp&&exp.name?exp.name:'')+'</span>'
         +'<span class="task-sc">'+expTasks.length+'</span>'
         +harvestTipHTML(exp)
+        +'<button class="btn btn-xs btn-icon" onclick="quickAddWpNote(\''+eid+'\',\''+S.dailyDate+'\')" title="Add a note for this whole WP, today" style="margin-left:auto"><i class="ti ti-pin"></i></button>'
         +'</div>'
         +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
       var withCage=expTasks.filter(function(t){return t.m&&t.m.cage_number;});
@@ -1629,14 +1669,17 @@ function wkDet(d,type,ef){
     html+='<div style="display:flex;align-items:center;gap:6px;margin:10px 0 4px;padding-top:6px;border-top:1px solid var(--border)">'
       +'<input type="checkbox" class="wk-sel-exp" data-exp-key="'+expKey+'" onchange="wkSelectExpScope(this,\''+expKey+'\')" title="Select all in this WP">'
       +'<span style="font-size:11px;font-weight:600;color:var(--text)">'+(eid==='(no WP)'?'General':eid+' — '+expName)+'</span>'
+      +(eid!=='(no WP)'?'<button class="btn btn-xs btn-icon" onclick="quickAddWpNote(\''+eid+'\',\''+d+'\')" title="Add a note for this whole WP, today"><i class="ti ti-pin"></i></button>':'')
       +'</div>';
     var byGroup={};
     expTasks.forEach(function(t){var gk=resolveGroup(t);if(!byGroup[gk])byGroup[gk]=[];byGroup[gk].push(t);});
     Object.keys(byGroup).sort().forEach(function(gname){
       var groupKey=expKey+'__'+gname.replace(/[^a-zA-Z0-9_-]/g,'_');
+      var grpObj=(S.groups[eid]||[]).find(function(g){return g.name===gname});
       html+='<div style="display:flex;align-items:center;gap:6px;margin:6px 0 3px 6px">'
         +'<input type="checkbox" class="wk-sel-group" data-group-key="'+groupKey+'" onchange="wkSelectGroupScope(this,\''+groupKey+'\')" title="Select all in this group">'
         +'<span style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">'+gname+'</span>'
+        +(grpObj?'<button class="btn btn-xs btn-icon" onclick="quickAddGroupNote(\''+eid+'\',\''+grpObj.id+'\',\''+gname+'\',\''+d+'\')" title="Add a note for this whole group, today"><i class="ti ti-pin"></i></button>':'')
         +'</div>';
       byGroup[gname].forEach(function(t){
         var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
