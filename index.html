@@ -93,6 +93,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .task-row{padding:6px 9px;border-radius:var(--r);border:.5px solid var(--border);background:var(--surface);margin-bottom:3px;display:grid;gap:6px;align-items:center}
 .task-row:hover{background:var(--surface2)}
 .npill{background:var(--amber-bg);color:var(--amber);border-radius:3px;padding:0 4px;font-size:9px;margin-left:3px}
+.gn-pill{background:#FDE8E8;color:#C0392B;border-radius:3px;padding:0 4px;font-size:9px;margin-left:3px;font-weight:500}
 .hv-wrap{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--surface2);color:var(--text3);cursor:pointer;font-size:11px;position:relative;vertical-align:middle;margin-left:4px}
 .hv-wrap:hover .hv-tip{display:block}
 .hv-tip{display:none;position:fixed;background:var(--text);color:#fff;font-size:10px;border-radius:var(--r);padding:6px 9px;width:300px;z-index:9999;line-height:1.5;white-space:normal;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3);top:auto;left:auto}
@@ -232,7 +233,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v59</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v60</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1084,7 +1085,8 @@ function taskSection(title,icon,items){
         +'<br><span style="font-size:9px;color:var(--text3)">'+(t.group||t.researcher||'')+'</span></span>'
       +'<span style="font-size:11px">'+(t.label||t.desc||'')
         +(t.lastNote?'<span class="npill">'+t.lastNote+'</span>':'')
-        +(t.exp&&t.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t.exp.harvest+'</span></span>':'')
+        +groupNoteHTML(t.g)
+        +harvestTipHTML(t.exp)
         +'</span>'
       +'<span class="burden-badge">'+(isMeasure?(t.lastBurden||'--'):(t.dose?t.dose+(t.route?' '+t.route:''):''))+'</span>'
       +'<span style="font-size:10px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx:'')+'</span>'
@@ -1108,6 +1110,23 @@ function taskSection(title,icon,items){
 // DAILY
 // Builds the mouse-log order matching exactly what's visually rendered in renderDaily,
 // for both Type-sort and WP/cage-sort layouts. Keep in sync with renderDaily's grouping.
+// Builds the hover-info icon+tooltip combining harvest protocol and experiment notes.
+// Used everywhere the harvest info icon appears so both fields always show together.
+function harvestTipHTML(exp){
+  if(!exp)return'';
+  var har=exp.harvest||'';
+  var notes=exp.notes||'';
+  if(!har&&!notes)return'';
+  var body='';
+  if(har)body+='<div'+(notes?' style="margin-bottom:6px"':'')+'><strong>Harvest:</strong> '+har+'</div>';
+  if(notes)body+='<div><strong style="color:#ffb74d">Note:</strong> '+notes+'</div>';
+  return '<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+body+'</span></span>';
+}
+// Builds a small inline note pill for a group-specific note, shown on mice in that group.
+function groupNoteHTML(g){
+  if(!g||!g.note)return'';
+  return '<span class="gn-pill" title="Group note">'+g.note+'</span>';
+}
 function isMeasureType(type){return type==='measure'||type==='measure-tumor'||type==='measure-combined'||type==='measure-weight';}
 function buildVisibleLogOrder(tasks){
   var measureTasks=tasks.filter(function(t){return isMeasureType(t.type);});
@@ -1182,7 +1201,7 @@ function renderDaily(){
     +'<div class="mc"><div class="mc-l">Blood / IVIS</div><div class="mc-v">'+tasks.filter(function(t){return t.type==='blood'||t.type==='ivis'}).length+'</div></div>'
     +'</div>';
   var epS=new Set();
-  raw.forEach(function(t){if(t.m&&nearEP(t.m.id,t.expId)&&!epS.has(t.mouseId)){epS.add(t.mouseId);var l=lastMs(t.m.id,t.expId);html+='<div class="alert"><i class="ti ti-alert-triangle"></i><span>Mouse <strong>'+t.mouseId+'</strong> ('+t.expId+') - burden '+(l?bShort(l.tumor_sites,false):'?')+' - <strong>approaching endpoint</strong></span>'+(t.exp&&t.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t.exp.harvest+'</span></span>':'')+'</div>';}});
+  raw.forEach(function(t){if(t.m&&nearEP(t.m.id,t.expId)&&!epS.has(t.mouseId)){epS.add(t.mouseId);var l=lastMs(t.m.id,t.expId);html+='<div class="alert"><i class="ti ti-alert-triangle"></i><span>Mouse <strong>'+t.mouseId+'</strong> ('+t.expId+') - burden '+(l?bShort(l.tumor_sites,false):'?')+' - <strong>approaching endpoint</strong></span>'+harvestTipHTML(t.exp)+'</div>';}});
   // Distress checks always shown separately at top if any
   var distressTasks=tasks.filter(function(t){return t.type==='distress'});
   var normalTasks=tasks.filter(function(t){return t.type!=='distress'});
@@ -1243,7 +1262,7 @@ function renderDaily(){
       }
       return '<div class="task-row" style="grid-template-columns:100px 1fr 72px 40px 110px;margin-bottom:2px">'
         +'<span class="mono" style="font-size:10px">'+mid+'<br><span style="font-size:9px;color:var(--text3)">'+(t0.group||t0.expId||'')+'</span></span>'
-        +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+(t0.exp&&t0.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t0.exp.harvest+'</span></span>':'')+'</span>'
+        +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+groupNoteHTML(t0.g)+harvestTipHTML(t0.exp)+'</span>'
         +'<span class="burden-badge">'+(t0.lastBurden||'--')+'</span>'
         +'<span style="font-size:10px;color:var(--text3)">'+(t0.dayInTx!=null?'d'+t0.dayInTx:'')+'</span>'
         +'<div style="display:flex;gap:3px;align-items:center">'
@@ -1281,7 +1300,7 @@ function renderDaily(){
       html+='<div class="task-sh"><div class="edot" style="background:'+(exp&&exp.color?exp.color:'#888')+'"></div>'
         +'<span class="task-st">'+eid+' — '+(exp&&exp.name?exp.name:'')+'</span>'
         +'<span class="task-sc">'+expTasks.length+'</span>'
-        +(exp&&exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+exp.harvest+'</span></span>':'')
+        +harvestTipHTML(exp)
         +'</div>';
       var withCage=expTasks.filter(function(t){return t.m&&t.m.cage_number;});
       var noCage=expTasks.filter(function(t){return !t.m||!t.m.cage_number;});
@@ -1576,7 +1595,9 @@ async function renderExp(eid){
     +'<div><div style="color:var(--text2);margin-bottom:1px">Type</div><div style="font-weight:500">'+(exp.is_mastectomy?'<span class="badge ba">Mastectomy</span>':'Standard')+'</div></div>'
     +'<div><div style="color:var(--text2);margin-bottom:1px">Started</div><div style="font-weight:500">'+exp.started+'</div></div>'
     +'</div><hr class="div">'
-    +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+harBadge+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div></div>'
+    +'<div style="font-size:10px;color:var(--text2);line-height:1.5;display:flex;align-items:flex-start;justify-content:space-between;gap:8px"><span><span style="font-weight:500;color:var(--text)">Harvest:</span> '+(exp.harvest||'--')+harBadge+'</span><button class="btn btn-xs btn-icon" title="Edit experiment" onclick="showEditExp(\''+eid+'\')"><i class="ti ti-pencil"></i></button></div>'
+    +(exp.notes?'<div style="font-size:10px;color:#C0392B;line-height:1.5;margin-top:3px;padding:4px 6px;background:#FDE8E8;border-radius:var(--r)"><i class="ti ti-alert-triangle" style="font-size:10px"></i> <span style="font-weight:500">Note:</span> '+exp.notes+'</div>':'')
+    +'</div>'
     +'<div class="tabs">'
     +'<div class="tab '+(S.expTab==='mice'?'act':'')+'" onclick="ST(\'mice\')">Mice & measurements</div>'
     +'<div class="tab '+(S.expTab==='growth'?'act':'')+'" onclick="ST(\'growth\')">Tumor growth</div>'
@@ -1965,6 +1986,7 @@ function newFormHTML(){
     +'<div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="nep" placeholder="e.g. 15x15 mm"></div>'
     +'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="ndis"><option>Mild</option><option>Moderate</option><option>Severe</option></select></div>'
     +'<div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="nhar" rows="2" placeholder="Blood 50/50 FACS+serum. Tumor 1/3 FACS, 1/3 N2, 1/3 formalin." style="resize:vertical"></textarea></div>'
+    +'<div class="fg full"><label class="fl">Notes (special things to pay attention to)</label><textarea class="fi" id="nnotes" rows="2" placeholder="e.g. fragile skin, handle with extra care" style="resize:vertical"></textarea></div>'
     +'</div><hr class="div">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">'
     +'<div style="font-size:12px;font-weight:500">Groups & events</div>'
@@ -2091,7 +2113,7 @@ async function createExp(){
   var multi=true; // all experiments support multi-site
   var isMx=!!(document.getElementById('nmx')&&document.getElementById('nmx').checked);
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
-  var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||''});
+  var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||''});
   if(result.error){alert('Error: '+result.error.message);if(btn)btn.disabled=false;return;}
   for(var i=0;i<NG.length;i++){
     var g=NG[i];
@@ -2122,6 +2144,7 @@ function showEditExp(eid){
     +'<div class="fg"><label class="fl">Status</label><select class="fs" id="ee-status"><option value="active"'+(exp.status==='active'?' selected':'')+'>Active</option><option value="completed"'+(exp.status==='completed'?' selected':'')+'>Completed</option><option value="archived"'+(exp.status==='archived'?' selected':'')+'>Archived</option></select></div>'
     +'<div class="fg"><label class="fl">Type</label><div style="display:flex;align-items:center;gap:6px;padding:6px 0"><input type="checkbox" id="ee-mx"'+(exp.is_mastectomy?' checked':'')+' style="width:14px;height:14px"><label for="ee-mx" style="font-size:11px;cursor:pointer">Mastectomy experiment</label></div></div>'
     +'<div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="ee-har" rows="3" style="resize:vertical">'+( exp.harvest||'')+'</textarea></div>'
+    +'<div class="fg full"><label class="fl">Notes (special things to pay attention to)</label><textarea class="fi" id="ee-notes" rows="2" style="resize:vertical" placeholder="e.g. fragile skin, handle with extra care">'+(exp.notes||'')+'</textarea></div>'
     +'<div class="fg full"><label class="fl">Strain</label><input class="fi" id="ee-str" value="'+(exp.strain||'')+'"></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
@@ -2136,12 +2159,13 @@ async function saveEditExp(eid){
   var mod=(document.getElementById('ee-mod')&&document.getElementById('ee-mod').value)||'';
   var ep=(document.getElementById('ee-ep')&&document.getElementById('ee-ep').value)||'';
   var har=(document.getElementById('ee-har')&&document.getElementById('ee-har').value)||'';
+  var notes=(document.getElementById('ee-notes')&&document.getElementById('ee-notes').value)||'';
   var str=(document.getElementById('ee-str')&&document.getElementById('ee-str').value)||'';
   var status=(document.getElementById('ee-status')&&document.getElementById('ee-status').value)||'active';
   var isMx2=!!(document.getElementById('ee-mx')&&document.getElementById('ee-mx').checked);
   var oldExp=S.experiments.find(function(e){return e.id===eid});
   var harChanged=oldExp&&har.trim()&&har.trim()!==(oldExp.harvest||'').trim()&&oldExp.harvest;
-  var upd={researcher:resNameE,researcher_id:resIdE,model:mod,endpoint_criterion:ep,harvest:har,strain:str,status:status,is_mastectomy:isMx2};
+  var upd={researcher:resNameE,researcher_id:resIdE,model:mod,endpoint_criterion:ep,harvest:har,notes:notes,strain:str,status:status,is_mastectomy:isMx2};
   if(harChanged)upd.harvest_updated_at=TISO;
   await sb.from('experiments').update(upd).eq('id',eid);
   if(harChanged)await sb.from('deviation_log').insert({experiment_id:eid,mouse_id:null,event_type:'harvest_change',original_date:TISO,actual_date:TISO,reason:'Harvest changed by '+uname()+' on '+TISO+'\nOLD: '+(oldExp.harvest||'')+'\nNEW: '+har});
@@ -2271,6 +2295,7 @@ function showEditGroup(gid,eid){
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Group name</label><input class="fi" id="eg-name" value="'+g.name+'"></div>'
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="eg-n" type="number" value="'+(g.target_n||8)+'"></div>'
+    +'<div class="fg full"><label class="fl">Note (only shown for mice in this group)</label><textarea class="fi" id="eg-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group">'+(g.note||'')+'</textarea></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="saveEditGroup()"><i class="ti ti-check"></i> Save</button>');
@@ -2279,7 +2304,8 @@ async function saveEditGroup(){
   var d=S._editGrp;if(!d)return;
   var name=(document.getElementById('eg-name')&&document.getElementById('eg-name').value)||'';
   var n=parseInt((document.getElementById('eg-n')&&document.getElementById('eg-n').value)||'8')||8;
-  await sb.from('experiment_groups').update({name:name,target_n:n}).eq('id',d.gid);
+  var note=(document.getElementById('eg-note')&&document.getElementById('eg-note').value)||'';
+  await sb.from('experiment_groups').update({name:name,target_n:n,note:note}).eq('id',d.gid);
   // Also update group_name on mice in this group
   if(name)await sb.from('mice').update({group_name:name}).eq('group_id',d.gid);
   closeModal();await loadAll(d.eid);renderExp(d.eid);
@@ -2292,6 +2318,7 @@ function showAddGroup(eid){
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Group name</label><input class="fi" id="ag-name" placeholder="e.g. anti-PD1+aCTLA4" autofocus></div>'
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="ag-n" type="number" value="8"></div>'
+    +'<div class="fg full"><label class="fl">Note (only shown for mice in this group)</label><textarea class="fi" id="ag-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group"></textarea></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="saveAddGroup()"><i class="ti ti-check"></i> Add group</button>');
@@ -2300,11 +2327,12 @@ async function saveAddGroup(){
   var eid=S._addGrpEid;if(!eid)return;
   var name=(document.getElementById('ag-name')&&document.getElementById('ag-name').value)||'';
   var n=parseInt((document.getElementById('ag-n')&&document.getElementById('ag-n').value)||'8')||8;
+  var note=(document.getElementById('ag-note')&&document.getElementById('ag-note').value)||'';
   if(!name){alert('Enter group name');return;}
   var sortOrder=(S.groups[eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
   var color=colors[sortOrder%colors.length];
-  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder});
+  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder,note:note});
   closeModal();await loadAll(eid);renderExp(eid);
 }
 
@@ -2886,6 +2914,8 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
         else taskParts.push(t.label||t.type);
       });
       var taskText=taskParts.join(' + ')||(mTasks.length?mTasks[0].label:'—');
+      var grp=(S.groups[expId]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});
+      if(grp&&grp.note)taskText='<span style="color:#C0392B;font-weight:600">⚠ '+grp.note+'</span><br>'+taskText;
       var bg=mi%2===0?'#fff':'#f5f5f5';
       h+='<tr style="border-bottom:.5px solid #ddd;background:'+bg+'">'
         +'<td style="padding:2px 3px;font-family:monospace;font-size:8px">'+m.id+'</td>'
@@ -2922,6 +2952,7 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
       +'<span>'+eid+' — '+(exp?exp.name:'')+'</span>'
       +'<span style="font-size:8px;font-weight:400;color:#555">'+(exp&&exp.harvest?'Harvest: '+exp.harvest:'')+'</span>'
       +'</div>';
+    if(exp&&exp.notes)phtml+='<div style="font-size:9px;font-weight:600;color:#fff;background:#C0392B;padding:2px 6px;border-radius:2px;margin-bottom:4px">⚠ NOTE: '+exp.notes+'</div>';
 
     // Group tasks by cage
     var ptByCage={};
