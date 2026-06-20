@@ -232,7 +232,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v56</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v58</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -418,19 +418,21 @@ function launchApp(){
 
 // DB
 async function dbLoad(){
-  const[exps,grps,evts,mice,adhoc,users]=await Promise.all([
+  const[exps,grps,evts,mice,adhoc,users,skipped]=await Promise.all([
     sb.from('experiments').select('*').order('started',{ascending:false}),
     sb.from('experiment_groups').select('*').order('sort_order'),
     sb.from('scheduled_events').select('*').order('sort_order'),
     sb.from('mice').select('*').order('enrolled'),
     sb.from('adhoc_tasks').select('*').order('task_date'),
     sb.from('lab_users').select('*').eq('active',true).order('name'),
+    sb.from('skipped_tasks').select('task_id'),
   ]);
   S.experiments=exps.data||[];S.users=users.data||[];
   S.groups={};(grps.data||[]).forEach(function(g){if(!S.groups[g.experiment_id])S.groups[g.experiment_id]=[];S.groups[g.experiment_id].push(g);});
   S.events={};(evts.data||[]).forEach(function(ev){if(!S.events[ev.group_id])S.events[ev.group_id]=[];S.events[ev.group_id].push(ev);});
   S.mice={};(mice.data||[]).forEach(function(m){if(!S.mice[m.experiment_id])S.mice[m.experiment_id]=[];S.mice[m.experiment_id].push(m);});
   S.adhoc={};(adhoc.data||[]).forEach(function(t){var k=t.task_date;if(!S.adhoc[k])S.adhoc[k]=[];S.adhoc[k].push(t);});
+  S.skipped=new Set((skipped.data||[]).map(function(s){return s.task_id}));
 }
 async function loadMs(eid){
   const ids=(S.mice[eid]||[]).map(function(m){return m.id});
@@ -531,6 +533,8 @@ function getTasksForDate(iso){
     }
   });
   if(skipIdx.size)tasks=tasks.filter(function(t,i){return !skipIdx.has(i);});
+
+  if(S.skipped&&S.skipped.size)tasks=tasks.filter(function(t){return !S.skipped.has(t.taskId);});
 
   return tasks;
 }
@@ -824,8 +828,20 @@ async function editCage(mid,eid){
   await loadAll(eid);renderExp(eid);
 }
 async function setDay0(mid,eid,msid,msdate){
-  await sb.from('mice').update({day0_measurement_id:msid,day0_date:msdate}).eq('id',mid);
-  await loadAll(eid);renderExp(eid);
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(!m)return;
+  // Update local state immediately so the UI reflects the change without a full reload.
+  var prevMsid=m.day0_measurement_id,prevDate=m.day0_date;
+  m.day0_measurement_id=msid;m.day0_date=msdate;
+  toggleHist(eid,mid); // re-render just this mouse's history row in place
+  var btn=document.querySelector('#histrow-'+msid+' .d0-btn');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  var res=await sb.from('mice').update({day0_measurement_id:msid,day0_date:msdate}).eq('id',mid);
+  if(res.error){
+    // Roll back local state and UI on failure so we never show a day0 that wasn't actually saved.
+    m.day0_measurement_id=prevMsid;m.day0_date=prevDate;
+    toggleHist(eid,mid);
+    alert('Could not save day 0 — please try again.');
+  }
 }
 
 // TRANSFER
@@ -975,7 +991,75 @@ async function reschedTask(idx){
   var reason=prompt('Reason:','');if(reason===null)return;
   await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
   if(task.expId)await sb.from('deviation_log').insert({experiment_id:task.expId,mouse_id:task.mouseId||null,event_type:task.type,original_date:task.date,actual_date:nd,reason:reason});
+  // The original occurrence still exists after rescheduling a copy onto a new date —
+  // remove/skip it so it doesn't show twice (once on old date, once on new).
+  if(task.adHocId)await sb.from('adhoc_tasks').delete().eq('id',task.adHocId);
+  else if(task.taskId)await markTaskSkipped(task,'Rescheduled to '+nd+(reason?': '+reason:''));
   await dbLoad();if(S.view==='daily')renderDaily();else renderWeek();
+}
+// Marks a single generated task occurrence as skipped (does not touch the recurring rule,
+// other mice, or other dates — only this exact mouse+date+type combination).
+async function markTaskSkipped(task,reason){
+  await sb.from('skipped_tasks').upsert({task_id:task.taskId,task_date:task.date,mouse_id:task.mouseId||null,experiment_id:task.expId||null,task_type:task.type||null,task_label:task.label||null,reason:reason||null,created_by:uname()},{onConflict:'task_id'});
+}
+async function deleteTask(idx){
+  var task=typeof idx==='number'?S._rsMap[idx]:idx;
+  if(!task){alert('Could not find task to delete.');return;}
+  if(!confirm('Delete this task ('+(task.label||task.type)+' for '+(task.mouseId||'general')+' on '+task.date+')?\nThis only removes this single occurrence — it will not affect other mice or future dates.'))return;
+  if(task.adHocId){
+    await sb.from('adhoc_tasks').delete().eq('id',task.adHocId);
+  } else if(task.taskId){
+    await markTaskSkipped(task,'Deleted by '+uname());
+  } else {
+    alert('Could not identify this task to delete.');return;
+  }
+  await dbLoad();if(S.view==='daily')renderDaily();else renderWeek();
+}
+// Same as taskActionMenu, but for a row that merges multiple distinct tasks for one mouse —
+// lists each task individually so reschedule/delete targets exactly one of them.
+function taskActionMenuMulti(idxs,key){
+  var id='tam-'+key;
+  var el=document.getElementById(id);
+  if(el){el.remove();return;}
+  var btn=document.querySelector('[data-tam-btn="'+key+'"]');
+  if(!btn)return;
+  var menu=document.createElement('div');
+  menu.id=id;
+  menu.style.cssText='position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:1000;padding:4px;display:flex;flex-direction:column;gap:4px;min-width:200px';
+  menu.innerHTML=idxs.map(function(idx){
+    var t=S._rsMap[idx];
+    var lbl=t?(t.label||t.type):'Task';
+    return '<div style="font-size:9px;font-weight:600;color:var(--text3);padding:2px 4px 0">'+lbl+'</div>'
+      +'<div style="display:flex;gap:2px">'
+      +'<button class="btn btn-xs" style="flex:1;justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();reschedTask('+idx+')"><i class="ti ti-calendar-event"></i> Reschedule</button>'
+      +'<button class="btn btn-xs btn-r" style="flex:1;justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();deleteTask('+idx+')"><i class="ti ti-trash"></i> Delete</button>'
+      +'</div>';
+  }).join('<div style="height:1px;background:var(--border);margin:1px 0"></div>');
+  document.body.appendChild(menu);
+  var r=btn.getBoundingClientRect();
+  menu.style.top=(r.bottom+window.scrollY+3)+'px';
+  menu.style.left=(r.left+window.scrollX)+'px';
+  function closeOnOutside(e){if(!menu.contains(e.target)&&e.target!==btn){menu.remove();document.removeEventListener('click',closeOnOutside);}}
+  setTimeout(function(){document.addEventListener('click',closeOnOutside);},0);
+}
+// Small inline menu offering Reschedule or Delete for a single task row.
+function taskActionMenu(idx){
+  var id='tam-'+idx;
+  var el=document.getElementById(id);
+  if(el){el.remove();return;}
+  var btn=document.querySelector('[data-tam-btn="'+idx+'"]');
+  if(!btn)return;
+  var menu=document.createElement('div');
+  menu.id=id;
+  menu.style.cssText='position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:1000;padding:3px;display:flex;flex-direction:column;gap:2px;min-width:130px';
+  menu.innerHTML='<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();reschedTask('+idx+')"><i class="ti ti-calendar-event"></i> Reschedule</button>'
+    +'<button class="btn btn-xs btn-r" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();deleteTask('+idx+')"><i class="ti ti-trash"></i> Delete</button>';
+  document.body.appendChild(menu);
+  var r=btn.getBoundingClientRect();
+  menu.style.top=(r.bottom+window.scrollY+3)+'px';
+  menu.style.left=(r.left+window.scrollX)+'px';
+  function closeOnOutside(e){if(!menu.contains(e.target)&&e.target!==btn){menu.remove();document.removeEventListener('click',closeOnOutside);}}
+  setTimeout(function(){document.addEventListener('click',closeOnOutside);},0);
 }
 
 // TASK SECTION
@@ -984,7 +1068,7 @@ function taskSection(title,icon,items){
   S._rsMap=S._rsMap||[];
   var cols='82px 95px 1fr 80px 42px 120px';
   var rows=items.map(function(t){
-    var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
+    var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
     var isMeasure=t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';
     var isActive=t.m&&t.m.status==='active';
     var loggedToday=isMeasure&&t.mouseId&&findTodaysMeasureIdx(t.expId,t.mouseId,t.date)>=0;
@@ -1003,7 +1087,7 @@ function taskSection(title,icon,items){
         +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
-        +'<button class="btn btn-xs btn-icon" onclick="reschedTask('+rsIdx+')" title="Reschedule"><i class="ti ti-calendar-event"></i></button>'
+        +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>'
       +'</div></div>'
       +'<div id="ilc-d-'+t.mouseId+'" style="display:none;padding:0 9px 4px"></div>';
   }).join('');
@@ -1142,7 +1226,15 @@ function renderDaily(){
       var allLabels=mTasks.map(taskLabel).join(' + ');
       var hasMeasure=mTasks.some(function(t){return isMeasureType(t.type);});
       var loggedToday=hasMeasure&&findTodaysMeasureIdx(expId,mid,t0.date)>=0;
-      var rsIdx=rsReg({date:t0.date,label:allLabels,type:t0.type,mouseId:mid,expId:expId});
+      // Register each underlying task separately so reschedule/delete can target the
+      // exact occurrence, even when multiple tasks for this mouse are merged into one row.
+      var rsIdxs=mTasks.map(function(t){return rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||mid,expId:t.expId||expId,taskId:t.taskId,adHocId:t.adHocId||null});});
+      var actionBtn;
+      if(rsIdxs.length===1){
+        actionBtn='<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdxs[0]+'" onclick="taskActionMenu('+rsIdxs[0]+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>';
+      } else {
+        actionBtn='<button class="btn btn-xs btn-icon" data-tam-btn="multi-'+mid+'-'+t0.date+'" onclick="taskActionMenuMulti(['+rsIdxs.join(',')+'],\'multi-'+mid+'-'+t0.date+'\')" title="Reschedule or delete a task"><i class="ti ti-dots-vertical"></i></button>';
+      }
       return '<div class="task-row" style="grid-template-columns:100px 1fr 72px 40px 110px;margin-bottom:2px">'
         +'<span class="mono" style="font-size:10px">'+mid+'<br><span style="font-size:9px;color:var(--text3)">'+(t0.group||t0.expId||'')+'</span></span>'
         +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+(t0.exp&&t0.exp.harvest?'<span class="hv-wrap"><i class="ti ti-info-circle"></i><span class="hv-tip">'+t0.exp.harvest+'</span></span>':'')+'</span>'
@@ -1152,7 +1244,7 @@ function renderDaily(){
         +(loggedToday?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>':'')
         +(hasMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+expId+'\',\''+mid+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="showCageTransfer(\''+expId+'\',\''+mid+'\')"><i class="ti ti-arrows-exchange"></i></button>'
-        +'<button class="btn btn-xs btn-icon" onclick="reschedTask('+rsIdx+')"><i class="ti ti-calendar-event"></i></button>'
+        +actionBtn
         +'</div></div>'
         +'<div id="ilc-d-'+mid+'" style="display:none;padding:0 9px 4px"></div>';
     }
@@ -1275,6 +1367,7 @@ function renderWeek(){
 }
 function wkDet(d,type,ef){
   S._rsMap=S._rsMap||[];
+  S._wkSel=new Set();
   var tasks=getTasksForDate(d);
   if(type==='_measure'){
     tasks=tasks.filter(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';});
@@ -1283,20 +1376,87 @@ function wkDet(d,type,ef){
   }
   if(ef)tasks=tasks.filter(function(t){return t.expId===ef});
   var title=type==='_measure'?'Measurements':(type?TLBL2[type]||type:(ef||''));
-  var html='<div class="card"><div style="font-size:12px;font-weight:500;margin-bottom:.5rem">'+title+' — '+fmtD(d)+'</div>';
-  tasks.forEach(function(t){
-    var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
-    html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:.5px solid var(--border);font-size:11px">'
-      +'<span class="mono" style="min-width:72px">'+(t.mouseId||'--')+'</span>'
-      +'<span style="color:var(--text2);min-width:65px">'+(t.expId||'--')+'</span>'
-      +'<span style="flex:1">'+(t.label||t.desc||'')+'</span>'
-      +'<span class="badge bgy">'+t.type+'</span>'
-      +'<button class="btn btn-xs" onclick="reschedTask('+rsIdx+')"><i class="ti ti-calendar-event"></i> Reschedule</button>'
-      +'</div>';
+
+  // Resolve a group label for every task, including adhoc/custom tasks that don't carry
+  // a group reference directly — look it up via the mouse when possible.
+  function resolveGroup(t){
+    if(t.group)return t.group;
+    if(t.mouseId&&t.expId){
+      var m=(S.mice[t.expId]||[]).find(function(x){return x.id===t.mouseId});
+      if(m){var g=(S.groups[t.expId]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});if(g)return g.name;}
+    }
+    return 'General';
+  }
+
+  var byExp={};
+  tasks.forEach(function(t){var k=t.expId||'(no WP)';if(!byExp[k])byExp[k]=[];byExp[k].push(t);});
+
+  var html='<div class="card">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">'
+    +'<div style="font-size:12px;font-weight:500">'+title+' — '+fmtD(d)+'</div>'
+    +'<div id="wk-bulkbar" style="display:none;gap:4px">'
+    +'<span id="wk-sel-count" style="font-size:10px;color:var(--text3);margin-right:4px"></span>'
+    +'<button class="btn btn-xs" onclick="bulkReschedSelected()"><i class="ti ti-calendar-event"></i> Reschedule selected</button>'
+    +'<button class="btn btn-xs btn-r" onclick="bulkDeleteSelected()"><i class="ti ti-trash"></i> Delete selected</button>'
+    +'</div></div>';
+
+  Object.keys(byExp).sort().forEach(function(eid){
+    var expTasks=byExp[eid];
+    var expName=expTasks[0].expName||eid;
+    html+='<div style="font-size:11px;font-weight:600;color:var(--text);margin:10px 0 4px;padding-top:6px;border-top:1px solid var(--border)">'+(eid==='(no WP)'?'General':eid+' — '+expName)+'</div>';
+    var byGroup={};
+    expTasks.forEach(function(t){var gk=resolveGroup(t);if(!byGroup[gk])byGroup[gk]=[];byGroup[gk].push(t);});
+    Object.keys(byGroup).sort().forEach(function(gname){
+      html+='<div style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:6px 0 3px 6px">'+gname+'</div>';
+      byGroup[gname].forEach(function(t){
+        var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
+        html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 6px;border-bottom:.5px solid var(--border);font-size:11px">'
+          +'<input type="checkbox" class="wk-chk" value="'+rsIdx+'" onchange="wkSelChange()">'
+          +'<span class="mono" style="min-width:72px">'+(t.mouseId||'--')+'</span>'
+          +'<span style="flex:1">'+(t.label||t.desc||'')+'</span>'
+          +'<span class="badge bgy">'+t.type+'</span>'
+          +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>'
+          +'</div>';
+      });
+    });
   });
   if(!tasks.length)html+='<div class="empty" style="padding:1rem">No tasks</div>';
   html+='</div>';
   document.getElementById('wk-det').innerHTML=html;
+}
+function wkSelChange(){
+  var chks=document.querySelectorAll('.wk-chk');
+  var sel=Array.from(chks).filter(function(c){return c.checked}).map(function(c){return parseInt(c.value)});
+  S._wkSel=new Set(sel);
+  var bar=document.getElementById('wk-bulkbar');
+  var cnt=document.getElementById('wk-sel-count');
+  if(sel.length){bar.style.display='flex';bar.style.alignItems='center';cnt.textContent=sel.length+' selected';}
+  else{bar.style.display='none';}
+}
+async function bulkDeleteSelected(){
+  var idxs=Array.from(S._wkSel||[]);
+  if(!idxs.length)return;
+  if(!confirm('Delete '+idxs.length+' selected task(s)? This only removes these specific occurrences.'))return;
+  for(var i=0;i<idxs.length;i++){
+    var task=S._rsMap[idxs[i]];if(!task)continue;
+    if(task.adHocId)await sb.from('adhoc_tasks').delete().eq('id',task.adHocId);
+    else if(task.taskId)await markTaskSkipped(task,'Bulk deleted by '+uname());
+  }
+  await dbLoad();renderWeek();
+}
+async function bulkReschedSelected(){
+  var idxs=Array.from(S._wkSel||[]);
+  if(!idxs.length)return;
+  var nd=prompt('Reschedule '+idxs.length+' selected task(s) to (YYYY-MM-DD):');if(!nd)return;
+  var reason=prompt('Reason:','');if(reason===null)return;
+  for(var i=0;i<idxs.length;i++){
+    var task=S._rsMap[idxs[i]];if(!task)continue;
+    await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
+    if(task.expId)await sb.from('deviation_log').insert({experiment_id:task.expId,mouse_id:task.mouseId||null,event_type:task.type,original_date:task.date,actual_date:nd,reason:reason});
+    if(task.adHocId)await sb.from('adhoc_tasks').delete().eq('id',task.adHocId);
+    else if(task.taskId)await markTaskSkipped(task,'Rescheduled to '+nd+(reason?': '+reason:''));
+  }
+  await dbLoad();renderWeek();
 }
 
 // ALL EXPS
@@ -1643,6 +1803,17 @@ function closeHist(mid){
 
 // CHARTS
 var charts={};
+// Returns burden value for mouse m at relative day rd from day0, treating any day before
+// the first real (dim1-having) measurement as 0 burden (e.g. injection day before palpable
+// tumor), while preserving genuine gaps (missed log days) as null after that first measurement.
+function burdenAtRelDay(m,msl,rd){
+  var td=addD(m.day0_date,rd);
+  var ms=msl.find(function(x){return x.measured_at===td&&x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1});});
+  if(ms)return burden(ms.tumor_sites,S.inclSkin);
+  var firstReal=msl.find(function(x){return x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1});});
+  if(firstReal&&td<firstReal.measured_at)return 0;
+  return null;
+}
 function drawGrowth(exp,groups){
   var ctx=document.getElementById('growthChart');if(!ctx)return;
   var key='g'+exp.id;if(charts[key])charts[key].destroy();
@@ -1650,10 +1821,15 @@ function drawGrowth(exp,groups){
   var allDays=new Set();
   miceAll.forEach(function(m){
     if(!m.day0_date)return;
-    ((S.measurements[exp.id]||{})[m.id]||[]).forEach(function(ms){
+    var msl=(S.measurements[exp.id]||{})[m.id]||[];
+    var firstReal=msl.find(function(x){return x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1});});
+    msl.forEach(function(ms){
       if(!ms.tumor_sites||!ms.tumor_sites.some(function(s){return s.dim1}))return;
       allDays.add(Math.round((new Date(ms.measured_at)-new Date(m.day0_date))/86400000));
     });
+    // Ensure day 0 itself is always on the shared axis, even if no mouse has a real
+    // measurement exactly on that date — otherwise lines that start later look misaligned.
+    if(firstReal)allDays.add(0);
   });
   var labs=Array.from(allDays).sort(function(a,b){return a-b});
   if(!labs.length){ctx.parentElement.innerHTML='<div class="empty">No day 0 set yet. Open mouse history and click "Set day 0" on a measurement.</div>';return;}
@@ -1663,13 +1839,13 @@ function drawGrowth(exp,groups){
     if(S.plotMode==='individual'||S.plotMode==='both'){
       mice.forEach(function(m){
         var msl=(S.measurements[exp.id]||{})[m.id]||[];
-        var data=labs.map(function(rd){var td=addD(m.day0_date,rd);var ms=msl.find(function(x){return x.measured_at===td&&x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1})});return ms?Math.round(burden(ms.tumor_sites,S.inclSkin)):null;});
+        var data=labs.map(function(rd){var v=burdenAtRelDay(m,msl,rd);return v!=null?Math.round(v):null;});
         if(data.some(function(v){return v!=null}))datasets.push({label:m.id,data:data,borderColor:g.color,backgroundColor:'transparent',tension:.3,fill:false,spanGaps:true,pointRadius:2,borderWidth:1.2,borderDash:[4,3]});
       });
     }
     if(S.plotMode==='mean'||S.plotMode==='both'){
       var meanD=labs.map(function(rd){
-        var vals=mice.map(function(m){var td=addD(m.day0_date,rd);var ms=((S.measurements[exp.id]||{})[m.id]||[]).find(function(x){return x.measured_at===td&&x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1})});return ms?burden(ms.tumor_sites,S.inclSkin):null;}).filter(function(v){return v!=null});
+        var vals=mice.map(function(m){var msl=(S.measurements[exp.id]||{})[m.id]||[];return burdenAtRelDay(m,msl,rd);}).filter(function(v){return v!=null});
         return vals.length?Math.round(vals.reduce(function(a,b){return a+b},0)/vals.length):null;
       });
       if(meanD.some(function(v){return v!=null}))datasets.push({label:g.name+' (mean)',data:meanD,borderColor:g.color,backgroundColor:g.color+'22',tension:.3,fill:false,spanGaps:true,pointRadius:4,borderWidth:2.5});
@@ -2900,29 +3076,62 @@ function showReschedAll(){
   S._rsMap=S._rsMap||[];
   var viewDate=S.dailyDate||TISO;
   var tasks=getTasksForDate(viewDate).filter(function(t){return t.type!=='custom'&&t.type!=='distress'});
-  if(!tasks.length){alert('No tasks to reschedule today.');return;}
-  var checkboxes=tasks.map(function(t,i){
-    var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||''});
-    return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px">'
-      +'<input type="checkbox" class="rsall-chk" value="'+rsIdx+'" checked>'
-      +'<span class="mono" style="min-width:80px">'+(t.mouseId||'--')+'</span>'
-      +'<span style="color:var(--text2);min-width:65px">'+(t.expId||'')+'</span>'
-      +'<span>'+(t.label||t.type)+'</span>'
-      +'</label>';
-  }).join('');
-  showModal('Reschedule tasks — today',
-    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Select tasks to reschedule. All selected tasks will move to the same new date.</div>'
+  if(!tasks.length){alert('No tasks today.');return;}
+  function resolveGroup(t){
+    if(t.group)return t.group;
+    if(t.mouseId&&t.expId){
+      var m=(S.mice[t.expId]||[]).find(function(x){return x.id===t.mouseId});
+      if(m){var g=(S.groups[t.expId]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});if(g)return g.name;}
+    }
+    return 'General';
+  }
+  var byExp={};
+  tasks.forEach(function(t){var k=t.expId||'(no WP)';if(!byExp[k])byExp[k]=[];byExp[k].push(t);});
+  var listHtml='';
+  Object.keys(byExp).sort().forEach(function(eid){
+    var expTasks=byExp[eid];
+    listHtml+='<div style="font-size:10px;font-weight:600;margin:8px 0 2px;padding-top:6px;border-top:1px solid var(--border)">'+(eid==='(no WP)'?'General':eid)+'</div>';
+    var byGroup={};
+    expTasks.forEach(function(t){var gk=resolveGroup(t);if(!byGroup[gk])byGroup[gk]=[];byGroup[gk].push(t);});
+    Object.keys(byGroup).sort().forEach(function(gname){
+      listHtml+='<div style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:4px 0 2px 4px">'+gname+'</div>';
+      byGroup[gname].forEach(function(t){
+        var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
+        listHtml+='<label style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 4px;font-size:11px">'
+          +'<input type="checkbox" class="rsall-chk" value="'+rsIdx+'" checked>'
+          +'<span class="mono" style="min-width:80px">'+(t.mouseId||'--')+'</span>'
+          +'<span>'+(t.label||t.type)+'</span>'
+          +'</label>';
+      });
+    });
+  });
+  showModal('Reschedule or delete tasks — '+fmtD(viewDate),
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Select tasks below, then either reschedule them all to a new date, or delete them. Each only affects this specific occurrence — other mice and future dates are untouched.</div>'
     +'<div style="display:flex;gap:6px;margin-bottom:8px">'
     +'<button class="btn btn-xs" onclick="document.querySelectorAll(\'.rsall-chk\').forEach(function(c){c.checked=true})">Select all</button>'
     +'<button class="btn btn-xs" onclick="document.querySelectorAll(\'.rsall-chk\').forEach(function(c){c.checked=false})">Deselect all</button>'
     +'</div>'
-    +'<div style="max-height:240px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--r);padding:6px 8px;margin-bottom:8px">'+checkboxes+'</div>'
+    +'<div style="max-height:280px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--r);padding:6px 8px;margin-bottom:8px">'+listHtml+'</div>'
     +'<div class="f2">'
     +'<div class="fg"><label class="fl">Reschedule to</label><input class="fi" id="rsall-date" type="date" value="'+addD(S.dailyDate||TISO,1)+'"></div>'
     +'<div class="fg"><label class="fl">Reason</label><input class="fi" id="rsall-reason" placeholder="e.g. animal facility closed"></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-r btn-xs" onclick="submitDeleteAll()"><i class="ti ti-trash"></i> Delete selected</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitReschedAll()"><i class="ti ti-calendar-event"></i> Reschedule selected</button>');
+}
+async function submitDeleteAll(){
+  var checked=document.querySelectorAll('.rsall-chk:checked');
+  if(!checked.length){alert('Select at least one task');return;}
+  if(!confirm('Delete '+checked.length+' selected task(s)? This only removes these specific occurrences.'))return;
+  var promises=[];
+  checked.forEach(function(c){
+    var idx=parseInt(c.value);var task=S._rsMap[idx];if(!task)return;
+    if(task.adHocId)promises.push(sb.from('adhoc_tasks').delete().eq('id',task.adHocId));
+    else if(task.taskId)promises.push(markTaskSkipped(task,'Bulk deleted by '+uname()));
+  });
+  await Promise.all(promises);
+  closeModal();await dbLoad();renderDaily();
 }
 async function submitReschedAll(){
   var nd=document.getElementById('rsall-date')&&document.getElementById('rsall-date').value;
@@ -2951,6 +3160,8 @@ async function submitReschedAll(){
         })
       );
     }
+    if(task.adHocId)promises.push(sb.from('adhoc_tasks').delete().eq('id',task.adHocId));
+    else if(task.taskId)promises.push(markTaskSkipped(task,'Rescheduled to '+nd+(reason?': '+reason:'')));
   });
   await Promise.all(promises);
   closeModal();await dbLoad();renderDaily();
