@@ -122,6 +122,15 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .mt tr.log-row td,.mt tr.hist-row td{overflow:visible!important;white-space:normal!important;padding:0!important;border-bottom:none}
 .mono{font-family:var(--mono);font-size:10px}
 .hw{background:var(--surface2);border-radius:var(--r);overflow:hidden;margin-top:4px}
+.tl-wrap{display:flex;border:.5px solid var(--border);border-radius:var(--r);overflow:hidden}
+.tl-frozen-l{flex-shrink:0;background:var(--surface);position:relative;z-index:2;box-shadow:2px 0 4px -2px rgba(0,0,0,.08)}
+.tl-frozen-r{flex-shrink:0;background:var(--surface);position:relative;z-index:2;box-shadow:-2px 0 4px -2px rgba(0,0,0,.08)}
+.tl-scroll{overflow-x:auto;flex:1}
+.tl-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;border-left:.5px solid var(--border);border-bottom:.5px solid var(--border);box-sizing:border-box;padding:1px}
+.tl-cell .tl-sz{font-family:var(--mono);font-size:10px;line-height:1.2}
+.tl-cell .tl-w{font-family:var(--mono);font-size:8px;color:var(--text3);line-height:1.1}
+.tl-head{background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);display:flex;align-items:center;justify-content:center;border-left:.5px solid var(--border);border-bottom:.5px solid var(--border);box-sizing:border-box}
+.tl-noteline{position:absolute;bottom:1px;left:5px;right:5px;height:2px;border-radius:1px}
 .ht{width:100%;font-size:10px;border-collapse:collapse}
 .ht th{text-align:left;padding:4px 6px;font-size:9px;color:var(--text3);border-bottom:.5px solid var(--border);background:var(--surface3);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
 .ht td{padding:4px 6px;border-bottom:.5px solid var(--border)}
@@ -240,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v69</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v70</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2131,6 +2140,117 @@ async function deleteExp(eid){
 }
 
 // EXPERIMENT VIEW
+// TIMELINE TAB — read-only view of every measurement date for the whole experiment, one row
+// per mouse, mouse/cage frozen on the left and a slim actions column pinned on the right.
+// No editing of values here — that stays in the card view's log modal or the daily spreadsheet.
+function renderTimelineTab(exp,groups,eid){
+  var miceAll=sortMiceForDisplay(S.mice[eid]||[]);
+  if(!miceAll.length)return'<div class="empty">No mice in this experiment yet.</div>';
+
+  // Collect every date that has at least one real tumor measurement, across all mice.
+  var allDatesSet={};
+  miceAll.forEach(function(m){
+    ((S.measurements[eid]||{})[m.id]||[]).forEach(function(ms){
+      if(ms.tumor_sites&&ms.tumor_sites.some(function(s){return s.dim1;}))allDatesSet[ms.measured_at]=true;
+    });
+  });
+  var allDates=Object.keys(allDatesSet).sort();
+  if(!allDates.length)return'<div class="empty">No measurements logged yet for this experiment.</div>';
+
+  var html='<div class="card" style="padding:.75rem">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">'
+    +'<div style="font-size:11px;font-weight:500">Timeline — every measurement date, '+allDates.length+' dates</div>'
+    +'<div style="font-size:9px;color:var(--text3)">Read-only — log values from Mice & measurements or the daily spreadsheet</div>'
+    +'</div>';
+
+  groups.forEach(function(g){
+    var gMice=miceAll.filter(function(m){return m.group_id===g.id||m.group_name===g.name;});
+    if(!gMice.length)return;
+    html+='<div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.03em;margin:8px 0 3px 2px">'+g.name+'</div>';
+    html+='<div class="tl-wrap">';
+
+    // Frozen left columns: mouse ID + cage
+    html+='<div class="tl-frozen-l" style="width:78px">';
+    html+='<div class="tl-head" style="height:30px;border-left:none">Mouse</div>';
+    gMice.forEach(function(m){
+      html+='<div style="height:30px;display:flex;flex-direction:column;justify-content:center;padding:0 5px;border-bottom:.5px solid var(--border);font-size:10px">'
+        +'<span class="mono">'+m.id+'</span>'
+        +'<span style="font-size:8px;color:var(--text3)">'+(m.cage_number||'--')+'</span>'
+        +'</div>';
+    });
+    html+='</div>';
+
+    // Scrollable date columns
+    html+='<div class="tl-scroll"><div style="min-width:'+(allDates.length*46)+'px">';
+    html+='<div style="display:flex">';
+    allDates.forEach(function(d){html+='<div class="tl-head" style="width:46px;height:30px">'+d.slice(5).replace('-','/')+'</div>';});
+    html+='</div>';
+    gMice.forEach(function(m){
+      var msl=(S.measurements[eid]||{})[m.id]||[];
+      html+='<div style="display:flex">';
+      allDates.forEach(function(d){
+        var ms=msl.find(function(x){return x.measured_at===d&&x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1;});});
+        var cellContent='';
+        if(ms){
+          var sz=bShort(ms.tumor_sites,S.inclSkin);
+          cellContent='<span class="tl-sz">'+sz+'</span>'+(ms.weight!=null&&ms.weight!==''?'<span class="tl-w">'+ms.weight+'g</span>':'');
+        } else {
+          cellContent='<span style="color:var(--text3);font-size:10px">—</span>';
+        }
+        var hasNote=ms&&ms.note;
+        var noteLine=hasNote?'<span class="tl-noteline" style="background:var(--amber-border)"></span>':'';
+        var title=ms?(ms.weight!=null?ms.weight+'g':'')+(ms.note?(ms.weight!=null?' — ':'')+ms.note:''):'';
+        html+='<div class="tl-cell" style="width:46px;height:30px;position:relative" title="'+title.replace(/"/g,'&quot;')+'">'+cellContent+noteLine+'</div>';
+      });
+      html+='</div>';
+    });
+    html+='</div></div>';
+
+    // Pinned right column: sacrifice indicator + actions menu
+    html+='<div class="tl-frozen-r" style="width:34px">';
+    html+='<div class="tl-head" style="height:30px;border-left:.5px solid var(--border)"></div>';
+    gMice.forEach(function(m){
+      var isSac=m.status==='sacrificed';
+      html+='<div style="height:30px;display:flex;align-items:center;justify-content:center;border-bottom:.5px solid var(--border);border-left:.5px solid var(--border)">'
+        +(isSac?'<i class="ti ti-heart-broken" style="font-size:12px;color:var(--red)" title="Sacrificed'+(m.kdv?' — '+m.kdv:'')+'"></i>':
+          '<button class="btn btn-xs btn-icon" data-tl-btn="'+eid+'-'+m.id+'" onclick="timelineActionMenu(\''+eid+'\',\''+m.id+'\')" title="Actions"><i class="ti ti-dots-vertical"></i></button>')
+        +'</div>';
+    });
+    html+='</div>';
+
+    html+='</div>'; // tl-wrap
+  });
+
+  html+='</div>';
+  return html;
+}
+// Small action menu for a mouse row in the Timeline tab — reuses the same actions and
+// functions already available from the card view (add note, move group/cage, exclude).
+function timelineActionMenu(eid,mid){
+  var id='tlm-'+eid+'-'+mid;
+  var el=document.getElementById(id);
+  if(el){el.remove();return;}
+  var btn=document.querySelector('[data-tl-btn="'+eid+'-'+mid+'"]');
+  if(!btn)return;
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(!m)return;
+  var menu=document.createElement('div');
+  menu.id=id;
+  menu.style.cssText='position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:1000;padding:3px;display:flex;flex-direction:column;gap:2px;min-width:170px';
+  menu.innerHTML='<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();quickAddNote(\''+eid+'\',\''+mid+'\',\''+TISO+'\')"><i class="ti ti-pin"></i> Add note (today)</button>'
+    +'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showCageTransfer(\''+eid+'\',\''+mid+'\')"><i class="ti ti-arrows-exchange"></i> Move (group / cage)</button>'
+    +'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();editTxStart(\''+mid+'\',\''+eid+'\')"><i class="ti ti-calendar-event"></i> Edit tx start</button>'
+    +'<button class="btn btn-xs '+(m.excluded_from_analysis?'btn-r':'')+'" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();toggleExclude(\''+mid+'\',\''+eid+'\')"><i class="ti ti-chart-line-off"></i> '+(m.excluded_from_analysis?'Re-include in analysis':'Exclude from analysis')+'</button>'
+    +'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();ST(\'mice\');setTimeout(function(){toggleHist(\''+eid+'\',\''+mid+'\')},50)"><i class="ti ti-history"></i> View full history</button>';
+  document.body.appendChild(menu);
+  var r=btn.getBoundingClientRect();
+  var menuW=menu.offsetWidth;
+  var left=r.right+window.scrollX-menuW;
+  if(left<window.scrollX+4)left=Math.min(r.left+window.scrollX,window.scrollX+window.innerWidth-menuW-4);
+  menu.style.top=(r.bottom+window.scrollY+3)+'px';
+  menu.style.left=left+'px';
+  function closeOnOutside(e){if(!menu.contains(e.target)&&e.target!==btn){menu.remove();document.removeEventListener('click',closeOnOutside);}}
+  setTimeout(function(){document.addEventListener('click',closeOnOutside);},0);
+}
 async function renderExp(eid){
   var _scrollY=window.scrollY;
   S.view='experiment';S.curExp=eid;
@@ -2162,6 +2282,7 @@ async function renderExp(eid){
     +'</div>'
     +'<div class="tabs">'
     +'<div class="tab '+(S.expTab==='mice'?'act':'')+'" onclick="ST(\'mice\')">Mice & measurements</div>'
+    +'<div class="tab '+(S.expTab==='timeline'?'act':'')+'" onclick="ST(\'timeline\')">Timeline</div>'
     +'<div class="tab '+(S.expTab==='growth'?'act':'')+'" onclick="ST(\'growth\')">Tumor growth</div>'
     +'<div class="tab '+(S.expTab==='km'?'act':'')+'" onclick="ST(\'km\')">Survival</div>'
     +'<div class="tab '+(S.expTab==='sched'?'act':'')+'" onclick="ST(\'sched\')">Schedule</div>'
@@ -2240,6 +2361,8 @@ async function renderExp(eid){
       });
       html+='</tbody></table></div>';
     });
+  } else if(S.expTab==='timeline'){
+    html+=renderTimelineTab(exp,groups,eid);
   } else if(S.expTab==='growth'){
     html+='<div class="card">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:6px">'
