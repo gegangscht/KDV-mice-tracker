@@ -173,7 +173,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .pt-btn.act{background:var(--blue);color:#fff;border-color:var(--blue)}
 .srt-btn{padding:3px 7px;font-size:10px;border-radius:var(--r);cursor:pointer;border:.5px solid var(--border2);color:var(--text2);background:var(--surface)}
 .srt-btn.act{background:var(--blue-bg);color:var(--blue);border-color:#B5D4F4}
-.burden-badge{font-family:var(--mono);font-size:10px;background:var(--surface2);border-radius:3px;padding:1px 5px}
+.burden-badge{font-family:var(--mono);font-size:10px;background:var(--surface2);border-radius:3px;padding:1px 5px;display:inline-flex;align-items:center;justify-content:flex-end;gap:3px;min-width:62px;box-sizing:border-box}
 .cage-tag{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--text3);background:var(--surface2);border-radius:3px;padding:1px 5px;cursor:pointer}
 .cage-tag:hover{background:var(--surface3);color:var(--text2)}
 .empty{text-align:center;padding:2.5rem;color:var(--text3);font-size:12px}
@@ -238,7 +238,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v66</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v68</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -823,7 +823,7 @@ function openLogE(eid,mid,ei){
   if(ex){var cur=parseInt(ex.dataset.ei||'-1');ex.remove();if(cur===ei)return;}
   var row=document.getElementById('mrow-'+mid);if(!row)return;
   var tr=document.createElement('tr');tr.id='il-tr-'+mid;tr.dataset.ei=ei;tr.className='log-row';
-  var td=document.createElement('td');td.colSpan=20;
+  var td=document.createElement('td');td.colSpan=12;
   td.style.cssText='padding:4px 6px 8px;background:var(--surface2);white-space:normal;overflow:visible';
   td.innerHTML=logHTML(eid,mid,ei);tr.appendChild(td);row.after(tr);
   ilWireButtons(eid,mid,ei);
@@ -927,6 +927,26 @@ async function editCage(mid,eid){
   await sb.from('mice').update({cage_number:val}).eq('id',mid);
   if(val!==cur)await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:TISO,event_type:'cage_change',label:'Cage: '+(cur||'?')+' to '+val,details:{old_cage:cur,new_cage:val},logged_by:uname()});
   await loadAll(eid);renderExp(eid);
+}
+// Edits the text of a note-type mouse_events entry in place (these are otherwise immutable
+// once logged — same in-place refresh pattern as setDay0, no full page reload).
+async function editMouseNote(evId,eid,mid){
+  var evts=(S.mevents[eid]||{})[mid]||[];
+  var ev=evts.find(function(x){return String(x.id)===String(evId);});
+  if(!ev)return;
+  var newText=prompt('Edit note:',ev.label||'');
+  if(newText===null)return;
+  newText=newText.trim();
+  if(!newText){alert('Note cannot be empty — delete it from the database directly if needed.');return;}
+  var prevLabel=ev.label;
+  ev.label=newText; // update in-memory immediately
+  toggleHist(eid,mid);
+  var res=await sb.from('mouse_events').update({label:newText}).eq('id',evId);
+  if(res.error){
+    ev.label=prevLabel;
+    toggleHist(eid,mid);
+    alert('Could not save note — please try again.');
+  }
 }
 async function setDay0(mid,eid,date){
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(!m)return;
@@ -1296,7 +1316,7 @@ function taskActionMenu(idx){
 function taskSection(title,icon,items){
   if(!items.length)return'';
   S._rsMap=S._rsMap||[];
-  var cols='82px 95px 1fr 170px 42px 120px';
+  var cols='82px 95px 1fr 175px 42px 120px';
   var rows=items.map(function(t){
     var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
     var isMeasure=t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';
@@ -1312,7 +1332,7 @@ function taskSection(title,icon,items){
         +dailyNoteHTML(t.dailyNotes)
         +harvestTipHTML(t.exp)
         +'</span>'
-      +'<span style="display:flex;gap:3px;flex-wrap:wrap">'+(isMeasure&&t.mouseId?sizeWeightBadges(t.expId,t.mouseId,t.date,needsTumor):(t.dose?'<span class="burden-badge">'+t.dose+(t.route?' '+t.route:'')+'</span>':''))+'</span>'
+      +'<span style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">'+(isMeasure&&t.mouseId?sizeWeightBadges(t.expId,t.mouseId,t.date,needsTumor):(t.dose?'<span class="burden-badge">'+t.dose+(t.route?' '+t.route:'')+'</span>':''))+'</span>'
       +'<span style="font-size:10px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx:'')+'</span>'
       +'<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">'
         +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
@@ -1326,7 +1346,7 @@ function taskSection(title,icon,items){
     +'<div class="task-sh"><i class="ti '+icon+'" style="font-size:13px;color:var(--text2)"></i>'
     +'<span class="task-st">'+title+'</span><span class="task-sc">'+items.length+'</span></div>'
     +'<div style="display:grid;grid-template-columns:'+cols+';gap:6px;padding:0 9px 3px;font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">'
-    +'<span>Mouse</span><span>WP / Group</span><span>Task</span><span>Last</span><span>Day</span><span></span></div>'
+    +'<span>Mouse</span><span>WP / Group</span><span>Task</span><span style="text-align:right">Last</span><span>Day</span><span></span></div>'
     +rows+'</div>';
 }
 
@@ -1530,10 +1550,10 @@ function renderDaily(){
       } else {
         actionBtn='<button class="btn btn-xs btn-icon" data-tam-btn="multi-'+mid+'-'+t0.date+'" onclick="taskActionMenuMulti(['+rsIdxs.join(',')+'],\'multi-'+mid+'-'+t0.date+'\')" title="Reschedule or delete a task"><i class="ti ti-dots-vertical"></i></button>';
       }
-      return '<div class="task-row" style="grid-template-columns:100px 1fr 160px 40px 110px;margin-bottom:2px">'
+      return '<div class="task-row" style="grid-template-columns:100px 1fr 165px 40px 110px;margin-bottom:2px">'
         +'<span class="mono" style="font-size:10px">'+mid+'<br><span style="font-size:9px;color:var(--text3)">'+(t0.group||t0.expId||'')+'</span></span>'
         +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+groupNoteHTML(t0.g)+dailyNoteHTML(t0.dailyNotes)+harvestTipHTML(t0.exp)+'</span>'
-        +'<span style="display:flex;gap:3px;flex-wrap:wrap">'+(hasMeasure?sizeWeightBadges(expId,mid,t0.date,needsTumor):'')+'</span>'
+        +'<span style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">'+(hasMeasure?sizeWeightBadges(expId,mid,t0.date,needsTumor):'')+'</span>'
         +'<span style="font-size:10px;color:var(--text3)">'+(t0.dayInTx!=null?'d'+t0.dayInTx:'')+'</span>'
         +'<div style="display:flex;gap:3px;align-items:center">'
         +(hasMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+expId+'\',\''+mid+'\')"><i class="ti ti-plus"></i> Log</button>':'')
@@ -2010,7 +2030,7 @@ async function renderExp(eid){
           +'<button class="btn btn-xs btn-icon" title="History" onclick="toggleHist(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-history"></i></button>'
           +'<button class="btn btn-xs btn-icon btn-r" title="Remove mouse from experiment" onclick="removeMouse(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-user-minus"></i></button>'
           +'</div></td></tr>'
-          +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="11" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
+          +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="12" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
       });
       html+='</tbody></table></div>';
     });
@@ -2165,13 +2185,20 @@ function renderMouseHist(m,eid){
       else if(ev.event_type==='mastectomy')ds=(det.tumor_weight_mg?'Tumor: '+det.tumor_weight_mg+'mg':'')+( det.notes?' — '+det.notes:'');
       else if(ev.event_type==='distress_check')ds=det.status==='clear'?'Clear':(det.status==='watch'?'Watch':'Endpoint')+(det.note?' — '+det.note:'');
       else if(ev.event_type==='recurrence')ds=det.note?det.note:'';
-      html+='<tr class="'+ec+'">'
-        +'<td class="mono">'+ev.event_date+'</td>'
+      var evIsD0=!!(m.day0_date&&ev.event_date===m.day0_date);
+      var evShowD0Btn=!d0BtnShownForDate[ev.event_date];
+      d0BtnShownForDate[ev.event_date]=true;
+      var isEditableNote=ev.event_type==='note'&&ev.id;
+      html+='<tr class="'+ec+(evIsD0?' d0-row':'')+'">'
+        +'<td class="mono">'+ev.event_date+(evIsD0?'<span class="d0-badge">Day 0</span>':'')+'</td>'
         +'<td><i class="ti '+icon+'" style="font-size:12px"></i></td>'
         +'<td colspan="'+(multi?3:2)+'" style="font-weight:500">'+(ev.label||'')+'</td>'
         +'<td style="font-size:10px">'+ds+'</td>'
         +'<td style="font-size:10px;color:var(--text3)">'+(ev.logged_by||'--')+'</td>'
-        +'<td></td></tr>';
+        +'<td><div style="display:flex;gap:3px">'
+        +(evShowD0Btn?'<button class="d0-btn" onclick="setDay0(\''+m.id+'\',\''+eid+'\',\''+ev.event_date+'\')">'+(evIsD0?'Day 0 set':'Set day 0')+'</button>':'')
+        +(isEditableNote?'<button class="btn btn-xs btn-icon" title="Edit note" onclick="editMouseNote(\''+ev.id+'\',\''+eid+'\',\''+m.id+'\')"><i class="ti ti-pencil"></i></button>':'')
+        +'</div></td></tr>';
     }
   });
   if(!rows.length)html+='<tr><td colspan="'+(multi?8:7)+'" style="text-align:center;padding:1rem;color:var(--text3);font-size:11px">No history yet</td></tr>';
