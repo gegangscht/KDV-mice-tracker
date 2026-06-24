@@ -238,7 +238,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v64</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v66</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -313,6 +313,31 @@ function findTodaysMeasureIdx(eid,mid,dateIso){
   var msl=(S.measurements[eid]||{})[mid]||[];
   for(var i=msl.length-1;i>=0;i--){if(msl[i].measured_at===dateIso)return i;}
   return -1;
+}
+// Classifies exactly what was logged for a mouse on a given date: weight, tumor size, both,
+// Builds the size and weight badges shown in the daily view. Each badge shows the most
+// relevant value: if logged today, today's value with a small green check right after it;
+// otherwise the last known value (from any previous day) with a grey placeholder circle in
+// that same spot, so the row layout stays consistent whether or not today's entry exists.
+function sizeWeightBadges(eid,mid,dateIso,needsTumor){
+  var idx=findTodaysMeasureIdx(eid,mid,dateIso);
+  var todays=idx>=0?(S.measurements[eid]||{})[mid][idx]:null;
+  var todaysHasWeight=!!(todays&&todays.weight!=null&&todays.weight!=='');
+  var todaysHasTumor=!!(todays&&todays.tumor_sites&&todays.tumor_sites.some(function(s){return s.dim1;}));
+  var lastTumorEntry=lastMs(mid,eid);
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+
+  var checkIcon='<i class="ti ti-circle-check" style="font-size:12px;color:var(--green)" title="Logged today"></i>';
+  var placeholderIcon='<i class="ti ti-circle" style="font-size:12px;color:var(--border2)" title="Not logged today"></i>';
+
+  var sizeHTML='';
+  if(needsTumor){
+    var sizeVal=todaysHasTumor?bShort(todays.tumor_sites,S.inclSkin):(lastTumorEntry?bShort(lastTumorEntry.tumor_sites,S.inclSkin):'--');
+    sizeHTML='<span class="burden-badge">'+sizeVal+' '+(todaysHasTumor?checkIcon:placeholderIcon)+'</span>';
+  }
+  var weightVal=todaysHasWeight?todays.weight+'g':(m&&m.weight?m.weight+'g':'--');
+  var weightHTML='<span class="burden-badge">'+weightVal+' '+(todaysHasWeight?checkIcon:placeholderIcon)+'</span>';
+  return needsTumor?(sizeHTML+weightHTML):weightHTML;
 }
 function nearEP(mid,eid){var l=lastMs(mid,eid);return l?burden(l.tumor_sites,false)>=81:false}
 function dInTx(m){if(!m.tx_start)return null;return Math.round((new Date(TISO)-new Date(m.tx_start))/86400000)}
@@ -903,15 +928,20 @@ async function editCage(mid,eid){
   if(val!==cur)await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:TISO,event_type:'cage_change',label:'Cage: '+(cur||'?')+' to '+val,details:{old_cage:cur,new_cage:val},logged_by:uname()});
   await loadAll(eid);renderExp(eid);
 }
-async function setDay0(mid,eid,msid,msdate){
+async function setDay0(mid,eid,date){
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(!m)return;
+  // Pick a representative measurement on this date purely so existing per-row highlighting
+  // (isD0 / keyMs) still has something to point at — the real source of truth is the date.
+  var msl=(S.measurements[eid]||{})[mid]||[];
+  var repMs=msl.find(function(x){return x.measured_at===date});
+  var repMsid=repMs?repMs.id:null;
   // Update local state immediately so the UI reflects the change without a full reload.
   var prevMsid=m.day0_measurement_id,prevDate=m.day0_date;
-  m.day0_measurement_id=msid;m.day0_date=msdate;
+  m.day0_measurement_id=repMsid;m.day0_date=date;
   toggleHist(eid,mid); // re-render just this mouse's history row in place
-  var btn=document.querySelector('#histrow-'+msid+' .d0-btn');
+  var btn=document.querySelector('[data-histday="'+date.replace(/[^0-9]/g,'')+'"] .d0-btn');
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
-  var res=await sb.from('mice').update({day0_measurement_id:msid,day0_date:msdate}).eq('id',mid);
+  var res=await sb.from('mice').update({day0_measurement_id:repMsid,day0_date:date}).eq('id',mid);
   if(res.error){
     // Roll back local state and UI on failure so we never show a day0 that wasn't actually saved.
     m.day0_measurement_id=prevMsid;m.day0_date=prevDate;
@@ -930,14 +960,19 @@ function showTransfer(eid,mid){
   showModal('Transfer mouse - '+mid,
     '<div style="font-size:11px;color:var(--text2);margin-bottom:.75rem">Currently in <strong>'+m.group_name+'</strong></div>'
     +'<div class="f2">'
-    +'<div class="fg full"><label class="fl">Transfer to group</label><select class="fs" id="tr-grp">'+others.map(function(g){return'<option value="'+g.id+'|'+g.name+'">'+g.name+'</option>'}).join('')+'</select></div>'
+    +'<div class="fg full"><label class="fl">Transfer to group</label><select class="fs" id="tr-grp" onchange="trGroupChanged(\''+eid+'\')">'+others.map(function(g){return'<option value="'+g.id+'|'+g.name+'">'+g.name+'</option>'}).join('')+'</select></div>'
     +'<div class="fg"><label class="fl">Transfer date</label><input class="fi" id="tr-date" type="date" value="'+TISO+'"></div>'
+    +'</div>'
+    +'<div id="tr-tx-fields" style="display:none">'
+    +'<div style="font-size:9px;color:var(--text3);margin:4px 0 6px">This group has treatment scheduled — set when treatment starts for this mouse.</div>'
+    +'<div class="f2">'
     +'<div class="fg"><label class="fl">First treatment date</label><input class="fi" id="tr-tx" type="date" value="'+TISO+'"></div>'
     +'<div class="fg full"><label class="fl">Schedule resumes from</label><input class="fi" id="tr-sched" type="date" value="'+nxtMon+'"></div>'
-    +'<div class="fg full"><label class="fl">Note</label><input class="fi" id="tr-note" placeholder="e.g. treated on transfer day..."></div>'
-    +'</div>',
+    +'</div></div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Note</label><input class="fi" id="tr-note" placeholder="e.g. treated on transfer day..."></div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitTransfer(\''+eid+'\',\''+mid+'\')"><i class="ti ti-check"></i> Transfer</button>');
+  setTimeout(function(){trGroupChanged(eid);},50);
 }
 async function submitTransfer(eid,mid){
   var gv=(document.getElementById('tr-grp')&&document.getElementById('tr-grp').value)||'';
@@ -947,11 +982,13 @@ async function submitTransfer(eid,mid){
   var sched=(document.getElementById('tr-sched')&&document.getElementById('tr-sched').value)||TISO;
   var note=(document.getElementById('tr-note')&&document.getElementById('tr-note').value)||'';
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
-  await sb.from('mice').update({group_id:ngid,group_name:ngname,tx_start:txs,original_group_id:m.group_id,original_group_name:m.group_name}).eq('id',mid);
-  await sb.from('mouse_events').insert([
-    {mouse_id:mid,experiment_id:eid,event_date:td,event_type:'transferred',label:'Transferred by '+uname()+': '+m.group_name+' to '+ngname,details:{from_group:m.group_name,to_group:ngname,first_tx_date:txs,schedule_anchor:sched,note:note},logged_by:uname()},
-    {mouse_id:mid,experiment_id:eid,event_date:txs,event_type:'tx_start',label:'Treatment started',details:{schedule_anchor:sched},logged_by:uname()},
-  ]);
+  var destHasTreatment=(S.events[ngid]||[]).some(function(ev){return ev.type==='treatment';});
+  var updates={group_id:ngid,group_name:ngname,original_group_id:m.group_id,original_group_name:m.group_name};
+  if(destHasTreatment)updates.tx_start=txs;
+  await sb.from('mice').update(updates).eq('id',mid);
+  var events=[{mouse_id:mid,experiment_id:eid,event_date:td,event_type:'transferred',label:'Transferred by '+uname()+': '+m.group_name+' to '+ngname,details:{from_group:m.group_name,to_group:ngname,first_tx_date:destHasTreatment?txs:null,schedule_anchor:destHasTreatment?sched:null,note:note},logged_by:uname()}];
+  if(destHasTreatment)events.push({mouse_id:mid,experiment_id:eid,event_date:txs,event_type:'tx_start',label:'Treatment started',details:{schedule_anchor:sched},logged_by:uname()});
+  await sb.from('mouse_events').insert(events);
   closeModal();await loadAll(eid);renderExp(eid);
 }
 
@@ -1259,12 +1296,12 @@ function taskActionMenu(idx){
 function taskSection(title,icon,items){
   if(!items.length)return'';
   S._rsMap=S._rsMap||[];
-  var cols='82px 95px 1fr 80px 42px 120px';
+  var cols='82px 95px 1fr 170px 42px 120px';
   var rows=items.map(function(t){
     var rsIdx=rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
     var isMeasure=t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';
     var isActive=t.m&&t.m.status==='active';
-    var loggedToday=isMeasure&&t.mouseId&&findTodaysMeasureIdx(t.expId,t.mouseId,t.date)>=0;
+    var needsTumor=t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined';
     return '<div class="task-row" style="grid-template-columns:'+cols+'">'
       +'<span class="mono" style="font-size:10px">'+(t.mouseId||'--')+(t.m&&t.m.cage_number?'<br><span class="cage-tag" style="margin-top:1px;font-size:9px"><i class="ti ti-cage" style="font-size:9px"></i>'+t.m.cage_number+'</span>':'')+'</span>'
       +'<span style="font-size:10px;color:var(--text2)">'+(t.expId||'--')
@@ -1275,10 +1312,9 @@ function taskSection(title,icon,items){
         +dailyNoteHTML(t.dailyNotes)
         +harvestTipHTML(t.exp)
         +'</span>'
-      +'<span class="burden-badge">'+(isMeasure?(t.lastBurden||'--'):(t.dose?t.dose+(t.route?' '+t.route:''):''))+'</span>'
+      +'<span style="display:flex;gap:3px;flex-wrap:wrap">'+(isMeasure&&t.mouseId?sizeWeightBadges(t.expId,t.mouseId,t.date,needsTumor):(t.dose?'<span class="burden-badge">'+t.dose+(t.route?' '+t.route:'')+'</span>':''))+'</span>'
       +'<span style="font-size:10px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx:'')+'</span>'
       +'<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">'
-        +(loggedToday?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>':'')
         +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
@@ -1484,7 +1520,7 @@ function renderDaily(){
       var t0=mTasks[0];
       var allLabels=mTasks.map(taskLabel).join(' + ');
       var hasMeasure=mTasks.some(function(t){return isMeasureType(t.type);});
-      var loggedToday=hasMeasure&&findTodaysMeasureIdx(expId,mid,t0.date)>=0;
+      var needsTumor=mTasks.some(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined';});
       // Register each underlying task separately so reschedule/delete can target the
       // exact occurrence, even when multiple tasks for this mouse are merged into one row.
       var rsIdxs=mTasks.map(function(t){return rsReg({date:t.date,label:t.label||'',type:t.type,mouseId:t.mouseId||mid,expId:t.expId||expId,taskId:t.taskId,adHocId:t.adHocId||null});});
@@ -1494,13 +1530,12 @@ function renderDaily(){
       } else {
         actionBtn='<button class="btn btn-xs btn-icon" data-tam-btn="multi-'+mid+'-'+t0.date+'" onclick="taskActionMenuMulti(['+rsIdxs.join(',')+'],\'multi-'+mid+'-'+t0.date+'\')" title="Reschedule or delete a task"><i class="ti ti-dots-vertical"></i></button>';
       }
-      return '<div class="task-row" style="grid-template-columns:100px 1fr 72px 40px 110px;margin-bottom:2px">'
+      return '<div class="task-row" style="grid-template-columns:100px 1fr 160px 40px 110px;margin-bottom:2px">'
         +'<span class="mono" style="font-size:10px">'+mid+'<br><span style="font-size:9px;color:var(--text3)">'+(t0.group||t0.expId||'')+'</span></span>'
         +'<span style="font-size:10px">'+allLabels+(t0.lastNote?'<span class="npill">'+t0.lastNote+'</span>':'')+groupNoteHTML(t0.g)+dailyNoteHTML(t0.dailyNotes)+harvestTipHTML(t0.exp)+'</span>'
-        +'<span class="burden-badge">'+(t0.lastBurden||'--')+'</span>'
+        +'<span style="display:flex;gap:3px;flex-wrap:wrap">'+(hasMeasure?sizeWeightBadges(expId,mid,t0.date,needsTumor):'')+'</span>'
         +'<span style="font-size:10px;color:var(--text3)">'+(t0.dayInTx!=null?'d'+t0.dayInTx:'')+'</span>'
         +'<div style="display:flex;gap:3px;align-items:center">'
-        +(loggedToday?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>':'')
         +(hasMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+expId+'\',\''+mid+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="showCageTransfer(\''+expId+'\',\''+mid+'\')"><i class="ti ti-arrows-exchange"></i></button>'
         +actionBtn
@@ -1630,6 +1665,8 @@ function renderWeek(){
 function wkDet(d,type,ef){
   S._rsMap=S._rsMap||[];
   S._wkSel=new Set();
+  S._wkDetSort=S._wkDetSort||'mouse';
+  S._wkDetArgs={d:d,type:type,ef:ef};
   var tasks=getTasksForDate(d);
   if(type==='_measure'){
     tasks=tasks.filter(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined'||t.type==='measure-weight';});
@@ -1649,18 +1686,24 @@ function wkDet(d,type,ef){
     }
     return 'General';
   }
+  function taskTypeLabel(t){return TLBL2[t.type]||t.type;}
 
   var byExp={};
   tasks.forEach(function(t){var k=t.expId||'(no WP)';if(!byExp[k])byExp[k]=[];byExp[k].push(t);});
 
   var html='<div class="card">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:6px">'
     +'<div style="font-size:12px;font-weight:500">'+title+' — '+fmtD(d)+'</div>'
+    +'<div style="display:flex;align-items:center;gap:6px">'
+    +'<div style="display:flex;border:.5px solid var(--border2);border-radius:var(--r);overflow:hidden">'
+    +'<button class="btn btn-xs" style="border:none;border-radius:0;'+(S._wkDetSort==='mouse'?'background:var(--blue-bg);color:var(--blue)':'')+'" onclick="wkSetDetSort(\'mouse\')" title="One row per mouse, tasks merged like daily view">By mouse</button>'
+    +'<button class="btn btn-xs" style="border:none;border-radius:0;'+(S._wkDetSort==='task'?'background:var(--blue-bg);color:var(--blue)':'')+'" onclick="wkSetDetSort(\'task\')" title="Grouped by task type, so you can remove one task from many mice at once">By task</button>'
+    +'</div>'
     +'<div id="wk-bulkbar" style="display:none;gap:4px">'
     +'<span id="wk-sel-count" style="font-size:10px;color:var(--text3);margin-right:4px"></span>'
     +'<button class="btn btn-xs" onclick="bulkReschedSelected()"><i class="ti ti-calendar-event"></i> Reschedule selected</button>'
     +'<button class="btn btn-xs btn-r" onclick="bulkDeleteSelected()"><i class="ti ti-trash"></i> Delete selected</button>'
-    +'</div></div>';
+    +'</div></div></div>';
 
   Object.keys(byExp).sort().forEach(function(eid){
     var expTasks=byExp[eid];
@@ -1671,31 +1714,79 @@ function wkDet(d,type,ef){
       +'<span style="font-size:11px;font-weight:600;color:var(--text)">'+(eid==='(no WP)'?'General':eid+' — '+expName)+'</span>'
       +(eid!=='(no WP)'?'<button class="btn btn-xs btn-icon" onclick="quickAddWpNote(\''+eid+'\',\''+d+'\')" title="Add a note for this whole WP, today"><i class="ti ti-pin"></i></button>':'')
       +'</div>';
-    var byGroup={};
-    expTasks.forEach(function(t){var gk=resolveGroup(t);if(!byGroup[gk])byGroup[gk]=[];byGroup[gk].push(t);});
-    Object.keys(byGroup).sort().forEach(function(gname){
-      var groupKey=expKey+'__'+gname.replace(/[^a-zA-Z0-9_-]/g,'_');
-      var grpObj=(S.groups[eid]||[]).find(function(g){return g.name===gname});
-      html+='<div style="display:flex;align-items:center;gap:6px;margin:6px 0 3px 6px">'
-        +'<input type="checkbox" class="wk-sel-group" data-group-key="'+groupKey+'" onchange="wkSelectGroupScope(this,\''+groupKey+'\')" title="Select all in this group">'
-        +'<span style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">'+gname+'</span>'
-        +(grpObj?'<button class="btn btn-xs btn-icon" onclick="quickAddGroupNote(\''+eid+'\',\''+grpObj.id+'\',\''+gname+'\',\''+d+'\')" title="Add a note for this whole group, today"><i class="ti ti-pin"></i></button>':'')
-        +'</div>';
-      byGroup[gname].forEach(function(t){
-        var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
-        html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 6px;border-bottom:.5px solid var(--border);font-size:11px">'
-          +'<input type="checkbox" class="wk-chk" value="'+rsIdx+'" data-exp-scope="'+expKey+'" data-group-scope="'+groupKey+'" onchange="wkSelChange()">'
-          +'<span class="mono" style="min-width:72px">'+(t.mouseId||'--')+'</span>'
-          +'<span style="flex:1">'+(t.label||t.desc||'')+'</span>'
-          +'<span class="badge bgy">'+t.type+'</span>'
-          +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>'
-          +'</div>';
+
+    if(S._wkDetSort==='task'){
+      // Grouped by task type within this WP — handy for "remove this task from every mouse".
+      var byType={};
+      expTasks.forEach(function(t){var tk=t.type;if(!byType[tk])byType[tk]=[];byType[tk].push(t);});
+      Object.keys(byType).sort().forEach(function(tk){
+        html+='<div style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:6px 0 3px 6px">'+(TLBL2[tk]||tk)+'</div>';
+        byType[tk].sort(function(a,b){return(a.mouseId||'').localeCompare(b.mouseId||'',undefined,{numeric:true})}).forEach(function(t){
+          var rsIdx=rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});
+          html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 6px;border-bottom:.5px solid var(--border);font-size:11px">'
+            +'<input type="checkbox" class="wk-chk" value="'+rsIdx+'" data-exp-scope="'+expKey+'" data-group-scope="'+expKey+'__'+resolveGroup(t).replace(/[^a-zA-Z0-9_-]/g,'_')+'" onchange="wkSelChange()">'
+            +'<span class="mono" style="min-width:72px">'+(t.mouseId||'--')+'</span>'
+            +'<span style="font-size:9px;color:var(--text3);min-width:80px">'+resolveGroup(t)+'</span>'
+            +'<span style="flex:1">'+(t.label||t.desc||'')+'</span>'
+            +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>'
+            +'</div>';
+        });
       });
-    });
+    } else {
+      // Grouped by mouse, with each mouse's multiple tasks merged into one row — matches
+      // the daily view's layout so the two stay easy to cross-reference.
+      var byGroup={};
+      expTasks.forEach(function(t){var gk=resolveGroup(t);if(!byGroup[gk])byGroup[gk]=[];byGroup[gk].push(t);});
+      Object.keys(byGroup).sort().forEach(function(gname){
+        var groupKey=expKey+'__'+gname.replace(/[^a-zA-Z0-9_-]/g,'_');
+        var grpObj=(S.groups[eid]||[]).find(function(g){return g.name===gname});
+        html+='<div style="display:flex;align-items:center;gap:6px;margin:6px 0 3px 6px">'
+          +'<input type="checkbox" class="wk-sel-group" data-group-key="'+groupKey+'" onchange="wkSelectGroupScope(this,\''+groupKey+'\')" title="Select all in this group">'
+          +'<span style="font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">'+gname+'</span>'
+          +(grpObj?'<button class="btn btn-xs btn-icon" onclick="quickAddGroupNote(\''+eid+'\',\''+grpObj.id+'\',\''+gname+'\',\''+d+'\')" title="Add a note for this whole group, today"><i class="ti ti-pin"></i></button>':'')
+          +'</div>';
+        var byMouse={};
+        byGroup[gname].forEach(function(t){var mk=t.mouseId||'(general)';if(!byMouse[mk])byMouse[mk]=[];byMouse[mk].push(t);});
+        Object.keys(byMouse).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(mid){
+          var mTasks=byMouse[mid];
+          var rsIdxs=mTasks.map(function(t){return rsReg({date:d,label:t.label||'',type:t.type,mouseId:t.mouseId||'',expId:t.expId||'',taskId:t.taskId,adHocId:t.adHocId||null});});
+          var combinedLabel=mTasks.map(function(t){return t.label||t.desc||taskTypeLabel(t);}).join(' + ');
+          var actionBtn;
+          if(rsIdxs.length===1){
+            actionBtn='<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdxs[0]+'" onclick="taskActionMenu('+rsIdxs[0]+')" title="Reschedule or delete"><i class="ti ti-dots-vertical"></i></button>';
+          } else {
+            var multiKey='multi-wk-'+mid+'-'+d;
+            actionBtn='<button class="btn btn-xs btn-icon" data-tam-btn="'+multiKey+'" onclick="taskActionMenuMulti(['+rsIdxs.join(',')+'],\''+multiKey+'\')" title="Reschedule or delete a task"><i class="ti ti-dots-vertical"></i></button>';
+          }
+          html+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 6px;border-bottom:.5px solid var(--border);font-size:11px">'
+            +rsIdxs.map(function(idx){return'<input type="checkbox" class="wk-chk" value="'+idx+'" data-exp-scope="'+expKey+'" data-group-scope="'+groupKey+'" style="display:none">';}).join('')
+            +'<input type="checkbox" class="wk-chk-merged" data-merged-idxs="'+rsIdxs.join(',')+'" onchange="wkMergedChkChange(this)">'
+            +'<span class="mono" style="min-width:72px">'+mid+'</span>'
+            +'<span style="flex:1">'+combinedLabel+'</span>'
+            +actionBtn
+            +'</div>';
+        });
+      });
+    }
   });
   if(!tasks.length)html+='<div class="empty" style="padding:1rem">No tasks</div>';
   html+='</div>';
   document.getElementById('wk-det').innerHTML=html;
+}
+function wkSetDetSort(mode){
+  S._wkDetSort=mode;
+  var a=S._wkDetArgs||{};
+  wkDet(a.d,a.type,a.ef);
+}
+// The merged-by-mouse view shows one checkbox per mouse but needs to select/deselect all of
+// that mouse's underlying tasks (which have their own hidden checkboxes for bulk actions).
+function wkMergedChkChange(el){
+  var idxs=(el.dataset.mergedIdxs||'').split(',').filter(Boolean);
+  idxs.forEach(function(idx){
+    var chk=document.querySelector('.wk-chk[value="'+idx+'"]');
+    if(chk)chk.checked=el.checked;
+  });
+  wkSelChange();
 }
 function wkSelectExpScope(checkboxEl,expKey){
   document.querySelectorAll('[data-exp-scope="'+expKey+'"]').forEach(function(c){c.checked=checkboxEl.checked;});
@@ -1709,6 +1800,11 @@ function wkSelChange(){
   var chks=document.querySelectorAll('.wk-chk');
   var sel=Array.from(chks).filter(function(c){return c.checked}).map(function(c){return parseInt(c.value)});
   S._wkSel=new Set(sel);
+  // Keep merged-by-mouse checkboxes in sync with their underlying (possibly hidden) task checkboxes
+  document.querySelectorAll('.wk-chk-merged').forEach(function(m){
+    var idxs=(m.dataset.mergedIdxs||'').split(',').filter(Boolean);
+    m.checked=idxs.length>0&&idxs.every(function(idx){return sel.indexOf(parseInt(idx))>=0;});
+  });
   // Keep group/WP select-all checkboxes in sync (checked only if every child in scope is checked)
   document.querySelectorAll('.wk-sel-group').forEach(function(g){
     var kids=document.querySelectorAll('[data-group-scope="'+g.dataset.groupKey+'"]');
@@ -1954,6 +2050,7 @@ async function renderExp(eid){
         +'<span class="badge bgy">target: '+g.target_n+'</span></div>'
         +'<div style="display:flex;gap:4px">'
         +'<button class="btn btn-xs" onclick="showAddEvent(\''+g.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> Add event</button>'
+        +'<button class="btn btn-xs btn-icon" onclick="duplicateGroupLive(\''+g.id+'\',\''+eid+'\')" title="Duplicate group"><i class="ti ti-copy"></i></button>'
         +'<button class="btn btn-xs btn-icon" onclick="showEditGroup(\''+g.id+'\',\''+eid+'\')" title="Edit group"><i class="ti ti-pencil"></i></button>'
         +'</div></div>'
         +(g.note?(function(){var lv=noteLevelStyle(g.note_level);return'<div style="font-size:10px;color:'+lv.fg+';margin-bottom:.5rem;padding:4px 6px;background:'+lv.bg+';border:.5px solid '+lv.border+';border-radius:var(--r)"><i class="ti ti-alert-triangle" style="font-size:10px"></i> <span style="font-weight:500">'+lv.label+':</span> '+g.note+'</div>';})():'');
@@ -2002,7 +2099,7 @@ function renderMouseHist(m,eid){
   var keyMs=new Set();
   if(msl.length>0)keyMs.add(msl[0].id);
   if(msl.length>1)keyMs.add(msl[msl.length-1].id);
-  if(m.day0_measurement_id)keyMs.add(m.day0_measurement_id);
+  if(m.day0_date)msl.forEach(function(ms){if(ms.measured_at===m.day0_date)keyMs.add(ms.id);});
   var sacEvt=m.sac_date&&!mevts.find(function(e){return e.event_type==='sacrifice'})
     ?{event_date:m.sac_date,event_type:'sacrifice',label:'Sacrificed - '+(m.cause||'endpoint')+(m.kdv?' ('+m.kdv+')':''),logged_by:null}
     :null;
@@ -2026,9 +2123,10 @@ function renderMouseHist(m,eid){
     +'<th style="width:52px">Weight</th><th>Details / note</th>'
     +'<th style="width:55px">By</th><th style="width:95px"></th>'
     +'</tr></thead><tbody>';
+  var d0BtnShownForDate={};
   rows.forEach(function(row){
     if(row.kind==='ms'){
-      var ms=row.data;var sites=ms.tumor_sites||[];var isD0=ms.id===m.day0_measurement_id;
+      var ms=row.data;var sites=ms.tumor_sites||[];var isD0=!!(m.day0_date&&ms.measured_at===m.day0_date);
       var b=Math.round(burden(sites,S.inclSkin));
       var sitesHTML='';
       if(multi){sitesHTML=sites.map(function(s){
@@ -2042,7 +2140,10 @@ function renderMouseHist(m,eid){
         else{sitesHTML='<span class="mono">--</span>';}
       }
       var msIdx=msl.indexOf(ms);
-      html+='<tr class="'+(isD0?'d0-row':'')+'" id="histrow-'+ms.id+'">'
+      var dateKey=ms.measured_at.replace(/[^0-9]/g,'');
+      var showD0Btn=!d0BtnShownForDate[ms.measured_at];
+      d0BtnShownForDate[ms.measured_at]=true;
+      html+='<tr class="'+(isD0?'d0-row':'')+'" id="histrow-'+ms.id+'" data-histday="'+dateKey+'">'
         +'<td class="mono" style="color:var(--text2)">'+ms.measured_at+(isD0?'<span class="d0-badge">Day 0</span>':'')+'</td>'
         +'<td><span class="badge bg" style="font-size:9px">measure</span></td>'
         +'<td>'+sitesHTML+'</td>'
@@ -2051,7 +2152,7 @@ function renderMouseHist(m,eid){
         +'<td style="font-size:10px">'+(ms.note||'--')+(ms.edited_at?'<span style="font-size:9px;color:var(--text3);margin-left:4px">edited '+ms.edited_at+'</span>':'')+'</td>'
         +'<td style="font-size:10px;color:var(--text3)">'+(ms.logged_by||'--')+'</td>'
         +'<td><div style="display:flex;gap:3px">'
-        +'<button class="d0-btn" onclick="setDay0(\''+m.id+'\',\''+eid+'\',\''+ms.id+'\',\''+ms.measured_at+'\')">'+(isD0?'Day 0 set':'Set day 0')+'</button>'
+        +(showD0Btn?'<button class="d0-btn" onclick="setDay0(\''+m.id+'\',\''+eid+'\',\''+ms.measured_at+'\')">'+(isD0?'Day 0 set':'Set day 0')+'</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="openLogE(\''+eid+'\',\''+m.id+'\','+msIdx+')"><i class="ti ti-pencil"></i></button>'
         +'</div></td></tr>';
     } else {
@@ -2141,11 +2242,26 @@ function drawGrowth(exp,groups){
         var vals=mice.map(function(m){var msl=(S.measurements[exp.id]||{})[m.id]||[];return burdenAtRelDay(m,msl,rd);}).filter(function(v){return v!=null});
         return vals.length?Math.round(vals.reduce(function(a,b){return a+b},0)/vals.length):null;
       });
-      if(meanD.some(function(v){return v!=null}))datasets.push({label:g.name+' (mean)',data:meanD,borderColor:g.color,backgroundColor:g.color+'22',tension:.3,fill:false,spanGaps:true,pointRadius:4,borderWidth:2.5});
+      // SEM band: upper/lower bound datasets drawn first (no border, translucent fill between
+      // them), then the mean line drawn on top — same ±SEM convention used in the Excel export.
+      var semD=labs.map(function(rd,i){
+        var vals=mice.map(function(m){var msl=(S.measurements[exp.id]||{})[m.id]||[];return burdenAtRelDay(m,msl,rd);}).filter(function(v){return v!=null});
+        if(vals.length<2||meanD[i]==null)return 0;
+        var mean=vals.reduce(function(a,b){return a+b},0)/vals.length;
+        var variance=vals.reduce(function(a,b){return a+(b-mean)*(b-mean)},0)/(vals.length-1);
+        return Math.sqrt(variance)/Math.sqrt(vals.length);
+      });
+      if(meanD.some(function(v){return v!=null})){
+        var upperD=meanD.map(function(v,i){return v!=null?Math.round(v+semD[i]):null;});
+        var lowerD=meanD.map(function(v,i){return v!=null?Math.max(0,Math.round(v-semD[i])):null;});
+        datasets.push({label:g.name+' (+SEM)',data:upperD,borderColor:'transparent',backgroundColor:g.color+'26',tension:.3,fill:'+1',spanGaps:true,pointRadius:0,borderWidth:0});
+        datasets.push({label:g.name+' (-SEM)',data:lowerD,borderColor:'transparent',backgroundColor:'transparent',tension:.3,fill:false,spanGaps:true,pointRadius:0,borderWidth:0});
+        datasets.push({label:g.name+' (mean)',data:meanD,borderColor:g.color,backgroundColor:g.color+'22',tension:.3,fill:false,spanGaps:true,pointRadius:4,borderWidth:2.5});
+      }
     }
   });
   if(!datasets.length){ctx.parentElement.innerHTML='<div class="empty">No data to plot. Set day 0 for mice and ensure measurements exist.</div>';return;}
-  charts[key]=new Chart(ctx,{type:'line',data:{labels:labs.map(function(d){return'd'+d}),datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return c.dataset.label+': '+c.raw+' mm2'}}}},scales:{x:{ticks:{font:{size:9},maxRotation:45},grid:{color:'rgba(128,128,128,0.08)'},title:{display:true,text:'Days from day 0',font:{size:9}}},y:{title:{display:true,text:'Burden (mm2)',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'},min:0}}}});
+  charts[key]=new Chart(ctx,{type:'line',data:{labels:labs.map(function(d){return'd'+d}),datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{filter:function(item){return item.dataset.label.indexOf('SEM')<0;},callbacks:{label:function(c){return c.dataset.label+': '+c.raw+' mm2'}}}},scales:{x:{ticks:{font:{size:9},maxRotation:45},grid:{color:'rgba(128,128,128,0.08)'},title:{display:true,text:'Days from day 0',font:{size:9}}},y:{title:{display:true,text:'Burden (mm2)',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'},min:0}}}});
 }
 function drawKM(exp,groups){
   var ctx=document.getElementById('kmChart');if(!ctx)return;
@@ -2568,6 +2684,30 @@ async function saveEditGroup(){
 }
 
 // ADD GROUP
+// Duplicates a group (and its scheduled events) within an existing experiment — the live
+// equivalent of "Duplicate group" during new-experiment creation, available afterward too.
+async function duplicateGroupLive(gid,eid){
+  var g=(S.groups[eid]||[]).find(function(x){return x.id===gid});if(!g)return;
+  var newName=prompt('Name for the duplicated group:',g.name+' (copy)');
+  if(!newName)return;
+  var sortOrder=(S.groups[eid]||[]).length;
+  var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
+  var color=colors[sortOrder%colors.length];
+  var gResult=await sb.from('experiment_groups').insert({experiment_id:eid,name:newName,color:color,target_n:g.target_n,sort_order:sortOrder,note:g.note||'',note_level:g.note_level||'standard'}).select().single();
+  if(gResult.error||!gResult.data){alert('Could not duplicate group.');return;}
+  var newGid=gResult.data.id;
+  var evts=S.events[gid]||[];
+  if(evts.length){
+    var rows=evts.map(function(ev,i){return{
+      group_id:newGid,experiment_id:eid,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',
+      route:ev.route||'',schedule_type:ev.schedule_type,schedule_days:ev.schedule_days||[],
+      interval_days:ev.interval_days||null,trigger_type:ev.trigger_type,trigger_value:ev.trigger_value||'',
+      day_offset:ev.day_offset||0,max_doses:ev.max_doses||null,sort_order:i
+    };});
+    await sb.from('scheduled_events').insert(rows);
+  }
+  await loadAll(eid);renderExp(eid);
+}
 function showAddGroup(eid){
   S._addGrpEid=eid;
   showModal('Add group to experiment',
@@ -2969,12 +3109,16 @@ function showCageTransfer(eid,mid){
     // GROUP SECTION
     +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Group (optional)</div>'
     +'<div class="f2">'
-    +'<div class="fg full"><select class="fs" id="tr-grp">'+groupOptsHtml+'</select></div>'
+    +'<div class="fg full"><select class="fs" id="tr-grp" onchange="trGroupChanged(\''+eid+'\')">'+groupOptsHtml+'</select></div>'
     +'<div class="fg"><label class="fl">Transfer date</label><input class="fi" id="tr-date" type="date" value="'+TISO+'"></div>'
+    +'</div>'
+    +'<div id="tr-tx-fields" style="display:none">'
+    +'<div style="font-size:9px;color:var(--text3);margin:4px 0 6px">This group has treatment scheduled — set when treatment starts for this mouse.</div>'
+    +'<div class="f2">'
     +'<div class="fg"><label class="fl">Tx start date</label><input class="fi" id="tr-tx" type="date" value="'+TISO+'"></div>'
-    +'<div class="fg full"><label class="fl">Schedule resumes from</label><input class="fi" id="tr-sched" type="date" value="'+nxtMon+'"></div>'
-    +'<div class="fg full"><label class="fl">Note</label><input class="fi" id="tr-note" placeholder="optional"></div>'
-    +'</div>',
+    +'<div class="fg"><label class="fl">Schedule resumes from</label><input class="fi" id="tr-sched" type="date" value="'+nxtMon+'"></div>'
+    +'</div></div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Note</label><input class="fi" id="tr-note" placeholder="optional"></div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitCageTransfer()"><i class="ti ti-check"></i> Save</button>',
     true
@@ -2987,7 +3131,20 @@ function showCageTransfer(eid,mid){
     }
     // Init other cages list
     filterOtherCages(eid);
+    trGroupChanged(eid);
   },50);
+}
+// Shows the tx-start fields only when the selected destination group actually has
+// treatment-type scheduled events — moving to a pure monitoring/control group shouldn't
+// log "Treatment started" or ask for a treatment start date at all.
+function trGroupChanged(eid){
+  var gv=(document.getElementById('tr-grp')&&document.getElementById('tr-grp').value)||'';
+  var fields=document.getElementById('tr-tx-fields');
+  if(!fields)return;
+  if(!gv){fields.style.display='none';return;}
+  var gid=gv.split('|')[0];
+  var hasTreatment=(S.events[gid]||[]).some(function(ev){return ev.type==='treatment';});
+  fields.style.display=hasTreatment?'block':'none';
 }
 
 function selectCagePill(btn){
@@ -3039,14 +3196,15 @@ async function submitCageTransfer(){
   if(groupChanged){
     var parts=gv.split('|'),ngid=parts[0],ngname=parts[1];
     updates.group_id=ngid;updates.group_name=ngname;
-    updates.tx_start=txs;
     updates.original_group_id=m.group_id;
     updates.original_group_name=m.group_name;
+    var destHasTreatment=(S.events[ngid]||[]).some(function(ev){return ev.type==='treatment';});
+    if(destHasTreatment)updates.tx_start=txs;
     events.push({mouse_id:mid,experiment_id:eid,event_date:td,event_type:'transferred',
       label:'Transferred by '+uname()+': '+m.group_name+' to '+ngname+(cageChanged?' · cage '+m.cage_number+' to '+newCage:''),
-      details:{from_group:m.group_name,to_group:ngname,from_cage:m.cage_number,to_cage:newCage||m.cage_number,first_tx_date:txs,schedule_anchor:sched,note:note},
+      details:{from_group:m.group_name,to_group:ngname,from_cage:m.cage_number,to_cage:newCage||m.cage_number,first_tx_date:destHasTreatment?txs:null,schedule_anchor:destHasTreatment?sched:null,note:note},
       logged_by:uname()});
-    if(txs)events.push({mouse_id:mid,experiment_id:eid,event_date:txs,event_type:'tx_start',label:'Treatment started',details:{schedule_anchor:sched},logged_by:uname()});
+    if(destHasTreatment&&txs)events.push({mouse_id:mid,experiment_id:eid,event_date:txs,event_type:'tx_start',label:'Treatment started',details:{schedule_anchor:sched},logged_by:uname()});
   } else if(cageChanged){
     events.push({mouse_id:mid,experiment_id:eid,event_date:td,event_type:'cage_change',
       label:'Cage: '+(m.cage_number||'none')+' to '+newCage,
