@@ -150,6 +150,8 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
 .fg{display:flex;flex-direction:column;gap:3px}
 .fl{font-size:10px;font-weight:500;color:var(--text2)}
 .fi{padding:6px 9px;font-size:12px;border:.5px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:var(--font)}
+.sheet-in{padding:3px 6px;border:.5px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:var(--font);box-sizing:border-box}
+.sheet-in:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-bg)}
 .fi:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-bg)}
 .fs{padding:6px 9px;font-size:12px;border:.5px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-family:var(--font)}
 .fs:focus{outline:none;border-color:var(--blue)}
@@ -238,7 +240,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v68</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v69</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1452,9 +1454,207 @@ function buildVisibleLogOrder(tasks){
   }
   return order;
 }
+// SPREADSHEET VIEW — fast keyboard-driven logging for measurement tasks only.
+// Structural actions (delete/reschedule/move mouse/add tumor site) stay in the card view;
+// this is purely for typing in size/weight/note values quickly. Site structure (how many
+// tumor sites a mouse has) is carried forward from the last measurement, same as the card
+// view's modal — adding a new site can only be done from there.
+function renderDailySpreadsheet(){
+  var raw=getTasksForDate(S.dailyDate);
+  var tasks=raw.filter(function(t){return isMeasureType(t.type)&&t.mouseId;});
+  var html='';
+  if(!tasks.length){
+    document.getElementById('content').innerHTML='<div class="empty"><i class="ti ti-circle-check"></i>No measurements scheduled for '+(S.dailyDate===TISO?'today':fmtD(S.dailyDate))+'</div>';
+    return;
+  }
+  // Merge multiple tasks per mouse (e.g. measure-tumor + measure-weight same day) into one row.
+  var byMouseKey={};
+  tasks.forEach(function(t){var k=t.expId+'|'+t.mouseId;if(!byMouseKey[k])byMouseKey[k]=[];byMouseKey[k].push(t);});
+
+  var byExp={};
+  Object.keys(byMouseKey).forEach(function(k){var t0=byMouseKey[k][0];if(!byExp[t0.expId])byExp[t0.expId]=[];byExp[t0.expId].push(byMouseKey[k]);});
+
+  Object.keys(byExp).sort().forEach(function(eid){
+    var exp=S.experiments.find(function(e){return e.id===eid});
+    html+='<div style="font-size:13px;font-weight:500;margin:14px 0 4px;padding:4px 0;border-bottom:.5px solid var(--border2);display:flex;align-items:center;gap:8px">'
+      +'<div class="edot" style="background:'+(exp&&exp.color?exp.color:'#888')+'"></div>'
+      +'<span>'+eid+' — '+(exp?exp.name:'')+'</span>'
+      +harvestTipHTML(exp)
+      +'</div>'
+      +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
+
+    var byGroup={};
+    byExp[eid].forEach(function(mTasks){var gname=mTasks[0].group||'General';if(!byGroup[gname])byGroup[gname]=[];byGroup[gname].push(mTasks);});
+    Object.keys(byGroup).sort().forEach(function(gname){
+      html+='<div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.03em;margin:8px 0 3px 2px">'+gname+'</div>';
+      var byCage={};
+      byGroup[gname].forEach(function(mTasks){var cage=(mTasks[0].m&&mTasks[0].m.cage_number)||'(no cage)';if(!byCage[cage])byCage[cage]=[];byCage[cage].push(mTasks);});
+      var multi=exp&&exp.multi_tumor?true:false;
+      var sheetCols=multi?'80px 50px 1fr 70px 70px 1fr 80px':'80px 1fr 70px 1fr 80px';
+      Object.keys(byCage).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){
+        html+='<div style="font-size:9px;font-weight:600;color:var(--text3);margin:6px 0 2px 4px">'+(cage==='(no cage)'?cage:'Cage '+cage)+'</div>';
+        html+='<div style="border:.5px solid var(--border);border-radius:var(--r);overflow:hidden">'
+          +'<div style="display:grid;grid-template-columns:'+sheetCols+';gap:0;background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:5px 7px">'
+          +(multi?'<div>Mouse</div><div>Site</div><div>Size (mm)</div><div style="text-align:right">Burden</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>'
+                 :'<div>Mouse</div><div>Size (mm)</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>')
+          +'</div>';
+        byCage[cage].sort(function(a,b){return a[0].mouseId.localeCompare(b[0].mouseId,undefined,{numeric:true})}).forEach(function(mTasks){
+          html+=sheetRowHTML(mTasks,eid,multi,sheetCols);
+        });
+        html+='</div>';
+      });
+    });
+  });
+  document.getElementById('content').innerHTML='<div class="card" style="padding:.75rem">'+html+'</div>';
+  wireSheetTabOrder();
+}
+function sheetRowHTML(mTasks,eid,multi,sheetCols){
+  var t0=mTasks[0];var mid=t0.mouseId;
+  var needsTumor=mTasks.some(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined';});
+  var msl=(S.measurements[eid]||{})[mid]||[];
+  var todayIdx=findTodaysMeasureIdx(eid,mid,t0.date);
+  var todays=todayIdx>=0?msl[todayIdx]:null;
+  var lastEntry=msl.length>0?msl[msl.length-1]:null;
+  var templateSites=todays&&todays.tumor_sites&&todays.tumor_sites.length
+    ?todays.tumor_sites
+    :(lastEntry&&lastEntry.tumor_sites&&lastEntry.tumor_sites.length?lastEntry.tumor_sites:[]);
+  if(!templateSites.length)templateSites=[{location:LOCS[0],dim1:null,dim2:null,is_skin:false,status:'ok'}];
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+  var weightVal=todays&&todays.weight!=null&&todays.weight!==''?todays.weight:'';
+  var noteVal=todays&&todays.note?todays.note:'';
+  var checkIcon='<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>';
+  var placeholderIcon='<i class="ti ti-circle" style="font-size:14px;color:var(--border2)" title="Not logged today"></i>';
+  var statusId='sheet-status-'+eid+'-'+mid;
+
+  var rows='';
+  if(needsTumor&&multi){
+    templateSites.forEach(function(site,si){
+      var isSkin=site.location==='skin'||site.is_skin;
+      var isGone=site.status==='gone';
+      rows+='<div style="display:flex;flex-direction:column;'+(si>0?'margin-top:4px':'')+'">'
+        +'<input type="hidden" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" value="'+site.location+'">'
+        +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
+        +'<div style="height:26px;display:flex;align-items:center;font-size:11px;color:'+(isSkin?'var(--amber)':'var(--text3)')+'">'+site.location+'</div>'
+        +'</div>';
+    });
+  }
+  var sizeInputs='';
+  if(needsTumor){
+    templateSites.forEach(function(site,si){
+      var prevSz=todays&&site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'';
+      sizeInputs+='<div style="'+(si>0?'margin-top:4px':'')+'"><input class="sheet-in" id="sheet-sz-'+eid+'-'+mid+'-'+si+'" value="'+prevSz+'" placeholder="7x8" style="height:26px;font-size:12px;width:100%" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="sz" data-sheet-si="'+si+'"></div>';
+      if(!multi){
+        // Carry over location/skin info hidden even in single-tumor (non-multi) experiments,
+        // so the same save logic works regardless of the multi_tumor flag.
+        sizeInputs+='<input type="hidden" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" value="'+site.location+'">'
+          +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="'+(site.location==='skin'||site.is_skin?'1':'0')+'">';
+      }
+    });
+  }
+  var burdenVal=needsTumor?(todays?bShort(todays.tumor_sites,S.inclSkin):(lastEntry?bShort(lastEntry.tumor_sites,S.inclSkin):'--')):'';
+
+  var out='<div style="display:grid;grid-template-columns:'+sheetCols+';gap:0;padding:5px 7px;border-top:.5px solid var(--border);align-items:start;font-size:12px" id="sheetrow-'+eid+'-'+mid+'">';
+  out+='<div class="mono" style="padding-top:4px">'+mid+'</div>';
+  if(multi){
+    out+='<div>'+rows+'</div>';
+    out+='<div>'+sizeInputs+'</div>';
+    out+='<div class="mono" style="color:var(--text3);padding-top:4px;text-align:right" id="sheet-burden-'+eid+'-'+mid+'">'+burdenVal+'</div>';
+  } else if(needsTumor){
+    out+='<div>'+sizeInputs+'</div>';
+  } else {
+    out+='<div></div>';
+  }
+  out+='<div style="padding-top:4px;text-align:right"><input class="sheet-in" id="sheet-w-'+eid+'-'+mid+'" value="'+weightVal+'" placeholder="'+(m&&m.weight?m.weight:'g')+'" style="height:26px;font-size:12px;width:100%;text-align:right" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="w"></div>';
+  out+='<div style="padding-top:4px"><input class="sheet-in" id="sheet-n-'+eid+'-'+mid+'" value="'+noteVal+'" placeholder="—" style="height:26px;font-size:12px;width:100%" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="n"></div>';
+  out+='<div style="padding-top:4px;display:flex;gap:4px;justify-content:flex-end" id="sheet-status-icon-'+eid+'-'+mid+'">'+(todays?checkIcon:placeholderIcon)+'</div>';
+  out+='</div>';
+  return out;
+}
+// Wires autosave-on-blur for every input in the spreadsheet, and lets Enter move to the
+// next row's first input (keyboard-driven flow — Tab already moves cell-to-cell natively).
+function wireSheetTabOrder(){
+  document.querySelectorAll('.sheet-in').forEach(function(el){
+    el.addEventListener('blur',function(){sheetSaveRow(el.dataset.sheetEid,el.dataset.sheetMid);});
+    el.addEventListener('keydown',function(e){
+      if(e.key==='Enter'){
+        e.preventDefault();
+        sheetSaveRow(el.dataset.sheetEid,el.dataset.sheetMid).then(function(){
+          var row=document.getElementById('sheetrow-'+el.dataset.sheetEid+'-'+el.dataset.sheetMid);
+          var allRows=Array.from(document.querySelectorAll('[id^="sheetrow-"]'));
+          var idx=allRows.indexOf(row);
+          if(idx>=0&&idx<allRows.length-1){
+            var nextInput=allRows[idx+1].querySelector('.sheet-in');
+            if(nextInput)nextInput.focus();
+          }
+        });
+      }
+    });
+  });
+}
+// Saves one mouse's row from the spreadsheet — reads every input for that mouse, builds the
+// same measurements/tumor_sites shape submitLog uses, and updates in place (no full reload,
+// no page jump) so logging stays fast through many rows.
+async function sheetSaveRow(eid,mid){
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(!m)return;
+  var dateIso=S.dailyDate;
+  var wEl=document.getElementById('sheet-w-'+eid+'-'+mid);
+  var nEl=document.getElementById('sheet-n-'+eid+'-'+mid);
+  var wStr=(wEl?wEl.value:'').trim();
+  var note=(nEl?nEl.value:'').trim();
+  var sites=[];
+  var si=0;
+  while(true){
+    var szEl=document.getElementById('sheet-sz-'+eid+'-'+mid+'-'+si);
+    if(!szEl)break;
+    var sz=szEl.value.trim();
+    var locHid=document.getElementById('sheet-loc-'+eid+'-'+mid+'-'+si);
+    var skinHid=document.getElementById('sheet-skin-'+eid+'-'+mid+'-'+si);
+    var locVal=locHid?locHid.value:'';
+    var isSkin=skinHid?skinHid.value==='1':false;
+    if(sz){
+      var p=parseSz(sz);
+      if(p)sites.push({location:locVal||'',dim1:p.v1,dim2:p.v2,is_skin:isSkin,status:'ok',sort_order:si});
+    }
+    si++;
+  }
+  var hasWeight=wStr.length>0;
+  if(!sites.length&&!note&&!hasWeight)return; // nothing entered for this row, nothing to save
+  var idx=findTodaysMeasureIdx(eid,mid,dateIso);
+  try{
+    if(idx>=0){
+      var ms=(S.measurements[eid]||{})[mid][idx];
+      var msWeight=wStr?parseFloat(wStr):null;
+      await sb.from('measurements').update({note:note,edited_at:TISO,weight:msWeight!==null?msWeight:ms.weight}).eq('id',ms.id);
+      await sb.from('tumor_sites').delete().eq('measurement_id',ms.id);
+      if(sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:ms.id});}));
+    } else {
+      var msWeight2=wStr?parseFloat(wStr):null;
+      var msD=(await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dateIso,note:note,logged_by:uname(),weight:msWeight2}).select().single()).data;
+      if(msD&&sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id});}));
+    }
+    if(wStr){var w=parseFloat(wStr);if(!isNaN(w))await sb.from('mice').update({weight:w}).eq('id',mid);}
+    await loadAll(eid);
+    // Refresh just this row's burden display and status icon in place, without re-rendering
+    // the whole spreadsheet — keeps focus/scroll position untouched mid-flow.
+    var burdenEl=document.getElementById('sheet-burden-'+eid+'-'+mid);
+    if(burdenEl){
+      var newIdx=findTodaysMeasureIdx(eid,mid,dateIso);
+      var newMs=newIdx>=0?(S.measurements[eid]||{})[mid][newIdx]:null;
+      burdenEl.textContent=newMs?bShort(newMs.tumor_sites,S.inclSkin):'--';
+    }
+    var iconEl=document.getElementById('sheet-status-icon-'+eid+'-'+mid);
+    if(iconEl){
+      var nowLogged=findTodaysMeasureIdx(eid,mid,dateIso)>=0;
+      iconEl.innerHTML=nowLogged
+        ?'<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>'
+        :'<i class="ti ti-circle" style="font-size:14px;color:var(--border2)" title="Not logged today"></i>';
+    }
+  }catch(err){alert('Could not save '+mid+': '+err.message);}
+}
 function renderDaily(){
   S.view='daily';
   if(!S.dailyDate)S.dailyDate=TISO;
+  if(!S.dailyViewMode)S.dailyViewMode='cards';
   var isToday=S.dailyDate===TISO;
   document.getElementById('pg-title').textContent=isToday?'Daily tasks — today':'Daily tasks — '+fmtD(S.dailyDate);
   document.getElementById('tb-acts').innerHTML='';
@@ -1468,9 +1668,15 @@ function renderDaily(){
     +'<button class="srt-btn '+(S.sortBy==='type'?'act':'')+'" onclick="S.sortBy=\'type\';renderDaily()">Type</button>'
     +'<button class="srt-btn '+(S.sortBy==='exp'?'act':'')+'" onclick="S.sortBy=\'exp\';renderDaily()">WP</button>'
     +'</div>'
+    +'<div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>'
+    +'<div style="display:flex;border:.5px solid var(--border2);border-radius:var(--r);overflow:hidden">'
+    +'<button class="btn btn-xs" style="border:none;border-radius:0;'+(S.dailyViewMode==='cards'?'background:var(--blue-bg);color:var(--blue)':'')+'" onclick="S.dailyViewMode=\'cards\';renderDaily()" title="Card view"><i class="ti ti-list"></i> Cards</button>'
+    +'<button class="btn btn-xs" style="border:none;border-radius:0;'+(S.dailyViewMode==='spreadsheet'?'background:var(--blue-bg);color:var(--blue)':'')+'" onclick="S.dailyViewMode=\'spreadsheet\';renderDaily()" title="Spreadsheet view for fast logging"><i class="ti ti-table"></i> Spreadsheet</button>'
+    +'</div>'
     +'<button class="btn btn-xs" onclick="showReschedAll()"><i class="ti ti-calendar-event"></i> Reschedule all</button>'
     +'<button class="btn btn-xs" onclick="showAddTask()"><i class="ti ti-plus"></i> Add task</button>'
     +'<button class="btn btn-xs" onclick="doPrint()"><i class="ti ti-printer"></i> Print</button>';
+  if(S.dailyViewMode==='spreadsheet'){renderDailySpreadsheet();return;}
   var raw=getTasksForDate(S.dailyDate);var tasks=sortTasks(raw);
   logOrder=buildVisibleLogOrder(tasks);
   var active=S.experiments.reduce(function(s,e){return s+(S.mice[e.id]||[]).filter(function(m){return m.status==='active'}).length},0);
