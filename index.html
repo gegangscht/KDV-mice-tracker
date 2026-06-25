@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v72</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v73</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1499,11 +1499,11 @@ function renderDailySpreadsheet(){
       var byCage={};
       byGroup[gname].forEach(function(mTasks){var cage=(mTasks[0].m&&mTasks[0].m.cage_number)||'(no cage)';if(!byCage[cage])byCage[cage]=[];byCage[cage].push(mTasks);});
       var multi=exp&&exp.multi_tumor?true:false;
-      var sheetCols=multi?'80px 50px 1fr 70px 70px 1fr 80px':'80px 1fr 70px 1fr 80px';
+      var sheetCols=multi?'70px 46px 70px 60px 64px 1fr 36px':'70px 70px 64px 1fr 36px';
       Object.keys(byCage).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){
         html+='<div style="font-size:9px;font-weight:600;color:var(--text3);margin:6px 0 2px 4px">'+(cage==='(no cage)'?cage:'Cage '+cage)+'</div>';
         html+='<div style="border:.5px solid var(--border);border-radius:var(--r);overflow:hidden">'
-          +'<div style="display:grid;grid-template-columns:'+sheetCols+';gap:0;background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:5px 7px">'
+          +'<div style="display:grid;grid-template-columns:'+sheetCols+';gap:6px;background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:5px 7px">'
           +(multi?'<div>Mouse</div><div>Site</div><div>Size (mm)</div><div style="text-align:right">Burden</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>'
                  :'<div>Mouse</div><div>Size (mm)</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>')
           +'</div>';
@@ -1560,9 +1560,9 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
       }
     });
   }
-  var burdenVal=needsTumor?(todays?bShort(todays.tumor_sites,S.inclSkin):(lastEntry?bShort(lastEntry.tumor_sites,S.inclSkin):'--')):'';
+  var burdenVal=needsTumor?(todays?Math.round(burden(todays.tumor_sites,S.inclSkin))+'mm2':(lastEntry?Math.round(burden(lastEntry.tumor_sites,S.inclSkin))+'mm2':'--')):'';
 
-  var out='<div style="display:grid;grid-template-columns:'+sheetCols+';gap:0;padding:5px 7px;border-top:.5px solid var(--border);align-items:start;font-size:12px" id="sheetrow-'+eid+'-'+mid+'">';
+  var out='<div style="display:grid;grid-template-columns:'+sheetCols+';gap:6px;padding:5px 7px;border-top:.5px solid var(--border);align-items:start;font-size:12px" id="sheetrow-'+eid+'-'+mid+'">';
   out+='<div class="mono" style="padding-top:4px">'+mid+'</div>';
   if(multi){
     out+='<div>'+rows+'</div>';
@@ -1649,7 +1649,7 @@ async function sheetSaveRow(eid,mid){
     if(burdenEl){
       var newIdx=findTodaysMeasureIdx(eid,mid,dateIso);
       var newMs=newIdx>=0?(S.measurements[eid]||{})[mid][newIdx]:null;
-      burdenEl.textContent=newMs?bShort(newMs.tumor_sites,S.inclSkin):'--';
+      burdenEl.textContent=newMs?Math.round(burden(newMs.tumor_sites,S.inclSkin))+'mm2':'--';
     }
     var iconEl=document.getElementById('sheet-status-icon-'+eid+'-'+mid);
     if(iconEl){
@@ -3763,8 +3763,8 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
     if(!expTasks.length)return;
 
     // WP header
-    phtml+='<div style="margin-bottom:8px;page-break-inside:avoid">';
-    phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;display:flex;justify-content:space-between">'
+    phtml+='<div style="margin-bottom:8px">';
+    phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;display:flex;justify-content:space-between;page-break-after:avoid;break-after:avoid">'
       +'<span>'+eid+' — '+(exp?exp.name:'')+'</span>'
       +'<span style="font-size:8px;font-weight:400;color:#555">'+(exp&&exp.harvest?'Harvest: '+exp.harvest:'')+'</span>'
       +'</div>';
@@ -3801,9 +3801,11 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
         .map(function(mid){return (S.mice[eid]||[]).find(function(m){return m.id===mid;})}).filter(Boolean);
       var siteLocs=getSiteLocs(cageMice,eid);
 
-      // Cage sub-header
+      // Cage sub-header — wrapped together with its table so the cage never splits across pages
+      phtml+='<div style="page-break-inside:avoid">';
       phtml+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+'</div>';
       phtml+=printMiceTable(cageMice,cageMouseMap,eid,siteLocs);
+      phtml+='</div>';
     });
 
     // No cage section
@@ -3813,8 +3815,10 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
       var ncMice=Object.keys(ncMouseMap).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})})
         .map(function(mid){return (S.mice[eid]||[]).find(function(m){return m.id===mid;})}).filter(Boolean);
       var ncSiteLocs=getSiteLocs(ncMice,eid);
+      phtml+='<div style="page-break-inside:avoid">';
       phtml+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px;color:#666">No cage assigned</div>';
       phtml+=printMiceTable(ncMice,ncMouseMap,eid,ncSiteLocs);
+      phtml+='</div>';
     }
 
     phtml+='</div>';
@@ -3823,8 +3827,8 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
   // Mixed cages section
   var ptMixedTasks=todayTasks.filter(function(t){return t.m&&t.m.cage_number&&ptMixedCages.has(t.m.cage_number);});
   if(ptMixedTasks.length){
-    phtml+='<div style="margin-bottom:8px;page-break-inside:avoid">';
-    phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px">Mixed cages</div>';
+    phtml+='<div style="margin-bottom:8px">';
+    phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;page-break-after:avoid;break-after:avoid">Mixed cages</div>';
     var ptMixByCage={};
     ptMixedTasks.forEach(function(t){var c=t.m.cage_number;if(!ptMixByCage[c])ptMixByCage[c]=[];ptMixByCage[c].push(t);});
     Object.keys(ptMixByCage).sort().forEach(function(cage){
@@ -3837,8 +3841,10 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
       }).filter(Boolean);
       var mSiteLocs=[];
       mMice.forEach(function(m){var last=lastMs(m.id,mMap[m.id]&&mMap[m.id][0]?mMap[m.id][0].expId:'');if(last&&last.tumor_sites)last.tumor_sites.forEach(function(s){if(s.location&&!mSiteLocs.includes(s.location))mSiteLocs.push(s.location);});});
+      phtml+='<div style="page-break-inside:avoid">';
       phtml+='<div style="font-size:8.5px;font-weight:600;background:#eee;padding:1px 4px;margin-bottom:1px">Cage '+cage+' <span style="font-weight:400;color:#666">('+wps+')</span></div>';
       phtml+=printMiceTable(mMice,mMap,mMap[Object.keys(mMap)[0]][0].expId,mSiteLocs);
+      phtml+='</div>';
     });
     phtml+='</div>';
   }
