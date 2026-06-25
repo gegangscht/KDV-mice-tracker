@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v71</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v72</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2203,7 +2203,8 @@ function renderTimelineTab(exp,groups,eid){
     var minColW=46;
     html+='<div class="tl-scroll"><div style="min-width:'+(allDates.length*minColW)+'px;width:100%">';
     html+='<div style="display:flex">';
-    allDates.forEach(function(d){html+='<div class="tl-head" style="flex:1;min-width:'+minColW+'px;height:30px">'+d.slice(5).replace('-','/')+'</div>';});
+    allDates.forEach(function(d){html+='<div class="tl-head" style="width:'+minColW+'px;flex-shrink:0;height:30px">'+d.slice(5).replace('-','/')+'</div>';});
+    html+='<div class="tl-head" style="flex:1;height:30px;border-left:none"></div>';
     html+='</div>';
     gMice.forEach(function(m){
       var msl=(S.measurements[eid]||{})[m.id]||[];
@@ -2228,10 +2229,11 @@ function renderTimelineTab(exp,groups,eid){
         var noteLine=hasNote?'<span class="tl-noteline" style="background:var(--amber-border)"></span>':'';
         var tipText=(ms&&ms.weight!=null?ms.weight+'g':'')+(dayNotes.length?(ms&&ms.weight!=null?' — ':'')+dayNotes.join(' | '):'');
         var escapedTip=tipText.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-        html+='<div class="tl-cell" style="flex:1;min-width:'+minColW+'px;height:30px;position:relative"'
+        html+='<div class="tl-cell" style="width:'+minColW+'px;flex-shrink:0;height:30px;position:relative"'
           +(tipText?' data-tip="'+escapedTip+'" onmouseenter="tlShowTip(event)" onmouseleave="tlHideTip()"':'')+'>'
           +cellContent+noteLine+'</div>';
       });
+      html+='<div style="flex:1;height:30px;border-bottom:.5px solid var(--border)"></div>';
       html+='</div>';
     });
     html+='</div></div>';
