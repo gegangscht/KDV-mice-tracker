@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v73</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v75</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -519,7 +519,8 @@ function getTasksForDate(iso){
         if(ev.type==='treatment'&&ev.schedule_type==='fixed-days'){
           var ok=false;
           if(ev.trigger_type==='size'&&last){var b=burden(last.tumor_sites,false);var thr=parseSz(ev.trigger_value||'5x5');if(thr&&b>=thr.v1*thr.v2)ok=true;}
-          else if(['age','day-after-tx','enrollment'].includes(ev.trigger_type)){ok=!!(txD&&tgtD>=txD);}
+          else if(ev.trigger_type==='enrollment'){ok=!!(enD&&tgtD>=enD);}
+          else if(['age','day-after-tx'].includes(ev.trigger_type)){ok=!!(txD&&tgtD>=txD);}
           if(ok&&(ev.schedule_days||[]).includes(dow)){
             var nd=((m.completed_events||[])).filter(function(e){return e===ev.label}).length;
             if(!ev.max_doses||nd<ev.max_doses)tasks.push({type:'treatment',mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,drug:ev.drug,dose:ev.dose,route:ev.route,weight:m.weight,dayInTx:txD?Math.round((tgtD-txD)/86400000):null,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'tx-'+m.id+'-'+ev.label+'-'+iso});
@@ -1239,7 +1240,7 @@ async function reschedTask(idx){
   if(!task){alert('Could not find task to reschedule.');return;}
   var nd=prompt('Reschedule to (YYYY-MM-DD):',addD(task.date||TISO,1));if(!nd)return;
   var reason=prompt('Reason:','');if(reason===null)return;
-  await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
+  await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:(task.type==='blood'||task.type==='ivis')&&task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
   if(task.expId)await sb.from('deviation_log').insert({experiment_id:task.expId,mouse_id:task.mouseId||null,event_type:task.type,original_date:task.date,actual_date:nd,reason:reason});
   // The original occurrence still exists after rescheduling a copy onto a new date —
   // remove/skip it so it doesn't show twice (once on old date, once on new).
@@ -1250,7 +1251,8 @@ async function reschedTask(idx){
 // Marks a single generated task occurrence as skipped (does not touch the recurring rule,
 // other mice, or other dates — only this exact mouse+date+type combination).
 async function markTaskSkipped(task,reason){
-  await sb.from('skipped_tasks').upsert({task_id:task.taskId,task_date:task.date,mouse_id:task.mouseId||null,experiment_id:task.expId||null,task_type:task.type||null,task_label:task.label||null,reason:reason||null,created_by:uname()},{onConflict:'task_id'});
+  var{error}=await sb.from('skipped_tasks').upsert({task_id:task.taskId,task_date:task.date,mouse_id:task.mouseId||null,experiment_id:task.expId||null,task_type:task.type||null,task_label:task.label||null,reason:reason||null,created_by:uname()},{onConflict:'task_id'});
+  if(error){console.error('[MouseTracker] markTaskSkipped failed:',error.message,error);alert('Could not save skip/reschedule:\n'+error.message+'\n\nCheck the browser console (F12 → Console) for details.');}
 }
 async function deleteTask(idx){
   var task=typeof idx==='number'?S._rsMap[idx]:idx;
@@ -1661,6 +1663,7 @@ async function sheetSaveRow(eid,mid){
   }catch(err){alert('Could not save '+mid+': '+err.message);}
 }
 function renderDaily(){
+  S._rsMap=[];
   S.view='daily';
   if(!S.dailyDate)S.dailyDate=TISO;
   if(!S.dailyViewMode)S.dailyViewMode='cards';
@@ -1898,7 +1901,7 @@ function renderWeek(){
   document.getElementById('content').innerHTML=html;
 }
 function wkDet(d,type,ef){
-  S._rsMap=S._rsMap||[];
+  S._rsMap=[];
   S._wkSel=new Set();
   S._wkDetSort=S._wkDetSort||'mouse';
   S._wkDetArgs={d:d,type:type,ef:ef};
@@ -2072,7 +2075,7 @@ async function bulkReschedSelected(){
   var reason=prompt('Reason:','');if(reason===null)return;
   for(var i=0;i<idxs.length;i++){
     var task=S._rsMap[idxs[i]];if(!task)continue;
-    await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
+    await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:(task.type==='blood'||task.type==='ivis')&&task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
     if(task.expId)await sb.from('deviation_log').insert({experiment_id:task.expId,mouse_id:task.mouseId||null,event_type:task.type,original_date:task.date,actual_date:nd,reason:reason});
     if(task.adHocId)await sb.from('adhoc_tasks').delete().eq('id',task.adHocId);
     else if(task.taskId)await markTaskSkipped(task,'Rescheduled to '+nd+(reason?': '+reason:''));
@@ -4043,7 +4046,7 @@ async function submitReschedAll(){
         task_date:nd,type:task.type,description:task.label,
         mouse_id:task.mouseId||null,experiment_id:task.expId||null,
         note:'Rescheduled from '+task.date+(reason?' — '+reason:''),
-        original_task_key:task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false
+        original_task_key:(task.type==='blood'||task.type==='ivis')&&task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false
       })
     );
     if(task.expId){
