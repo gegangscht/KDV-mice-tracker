@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v79</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v80</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1521,32 +1521,51 @@ function renderDailySpreadsheet(){
   var byMouseKey={};
   tasks.forEach(function(t){var k=t.expId+'|'+t.mouseId;if(!byMouseKey[k])byMouseKey[k]=[];byMouseKey[k].push(t);});
 
+  // Detect cages shared across multiple experiments — mirrors cards/print behaviour.
+  var cageToExpsSS={};
+  Object.keys(byMouseKey).forEach(function(k){var t0=byMouseKey[k][0];if(t0.m&&t0.m.cage_number){var c=t0.m.cage_number;if(!cageToExpsSS[c])cageToExpsSS[c]=new Set();cageToExpsSS[c].add(t0.expId);}});
+  var mixedCagesSS=new Set();
+  Object.keys(cageToExpsSS).forEach(function(c){if(cageToExpsSS[c].size>1)mixedCagesSS.add(c);});
+
+  // Per-experiment groups — skip mice whose cage is in the mixed set.
   var byExp={};
-  Object.keys(byMouseKey).forEach(function(k){var t0=byMouseKey[k][0];if(!byExp[t0.expId])byExp[t0.expId]=[];byExp[t0.expId].push(byMouseKey[k]);});
+  Object.keys(byMouseKey).forEach(function(k){var t0=byMouseKey[k][0];if(t0.m&&t0.m.cage_number&&mixedCagesSS.has(t0.m.cage_number))return;if(!byExp[t0.expId])byExp[t0.expId]=[];byExp[t0.expId].push(byMouseKey[k]);});
+
+  function ssColHdr(multi,cols){return'<div style="display:grid;grid-template-columns:'+cols+';gap:6px;background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:5px 7px">'+(multi?'<div>Mouse</div><div>Site</div><div>Size (mm)</div><div style="text-align:right">Burden</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>':'<div>Mouse</div><div>Size (mm)</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>')+'</div>';}
+  function renderSSCage(label,mList,ceid,multi,cols){
+    html+='<div style="font-size:9px;font-weight:600;color:var(--text3);margin:6px 0 2px 4px">'+label+'</div>';
+    html+='<div style="border:.5px solid var(--border);border-radius:var(--r);overflow:hidden">'+ssColHdr(multi,cols);
+    mList.slice().sort(function(a,b){return a[0].mouseId.localeCompare(b[0].mouseId,undefined,{numeric:true})}).forEach(function(mTasks){html+=sheetRowHTML(mTasks,ceid||mTasks[0].expId,multi,cols);});
+    html+='</div>';
+  }
 
   Object.keys(byExp).sort().forEach(function(eid){
     var exp=S.experiments.find(function(e){return e.id===eid});
     html+='<div style="font-size:13px;font-weight:500;margin:14px 0 4px;padding:4px 0;border-bottom:.5px solid var(--border2);display:flex;align-items:center;gap:8px">'
       +'<div class="edot" style="background:'+(exp&&exp.color?exp.color:'#888')+'"></div>'
       +'<span>'+eid+' — '+(exp?exp.name:'')+'</span>'
-      +harvestTipHTML(exp)
-      +'</div>'
+      +harvestTipHTML(exp)+'</div>'
       +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
-
     var multi=exp&&exp.multi_tumor?true:false;
-    var sheetCols=multi?'70px 46px 70px 60px 64px 1fr 36px':'70px 70px 64px 1fr 36px';
-    var colHdr='<div style="display:grid;grid-template-columns:'+sheetCols+';gap:6px;background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:5px 7px">'+(multi?'<div>Mouse</div><div>Site</div><div>Size (mm)</div><div style="text-align:right">Burden</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>':'<div>Mouse</div><div>Size (mm)</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>')+'</div>';
+    var cols=multi?'70px 46px 70px 60px 64px 1fr 36px':'70px 70px 64px 1fr 36px';
     var byCageSS={};var noCageSS=[];
     byExp[eid].forEach(function(mTasks){var cage=mTasks[0].m&&mTasks[0].m.cage_number;if(cage){if(!byCageSS[cage])byCageSS[cage]=[];byCageSS[cage].push(mTasks);}else{noCageSS.push(mTasks);}});
-    function renderSSCage(label,mList){
-      html+='<div style="font-size:9px;font-weight:600;color:var(--text3);margin:6px 0 2px 4px">'+label+'</div>';
-      html+='<div style="border:.5px solid var(--border);border-radius:var(--r);overflow:hidden">'+colHdr;
-      mList.slice().sort(function(a,b){return a[0].mouseId.localeCompare(b[0].mouseId,undefined,{numeric:true})}).forEach(function(mTasks){html+=sheetRowHTML(mTasks,eid,multi,sheetCols);});
-      html+='</div>';
-    }
-    Object.keys(byCageSS).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){renderSSCage('Cage '+cage,byCageSS[cage]);});
-    if(noCageSS.length)renderSSCage('(no cage)',noCageSS);
+    Object.keys(byCageSS).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){renderSSCage('Cage '+cage,byCageSS[cage],eid,multi,cols);});
+    if(noCageSS.length)renderSSCage('(no cage)',noCageSS,eid,multi,cols);
   });
+
+  // Mixed cages — shown together at the bottom, same as cards and print views.
+  var mixedByCage={};
+  Object.keys(byMouseKey).forEach(function(k){var t0=byMouseKey[k][0];if(t0.m&&t0.m.cage_number&&mixedCagesSS.has(t0.m.cage_number)){var c=t0.m.cage_number;if(!mixedByCage[c])mixedByCage[c]=[];mixedByCage[c].push(byMouseKey[k]);}});
+  if(Object.keys(mixedByCage).length){
+    var mxCols='70px 70px 64px 1fr 36px';
+    html+='<div style="font-size:13px;font-weight:500;margin:14px 0 4px;padding:4px 0;border-bottom:1.5px solid var(--border2)">Mixed cages</div>';
+    Object.keys(mixedByCage).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){
+      var wps=[...new Set(mixedByCage[cage].map(function(mTasks){return mTasks[0].expId}))].join(', ');
+      renderSSCage('Cage '+cage+' ('+wps+')',mixedByCage[cage],null,false,mxCols);
+    });
+  }
+
   document.getElementById('content').innerHTML='<div class="card" style="padding:.75rem">'+html+'</div>';
   wireSheetTabOrder();
 }
