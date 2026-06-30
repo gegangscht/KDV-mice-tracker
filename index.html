@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v76</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v77</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2346,6 +2346,8 @@ async function renderExp(eid){
   document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="exportExcel(\''+eid+'\')" ><i class="ti ti-download"></i> Export Excel</button>';
   if(!S.measurements[eid]){document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';await loadAll(eid);}
   var mice=S.mice[eid]||[];var groups=S.groups[eid]||[];var act=mice.filter(function(m){return m.status==='active'}).length;
+  var qualGrowthGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis;});});
+  var qualKMGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&!m.excluded_from_analysis&&(exp.is_mastectomy?m.mx_date:m.tx_start);});});
   var harBadge=exp.harvest_updated_at?(' <span class="badge ba" style="font-size:8px"><i class="ti ti-alert-triangle"></i> Updated '+exp.harvest_updated_at+'</span>'):'';  var html='<div class="card">'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;font-size:11px">'
     +(function(){
@@ -2461,14 +2463,14 @@ async function renderExp(eid){
       +'</div>'
       +(exp.multi_tumor?'<div style="display:flex;gap:3px"><button class="pt-btn '+(S.inclSkin?'act':'')+'" onclick="S.inclSkin=true;ST(\'growth\')">Incl. skin</button><button class="pt-btn '+(!S.inclSkin?'act':'')+'" onclick="S.inclSkin=false;ST(\'growth\')">Excl. skin</button></div>':'')
       +'</div></div>'
-      +'<div style="display:flex;flex-wrap:wrap;gap:9px;margin-bottom:6px">'+groups.map(function(g){return'<span style="display:flex;align-items:center;gap:3px;font-size:10px"><span style="width:10px;height:2px;background:'+g.color+';display:inline-block"></span>'+g.name+'</span>'}).join('')+'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">'+qualGrowthGroups.map(function(g){var h=S.hiddenGrps&&S.hiddenGrps[eid]&&S.hiddenGrps[eid].has(g.id);return'<button id="grpleg-'+g.id+'" onclick="toggleGrpVis(\''+eid+'\',\''+g.id+'\')" style="display:flex;align-items:center;gap:4px;font-size:10px;background:none;border:1px solid '+(h?'var(--border)':g.color)+';border-radius:12px;padding:2px 9px 2px 7px;cursor:pointer;color:'+(h?'var(--text3)':'var(--text)')+';opacity:'+(h?.5:1)+'"><span style="width:12px;height:2px;background:'+(h?'var(--border)':g.color)+';display:inline-block;border-radius:1px"></span>'+g.name+'</button>';}).join('')+'</div>'
       +(S.plotMode!=='mean'?'<div style="font-size:10px;color:var(--text3);margin-bottom:4px">Dashed = individual mice</div>':'')
       +'<div style="font-size:10px;color:var(--text3);margin-bottom:6px"><i class="ti ti-info-circle"></i> X-axis: days from each mouse\'s day 0. Click history icon on a mouse row, then click the measurement to set day 0.</div>'
       +'<div style="height:520px;max-width:780px"><canvas id="growthChart">Tumor growth data.</canvas></div></div>';
   } else if(S.expTab==='km'){
     html+='<div class="card">'
       +'<div style="font-size:11px;font-weight:500;margin-bottom:7px">Kaplan-Meier - event: endpoint sacrifice</div>'
-      +'<div style="display:flex;flex-wrap:wrap;gap:9px;margin-bottom:9px">'+groups.map(function(g){return'<span style="display:flex;align-items:center;gap:3px;font-size:10px"><span style="width:10px;height:2px;background:'+g.color+';display:inline-block"></span>'+g.name+'</span>'}).join('')+'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px">'+qualKMGroups.map(function(g){var h=S.hiddenGrps&&S.hiddenGrps[eid]&&S.hiddenGrps[eid].has(g.id);return'<button id="grpleg-'+g.id+'" onclick="toggleGrpVis(\''+eid+'\',\''+g.id+'\')" style="display:flex;align-items:center;gap:4px;font-size:10px;background:none;border:1px solid '+(h?'var(--border)':g.color)+';border-radius:12px;padding:2px 9px 2px 7px;cursor:pointer;color:'+(h?'var(--text3)':'var(--text)')+';opacity:'+(h?.5:1)+'"><span style="width:12px;height:2px;background:'+(h?'var(--border)':g.color)+';display:inline-block;border-radius:1px"></span>'+g.name+'</button>';}).join('')+'</div>'
       +'<div style="height:480px;max-width:780px"><canvas id="kmChart">Survival data.</canvas></div></div>';
   } else if(S.expTab==='sched'){
     html+='<div class="card">'
@@ -2508,8 +2510,8 @@ async function renderExp(eid){
     html+='</div>';
   }
   document.getElementById('content').innerHTML=html;
-  if(S.expTab==='growth')setTimeout(function(){drawGrowth(exp,groups)},50);
-  if(S.expTab==='km')setTimeout(function(){drawKM(exp,groups)},50);
+  if(S.expTab==='growth')setTimeout(function(){drawGrowth(exp,qualGrowthGroups)},50);
+  if(S.expTab==='km')setTimeout(function(){drawKM(exp,qualKMGroups)},50);
   // Auto-expand histories if global show-all is on
   if(S.expTab==='mice'&&S.showHist[eid]){
     setTimeout(function(){
@@ -2650,6 +2652,27 @@ function burdenAtRelDay(m,msl,rd){
   if(firstReal&&td<firstReal.measured_at)return 0;
   return null;
 }
+function toggleGrpVis(eid,gid){
+  if(!S.hiddenGrps)S.hiddenGrps={};
+  if(!S.hiddenGrps[eid])S.hiddenGrps[eid]=new Set();
+  if(S.hiddenGrps[eid].has(gid))S.hiddenGrps[eid].delete(gid);
+  else S.hiddenGrps[eid].add(gid);
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  var allMice=S.mice[eid]||[];
+  var allGroups=S.groups[eid]||[];
+  var qualGrowth=allGroups.filter(function(g){return allMice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis;});});
+  var qualKM=allGroups.filter(function(g){return allMice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&!m.excluded_from_analysis&&(exp&&exp.is_mastectomy?m.mx_date:m.tx_start);});});
+  if(S.expTab==='growth')drawGrowth(exp,qualGrowth);
+  else if(S.expTab==='km')drawKM(exp,qualKM);
+  allGroups.forEach(function(g){
+    var btn=document.getElementById('grpleg-'+g.id);if(!btn)return;
+    var h=S.hiddenGrps[eid]&&S.hiddenGrps[eid].has(g.id);
+    btn.style.opacity=h?'.5':'1';
+    btn.style.color=h?'var(--text3)':'var(--text)';
+    btn.style.borderColor=h?'var(--border)':g.color;
+    var line=btn.querySelector('span');if(line)line.style.background=h?'var(--border)':g.color;
+  });
+}
 function drawGrowth(exp,groups){
   var ctx=document.getElementById('growthChart');if(!ctx)return;
   var key='g'+exp.id;if(charts[key])charts[key].destroy();
@@ -2671,6 +2694,7 @@ function drawGrowth(exp,groups){
   if(!labs.length){ctx.parentElement.innerHTML='<div class="empty">No day 0 set yet. Open mouse history and click "Set day 0" on a measurement.</div>';return;}
   var datasets=[];
   groups.forEach(function(g){
+    if(S.hiddenGrps&&S.hiddenGrps[exp.id]&&S.hiddenGrps[exp.id].has(g.id))return;
     var mice=miceAll.filter(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis});
     if(S.plotMode==='individual'||S.plotMode==='both'){
       mice.forEach(function(m){
@@ -2725,6 +2749,7 @@ function drawKM(exp,groups){
     return pts;
   }
   var datasets=groups.map(function(g){
+    if(S.hiddenGrps&&S.hiddenGrps[exp.id]&&S.hiddenGrps[exp.id].has(g.id))return null;
     var mice=(S.mice[exp.id]||[]).filter(function(m){return m.group_name===g.name||m.group_id===g.id});
     if(!mice.length)return null;
     return{label:g.name,data:buildKM(mice),borderColor:g.color,backgroundColor:'transparent',stepped:'before',tension:0,fill:false,pointRadius:0,borderWidth:2};
