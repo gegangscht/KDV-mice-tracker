@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v75</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v76</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -355,6 +355,7 @@ function dInTx(m){if(!m.tx_start)return null;return Math.round((new Date(TISO)-n
 function addD(iso,n){var d=new Date(iso);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
 function wkMon(off){var d=new Date(TODAY);var day=d.getDay();d.setDate(d.getDate()+(day===0?-6:1-day)+off*7);return d.toISOString().slice(0,10)}
 function fmtD(iso){return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function uname(){return S.user&&S.user.name?S.user.name:'Unknown'}
 
 // AUTH
@@ -568,7 +569,7 @@ function getTasksForDate(iso){
           S._dailyNotes=S._dailyNotes||{};
           var k=iso+'|'+exp.id+'|'+m.id;
           if(!S._dailyNotes[k])S._dailyNotes[k]=[];
-          S._dailyNotes[k].push({note:t.note,level:t.note_level||'standard'});
+          S._dailyNotes[k].push({note:t.note,level:t.note_level||'standard',adHocId:t.id});
         }
       });
     });
@@ -580,7 +581,7 @@ function getTasksForDate(iso){
         S._dailyNotes=S._dailyNotes||{};
         var k2=iso+'|'+exp.id+'|'+t.mouse_id;
         if(!S._dailyNotes[k2])S._dailyNotes[k2]=[];
-        S._dailyNotes[k2].push({note:t.note,level:t.note_level||'standard'});
+        S._dailyNotes[k2].push({note:t.note,level:t.note_level||'standard',adHocId:t.id});
       }
     });
   });
@@ -1152,6 +1153,31 @@ async function submitQuickAddNote(eid,mid,date){
   await sb.from('adhoc_tasks').insert({task_date:date,type:'custom',description:'',mouse_id:mid,group_id:null,experiment_id:eid,note:note,note_level:level,done:false});
   await dbLoad();closeModal();if(S.view==='daily')renderDaily();else if(S.view==='week')renderWeek();
 }
+function editNote(adHocId){
+  var row=null;
+  var keys=Object.keys(S.adhoc||{});
+  for(var ki=0;ki<keys.length;ki++){var arr=S.adhoc[keys[ki]];for(var ai=0;ai<arr.length;ai++){if(arr[ai].id===adHocId){row=arr[ai];break;}}if(row)break;}
+  if(!row){alert('Note not found');return;}
+  showModal('Edit note',
+    '<div class="fg full"><label class="fl">Note</label><textarea class="fi" id="en-note" rows="2" style="resize:vertical" autofocus>'+esc(row.note||'')+'</textarea>'
+    +'<select class="fs" id="en-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML(row.note_level||'standard')+'</select>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-r btn-xs" onclick="submitDeleteNote(\''+adHocId+'\')"><i class="ti ti-trash"></i> Delete</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitEditNote(\''+adHocId+'\')"><i class="ti ti-check"></i> Save</button>');
+}
+async function submitEditNote(adHocId){
+  var note=((document.getElementById('en-note')&&document.getElementById('en-note').value)||'').trim();
+  var level=(document.getElementById('en-level')&&document.getElementById('en-level').value)||'standard';
+  if(!note){alert('Note cannot be empty');return;}
+  await sb.from('adhoc_tasks').update({note:note,note_level:level}).eq('id',adHocId);
+  await dbLoad();closeModal();if(S.view==='daily')renderDaily();else if(S.view==='week')renderWeek();
+}
+async function submitDeleteNote(adHocId){
+  if(!confirm('Delete this note?'))return;
+  await sb.from('adhoc_tasks').delete().eq('id',adHocId);
+  await dbLoad();closeModal();if(S.view==='daily')renderDaily();else if(S.view==='week')renderWeek();
+}
 function showAddTask(defDate){
   var activeExps=S.experiments.filter(function(e){return e.status==='active'});
   showModal('Add task or note',
@@ -1235,11 +1261,23 @@ async function toggleAdHoc(id){
 }
 S._rsMap=[];
 function rsReg(task){S._rsMap.push(task);return S._rsMap.length-1;}
-async function reschedTask(idx){
+function reschedTask(idx){
   var task=typeof idx==='number'?S._rsMap[idx]:idx;
   if(!task){alert('Could not find task to reschedule.');return;}
-  var nd=prompt('Reschedule to (YYYY-MM-DD):',addD(task.date||TISO,1));if(!nd)return;
-  var reason=prompt('Reason:','');if(reason===null)return;
+  S._reschedTask=task;
+  showModal('Reschedule task',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">'+(task.label||task.type)+(task.mouseId?' — '+task.mouseId:'')+'</div>'
+    +'<div class="f2"><div class="fg"><label class="fl">New date</label><input class="fi" id="rs-date" type="date" value="'+addD(task.date||TISO,1)+'" autofocus></div></div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Reason <span style="font-weight:400;color:var(--text3)">(optional)</span></label><textarea class="fi" id="rs-reason" rows="2" style="resize:vertical"></textarea></div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitReschedTask()"><i class="ti ti-calendar-event"></i> Reschedule</button>');
+}
+async function submitReschedTask(){
+  var nd=(document.getElementById('rs-date')&&document.getElementById('rs-date').value)||'';
+  var reason=((document.getElementById('rs-reason')&&document.getElementById('rs-reason').value)||'').trim();
+  var task=S._reschedTask;
+  if(!nd||!task){closeModal();return;}
+  closeModal();
   await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:(task.type==='blood'||task.type==='ivis')&&task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
   if(task.expId)await sb.from('deviation_log').insert({experiment_id:task.expId,mouse_id:task.mouseId||null,event_type:task.type,original_date:task.date,actual_date:nd,reason:reason});
   // The original occurrence still exists after rescheduling a copy onto a new date —
@@ -1408,7 +1446,8 @@ function dailyNoteHTML(dailyNotes){
   if(!dailyNotes||!dailyNotes.length)return'';
   return dailyNotes.map(function(n){
     var bg=n.level==='critical'?'#A32D2D':n.level==='unusual'?'#B45309':'#4B5563';
-    return '<span class="dn-pill" style="background:'+bg+'"><i class="ti ti-pin"></i>'+n.note+'</span>';
+    var editBtn=n.adHocId?'<button onclick="event.stopPropagation();editNote(\''+n.adHocId+'\')" style="background:none;border:none;color:#fff;cursor:pointer;padding:0 0 0 4px;opacity:.7;line-height:1;vertical-align:middle" title="Edit note"><i class="ti ti-pencil" style="font-size:9px"></i></button>':'';
+    return '<span class="dn-pill" style="background:'+bg+'"><i class="ti ti-pin"></i>'+n.note+editBtn+'</span>';
   }).join('');
 }
 // Builds the full-width WP-level banner for a daily note targeted at an entire WP (no mouse,
@@ -2068,11 +2107,23 @@ async function bulkDeleteSelected(){
   }
   await dbLoad();renderWeek();
 }
-async function bulkReschedSelected(){
+function bulkReschedSelected(){
   var idxs=Array.from(S._wkSel||[]);
   if(!idxs.length)return;
-  var nd=prompt('Reschedule '+idxs.length+' selected task(s) to (YYYY-MM-DD):');if(!nd)return;
-  var reason=prompt('Reason:','');if(reason===null)return;
+  S._bulkReschedIdxs=idxs;
+  var task=S._rsMap[idxs[0]];
+  showModal('Reschedule '+idxs.length+' task(s)',
+    '<div class="f2"><div class="fg"><label class="fl">New date</label><input class="fi" id="brs-date" type="date" value="'+addD((task&&task.date)||TISO,1)+'" autofocus></div></div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Reason <span style="font-weight:400;color:var(--text3)">(optional)</span></label><textarea class="fi" id="brs-reason" rows="2" style="resize:vertical"></textarea></div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitBulkReschedSelected()"><i class="ti ti-calendar-event"></i> Reschedule</button>');
+}
+async function submitBulkReschedSelected(){
+  var nd=(document.getElementById('brs-date')&&document.getElementById('brs-date').value)||'';
+  var reason=((document.getElementById('brs-reason')&&document.getElementById('brs-reason').value)||'').trim();
+  if(!nd){alert('Pick a date');return;}
+  closeModal();
+  var idxs=S._bulkReschedIdxs||[];
   for(var i=0;i<idxs.length;i++){
     var task=S._rsMap[idxs[i]];if(!task)continue;
     await sb.from('adhoc_tasks').insert({task_date:nd,type:task.type,description:task.label,mouse_id:task.mouseId||null,experiment_id:task.expId||null,note:'Rescheduled from '+task.date+': '+(reason||'no reason'),original_task_key:(task.type==='blood'||task.type==='ivis')&&task.label&&task.mouseId?task.label+'-'+task.mouseId:null,done:false});
