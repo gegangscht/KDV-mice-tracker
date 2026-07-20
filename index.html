@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v82</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v83</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3570,8 +3570,8 @@ function showCageTransfer(eid,mid){
   // Cage pills for cages in this experiment
   var cagePillsHtml=occupiedCages.map(function(c){
     var isCurrent=c.cage===m.cage_number;
-    return '<button class="btn btn-xs '+(isCurrent?'btn-p':'')+' cage-pill" data-cage="'+c.cage+'" onclick="selectCagePill(this)" style="margin:2px">'
-      +c.cage+' <span style="font-size:9px;opacity:.7">'+c.mice.length+' mice · '+c.group+'</span>'
+    return '<button class="btn btn-xs cage-pill" data-cage="'+c.cage+'" onclick="selectCagePill(this)" style="margin:2px'+(isCurrent?';outline:1.5px solid var(--primary);outline-offset:1px':'')+'">'
+      +c.cage+' <span style="font-size:9px;opacity:.7">'+c.mice.length+' mice · '+c.group+(isCurrent?' · current':'')+'</span>'
       +'</button>';
   }).join('');
 
@@ -3581,9 +3581,10 @@ function showCageTransfer(eid,mid){
   var nxtMon=addD(TISO,((8-new Date(TISO).getDay())%7)||7);
 
   showModal('Move mouse — '+mid,
-    '<div style="font-size:10px;color:var(--text2);margin-bottom:10px">Currently: group <strong>'+m.group_name+'</strong>'+(m.cage_number?' · cage <strong>'+m.cage_number+'</strong>':'· no cage')+'</div>'
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:4px">Currently: group <strong>'+m.group_name+'</strong>'+(m.cage_number?' · cage <strong>'+m.cage_number+'</strong>':'· no cage')+'</div>'
+    +'<div style="font-size:10px;color:var(--text3);margin-bottom:12px">Change cage, group, or both — leave either unchanged to keep current.</div>'
     // CAGE SECTION
-    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Cage</div>'
+    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Change cage</div>'
     +'<div style="margin-bottom:6px">'
     +(cagePillsHtml||'<span style="font-size:10px;color:var(--text3)">No cages in use yet</span>')
     +'</div>'
@@ -3596,12 +3597,12 @@ function showCageTransfer(eid,mid){
     +'<div id="other-cages-list" style="max-height:120px;overflow-y:auto"></div>'
     +'</div>'
     +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">'
-    +'<span style="font-size:10px;color:var(--text2)">Selected cage:</span>'
-    +'<input class="fi" id="tr-cage-val" value="'+(m.cage_number||'')+'" style="width:90px;font-size:11px" placeholder="none">'
-    +'<button class="btn btn-xs" onclick="clearCagePill()">Clear</button>'
+    +'<span style="font-size:10px;color:var(--text2)">New cage:</span>'
+    +'<input class="fi" id="tr-cage-val" value="" style="width:90px;font-size:11px" placeholder="'+(m.cage_number||'none — no change')+'">'
+    +'<button class="btn btn-xs" onclick="clearCagePill()" title="Clear selection — cage will not change">No change</button>'
     +'</div>'
     // GROUP SECTION
-    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Group (optional)</div>'
+    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Change group</div>'
     +'<div class="f2">'
     +'<div class="fg full"><select class="fs" id="tr-grp" onchange="trGroupChanged(\''+eid+'\')">'+groupOptsHtml+'</select></div>'
     +'<div class="fg"><label class="fl">Transfer date</label><input class="fi" id="tr-date" type="date" value="'+TISO+'"></div>'
@@ -3619,11 +3620,6 @@ function showCageTransfer(eid,mid){
   );
   // Pre-select current cage pill
   setTimeout(function(){
-    if(m.cage_number){
-      var pill=document.querySelector('.cage-pill[data-cage="'+m.cage_number+'"]');
-      if(pill)pill.classList.add('btn-p');
-    }
-    // Init other cages list
     filterOtherCages(eid);
     trGroupChanged(eid);
   },50);
