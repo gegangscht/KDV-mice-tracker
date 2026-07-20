@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v83</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v84</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2400,6 +2400,7 @@ async function renderExp(eid){
     +'<div class="tab '+(S.expTab==='timeline'?'act':'')+'" onclick="ST(\'timeline\')">Timeline</div>'
     +'<div class="tab '+(S.expTab==='growth'?'act':'')+'" onclick="ST(\'growth\')">Tumor growth</div>'
     +'<div class="tab '+(S.expTab==='km'?'act':'')+'" onclick="ST(\'km\')">Survival</div>'
+    +'<div class="tab '+(S.expTab==='weight'?'act':'')+'" onclick="ST(\'weight\')">Weight</div>'
     +'<div class="tab '+(S.expTab==='sched'?'act':'')+'" onclick="ST(\'sched\')">Schedule</div>'
     +'</div>';
 
@@ -2499,6 +2500,20 @@ async function renderExp(eid){
       +'<div style="font-size:11px;font-weight:500;margin-bottom:7px">Kaplan-Meier - event: endpoint sacrifice</div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px">'+qualKMGroups.map(function(g){var h=S.hiddenGrps&&S.hiddenGrps[eid]&&S.hiddenGrps[eid].has(g.id);return'<button id="grpleg-'+g.id+'" onclick="toggleGrpVis(\''+eid+'\',\''+g.id+'\')" style="display:flex;align-items:center;gap:4px;font-size:10px;background:none;border:1px solid '+(h?'var(--border)':g.color)+';border-radius:12px;padding:2px 9px 2px 7px;cursor:pointer;color:'+(h?'var(--text3)':'var(--text)')+';opacity:'+(h?.5:1)+'"><span style="width:11px;height:11px;background:'+(h?'var(--border)':g.color)+';display:inline-block;border-radius:3px;flex-shrink:0"></span>'+g.name+'</button>';}).join('')+'</div>'
       +'<div style="height:480px;max-width:780px"><canvas id="kmChart">Survival data.</canvas></div></div>';
+  } else if(S.expTab==='weight'){
+    var qualWtGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&(S.measurements[eid]||{})[m.id]&&(S.measurements[eid]||{})[m.id].some(function(ms){return ms.weight!=null;});});});
+    if(!S.hiddenWtGrps)S.hiddenWtGrps={};
+    if(!S.hiddenWtGrps[eid])S.hiddenWtGrps[eid]=new Set();
+    var thrVal=exp.weight_threshold!=null?exp.weight_threshold:'';
+    html+='<div class="card">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:8px">'
+      +'<div style="font-size:11px;font-weight:500">Body weight — % change from baseline</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +'<label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:5px">Threshold %<input type="number" id="wt-thr" value="'+thrVal+'" placeholder="e.g. −20" style="width:72px;padding:3px 5px;font-size:11px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface2);color:var(--text)" oninput="saveWtThreshold(\''+eid+'\')"></label>'
+      +'</div></div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-bottom:6px">First recorded weight per mouse = 0 % baseline. Hover a line to see mouse details.</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'+qualWtGroups.map(function(g){var h=S.hiddenWtGrps[eid].has(g.id);return'<button id="wtgrpleg-'+g.id+'" onclick="toggleWtGrpVis(\''+eid+'\',\''+g.id+'\')" style="display:flex;align-items:center;gap:4px;font-size:10px;background:none;border:1px solid '+(h?'var(--border)':g.color)+';border-radius:12px;padding:2px 9px 2px 7px;cursor:pointer;color:'+(h?'var(--text3)':'var(--text)')+';opacity:'+(h?.5:1)+'"><span style="width:11px;height:11px;background:'+(h?'var(--border)':g.color)+';display:inline-block;border-radius:3px;flex-shrink:0"></span>'+g.name+'</button>';}).join('')+'</div>'
+      +'<div style="height:480px;max-width:780px"><canvas id="weightChart">Weight data.</canvas></div></div>';
   } else if(S.expTab==='sched'){
     html+='<div class="card">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem">'
@@ -2539,6 +2554,7 @@ async function renderExp(eid){
   document.getElementById('content').innerHTML=html;
   if(S.expTab==='growth')setTimeout(function(){drawGrowth(exp,qualGrowthGroups)},50);
   if(S.expTab==='km')setTimeout(function(){drawKM(exp,qualKMGroups)},50);
+  if(S.expTab==='weight'){(function(){var _eid=eid;setTimeout(function(){var _exp=S.experiments.find(function(e){return e.id===_eid});var _groups=S.groups[_eid]||[];var _mice=S.mice[_eid]||[];var _qualWt=_groups.filter(function(g){return _mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&(S.measurements[_eid]||{})[m.id]&&(S.measurements[_eid]||{})[m.id].some(function(ms){return ms.weight!=null;});});});drawWeightChart(_exp,_qualWt);},50);})();}
   // Auto-expand histories if global show-all is on
   if(S.expTab==='mice'&&S.showHist[eid]){
     setTimeout(function(){
@@ -2783,6 +2799,98 @@ function drawKM(exp,groups){
   }).filter(Boolean);
   if(!datasets.length){ctx.parentElement.innerHTML='<div class="empty">No survival data yet</div>';return;}
   charts[key]=new Chart(ctx,{type:'line',data:{datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{type:'linear',title:{display:true,text:isMx?'Days from mastectomy':'Days from tx start',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'}},y:{min:0,max:1,title:{display:true,text:'Survival',font:{size:9}},ticks:{font:{size:9},callback:function(v){return Math.round(v*100)+'%'}},grid:{color:'rgba(128,128,128,0.08)'}}}}});
+}
+
+function drawWeightChart(exp,groups){
+  var ctx=document.getElementById('weightChart');if(!ctx)return;
+  var eid=exp.id;
+  var key='w'+eid;if(charts[key])charts[key].destroy();
+  var miceAll=S.mice[eid]||[];
+  // Collect all dates that have at least one weight measurement
+  var allDates=new Set();
+  miceAll.forEach(function(m){
+    var msl=(S.measurements[eid]||{})[m.id]||[];
+    msl.forEach(function(ms){if(ms.weight!=null)allDates.add(ms.measured_at);});
+  });
+  var labs=Array.from(allDates).sort();
+  if(!labs.length){ctx.parentElement.innerHTML='<div class="empty">No weight measurements recorded yet.</div>';return;}
+  var datasets=[];
+  if(!S.hiddenWtGrps)S.hiddenWtGrps={};if(!S.hiddenWtGrps[eid])S.hiddenWtGrps[eid]=new Set();
+  groups.forEach(function(g){
+    if(S.hiddenWtGrps[eid].has(g.id))return;
+    var mice=miceAll.filter(function(m){return m.group_id===g.id||m.group_name===g.name;});
+    mice.forEach(function(m){
+      var msl=(S.measurements[eid]||{})[m.id]||[];
+      var wtPts=msl.filter(function(ms){return ms.weight!=null;}).sort(function(a,b){return a.measured_at.localeCompare(b.measured_at);});
+      if(!wtPts.length)return;
+      var baseline=wtPts[0].weight;
+      // Map onto shared date axis
+      var byDate={};wtPts.forEach(function(ms){byDate[ms.measured_at]={pct:Math.round(((ms.weight-baseline)/baseline)*1000)/10,abs:ms.weight};});
+      var data=labs.map(function(d){return byDate[d]?byDate[d].pct:null;});
+      var absData=labs.map(function(d){return byDate[d]?byDate[d].abs:null;});
+      if(data.every(function(v){return v===null;}))return;
+      datasets.push({label:m.id,data:data,absData:absData,borderColor:g.color,backgroundColor:'transparent',tension:.3,fill:false,spanGaps:true,pointRadius:3,pointHoverRadius:5,borderWidth:1.8});
+    });
+  });
+  if(!datasets.length){ctx.parentElement.innerHTML='<div class="empty">No weight data to display — toggle groups or add weight measurements.</div>';return;}
+  // Threshold line dataset
+  var thr=exp.weight_threshold!=null?parseFloat(exp.weight_threshold):null;
+  if(thr!=null&&!isNaN(thr)){
+    datasets.push({label:'__threshold__',data:labs.map(function(){return thr;}),borderColor:'#DC2626',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false,spanGaps:true,tension:0,order:-1});
+  }
+  charts[key]=new Chart(ctx,{type:'line',
+    data:{labels:labs.map(function(d){return d.slice(5);}),datasets:datasets},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{filter:function(item){return item.dataset.label!=='__threshold__';},
+          callbacks:{
+            title:function(items){return items[0]?labs[items[0].dataIndex]:'';},
+            label:function(c){var abs=c.dataset.absData?c.dataset.absData[c.dataIndex]:null;return c.dataset.label+': '+(c.raw!=null?(c.raw>0?'+':'')+c.raw+'%':'--')+(abs!=null?' ('+abs+'g)':'');}
+          }}},
+      scales:{
+        x:{ticks:{font:{size:9},maxRotation:45},grid:{color:'rgba(128,128,128,0.08)'},title:{display:true,text:'Date',font:{size:9}}},
+        y:{title:{display:true,text:'Weight change (%)',font:{size:9}},ticks:{font:{size:9},callback:function(v){return(v>0?'+':'')+v+'%';}},grid:{color:'rgba(128,128,128,0.08)'},
+          afterDataLimits:function(scale){var pad=5;scale.min=Math.floor((scale.min-pad)/5)*5;scale.max=Math.ceil((scale.max+pad)/5)*5;}
+        }
+      }
+    }
+  });
+}
+
+function toggleWtGrpVis(eid,gid){
+  if(!S.hiddenWtGrps)S.hiddenWtGrps={};
+  if(!S.hiddenWtGrps[eid])S.hiddenWtGrps[eid]=new Set();
+  if(S.hiddenWtGrps[eid].has(gid))S.hiddenWtGrps[eid].delete(gid);
+  else S.hiddenWtGrps[eid].add(gid);
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  var allMice=S.mice[eid]||[];
+  var allGroups=S.groups[eid]||[];
+  var qualWt=allGroups.filter(function(g){return allMice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&(S.measurements[eid]||{})[m.id]&&(S.measurements[eid]||{})[m.id].some(function(ms){return ms.weight!=null;});});});
+  drawWeightChart(exp,qualWt);
+  allGroups.forEach(function(g){
+    var btn=document.getElementById('wtgrpleg-'+g.id);if(!btn)return;
+    var h=S.hiddenWtGrps[eid].has(g.id);
+    btn.style.opacity=h?'.5':'1';btn.style.color=h?'var(--text3)':'var(--text)';
+    btn.style.borderColor=h?'var(--border)':g.color;
+    var sq=btn.querySelector('span');if(sq)sq.style.background=h?'var(--border)':g.color;
+  });
+}
+
+var _wtThrTimer=null;
+async function saveWtThreshold(eid){
+  var el=document.getElementById('wt-thr');if(!el)return;
+  var raw=el.value.trim();
+  var v=raw===''?null:parseFloat(raw);
+  if(raw!==''&&isNaN(v))return;
+  clearTimeout(_wtThrTimer);
+  _wtThrTimer=setTimeout(async function(){
+    await sb.from('experiments').update({weight_threshold:v}).eq('id',eid);
+    var exp=S.experiments.find(function(e){return e.id===eid});
+    if(exp)exp.weight_threshold=v;
+    var allMice=S.mice[eid]||[];var allGroups=S.groups[eid]||[];
+    var qualWt=allGroups.filter(function(g){return allMice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&(S.measurements[eid]||{})[m.id]&&(S.measurements[eid]||{})[m.id].some(function(ms){return ms.weight!=null;});});});
+    drawWeightChart(exp,qualWt);
+  },600);
 }
 
 // NEW EXPERIMENT
