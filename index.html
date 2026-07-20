@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v81</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v82</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -695,32 +695,35 @@ function logHTML(eid,mid,ei,viewDate){
     siteCols=blankSiteRowHTML(mid,0);
   }
 
-  var statusSel=!isEdit?'<div class="il-g"><div class="il-l">Status</div>'
-    +'<select class="il-in" id="il-st-'+mid+'" style="padding:3px 4px;font-size:10px">'
-    +'<option value="">Active</option>'
-    +'<option value="endpoint">Sacrifice - endpoint</option>'
-    +'<option value="humane">Sacrifice - humane EP</option>'
-    +'<option value="early">Sacrifice - early</option>'
-    +'<option value="dead">Found dead</option>'
-    +'</select></div>':'';
-
   return '<div class="il" id="il-'+mid+'">'
-    +'<div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap">'
+    +'<div class="il-row" style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap">'
     +'<div class="il-g"><div class="il-l">Date</div><input class="il-in" id="il-d-'+mid+'" type="date" value="'+defD+'" style="width:128px" tabindex="1"></div>'
     +siteCols
     +'<button class="btn btn-xs btn-icon" id="il-addsite-'+mid+'" title="Add tumor site" style="margin-top:14px;align-self:flex-start"><i class="ti ti-plus"></i></button>'
     +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+(isEdit&&entry&&entry.weight!=null?entry.weight:'')+'" style="width:58px" placeholder="'+(defW||'g')+'" tabindex="50" data-lastw="'+(defW||'')+'"></div>'
     +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:52px" placeholder="C01" tabindex="51"></div>'
     +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..." tabindex="52"></div>'
-    +statusSel
     +'<div class="il-g"><div class="il-l">&nbsp;</div>'
     +'<button class="btn btn-g btn-xs" id="il-save-'+mid+'" tabindex="53"><i class="ti ti-check"></i>'+(isEdit?' Update':' Save')+'</button>'
     +'</div></div>'
-    +'<div id="il-kdv-'+mid+'" style="display:none;margin-top:6px;padding-top:6px;border-top:.5px solid var(--border)">'
-    +'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
-    +'<div class="il-g"><div class="il-l">KDV number</div><input class="il-in" id="il-kdv-in-'+mid+'" style="width:140px" placeholder="26KDV123"></div>'
-    +'<div class="il-g"><div class="il-l">&nbsp;</div><button class="btn btn-p btn-xs" id="il-savekdv-'+mid+'">Save KDV</button></div>'
-    +'</div></div></div>';
+    +(!isEdit?'<div style="margin-top:6px;padding-top:6px;border-top:.5px solid var(--border2)">'
+      +'<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text2);user-select:none">'
+      +'<input type="checkbox" id="il-sac-chk-'+mid+'" onchange="sacChkChanged(\''+mid+'\')">'
+      +'<span><i class="ti ti-heart-broken" style="font-size:11px;vertical-align:-1px"></i> Sacrifice this mouse</span></label>'
+      +'<div id="il-sac-det-'+mid+'" style="display:none;margin-top:8px">'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<div class="il-g"><div class="il-l">Reason</div>'
+      +'<select class="il-in" id="il-st-'+mid+'" style="padding:3px 4px;font-size:10px">'
+      +'<option value="endpoint">Endpoint</option>'
+      +'<option value="humane">Humane EP</option>'
+      +'<option value="early">Early sacrifice</option>'
+      +'<option value="dead">Found dead</option>'
+      +'</select></div>'
+      +'<div class="il-g"><div class="il-l">KDV <span style="font-weight:400;color:var(--text3)">(optional)</span></div>'
+      +'<input class="il-in" id="il-kdv-in-'+mid+'" style="width:140px" placeholder="26KDV123"></div>'
+      +'</div></div></div>'
+    :'')
+    +'</div>';
   S._logCtx=S._logCtx||{};
   S._logCtx[mid]={eid:eid,ei:ei};
 }
@@ -808,6 +811,11 @@ function getSites(mid){
 
 
 
+function sacChkChanged(mid){
+  var chk=document.getElementById('il-sac-chk-'+mid);
+  var det=document.getElementById('il-sac-det-'+mid);
+  if(det)det.style.display=chk&&chk.checked?'block':'none';
+}
 function ilK(e,eid,mid,ei){if(e.key==='Enter'){e.preventDefault();submitLog(eid,mid,ei);}}
 function ilSK(e,eid,mid,ei,si){if(e.key==='Enter'){e.preventDefault();var n=document.getElementById('il-sz-'+mid+'-'+(si+1))||document.getElementById('il-loc-'+mid+'-'+(si+1));if(n)n.focus();else submitLog(eid,mid,ei);}}
 function openLogD(eid,mid){
@@ -860,7 +868,8 @@ async function submitLog(eid,mid,ei){
   var dv=(document.getElementById('il-d-'+mid)&&document.getElementById('il-d-'+mid).value)||TISO;
   var wStr=((document.getElementById('il-w-'+mid)&&document.getElementById('il-w-'+mid).value)||'').trim();
   var note=((document.getElementById('il-n-'+mid)&&document.getElementById('il-n-'+mid).value)||'').trim();
-  var status=(document.getElementById('il-st-'+mid)&&document.getElementById('il-st-'+mid).value)||'';
+  var sacChk=document.getElementById('il-sac-chk-'+mid);
+  var status=sacChk&&sacChk.checked?(document.getElementById('il-st-'+mid)&&document.getElementById('il-st-'+mid).value)||'endpoint':'';
   var sites=getSites(mid);
   // Allow any combination: sites only, weight only, note only, or any mix
   // Only block if truly nothing is entered
@@ -885,11 +894,12 @@ async function submitLog(eid,mid,ei){
     var cageVal=document.getElementById('il-cage-'+mid)&&document.getElementById('il-cage-'+mid).value;
     if(cageVal!==null&&cageVal!==undefined){var m2=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(m2&&cageVal!==m2.cage_number)await sb.from('mice').update({cage_number:cageVal}).eq('id',mid);}
     if(status&&ei<0){
-      await sb.from('mice').update({status:'sacrificed',cause:status,sac_date:dv}).eq('id',mid);
-      await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:dv,event_type:'sacrifice',label:'Sacrificed - '+status,logged_by:uname()});
-      var kw=document.getElementById('il-kdv-'+mid);if(kw)kw.style.display='block';
-      var il=document.getElementById('il-'+mid);if(il){var row=il.querySelector('.il-row');if(row)row.innerHTML='<div style="font-size:11px;color:var(--green);padding:4px 0"><i class="ti ti-check"></i> Saved. Mouse marked: '+status+'. Add KDV below.</div>';}
-      await loadAll(eid);return;
+      var kdvInline=((document.getElementById('il-kdv-in-'+mid)&&document.getElementById('il-kdv-in-'+mid).value)||'').trim();
+      var sacUpd={status:'sacrificed',cause:status,sac_date:dv};if(kdvInline)sacUpd.kdv=kdvInline;
+      await sb.from('mice').update(sacUpd).eq('id',mid);
+      await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:dv,event_type:'sacrifice',label:'Sacrificed - '+status+(kdvInline?' (KDV: '+kdvInline+')':''),logged_by:uname()});
+      var il=document.getElementById('il-'+mid);if(il){var row=il.querySelector('.il-row');if(row)row.innerHTML='<div style="font-size:11px;color:var(--green);padding:4px 0"><i class="ti ti-check"></i> Sacrificed'+(kdvInline?' — KDV: '+kdvInline:'')+'</div>';}
+      await loadAll(eid);if(S.view==='daily')renderDaily();else renderExp(eid);return;
     }
     if(ei<0&&S.view==='daily'){
       var idx=logOrder.indexOf(mid);
