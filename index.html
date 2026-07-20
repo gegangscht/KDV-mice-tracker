@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v80</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v81</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -866,7 +866,8 @@ async function submitLog(eid,mid,ei){
   // Only block if truly nothing is entered
   var hasWeight=wStr&&wStr.length>0;
   var hasCage=cageVal&&cageVal.trim().length>0;
-  if(!sites.length&&!note&&!hasWeight&&!hasCage){alert('Nothing to save — enter a measurement, weight, or note.');return;}
+  var hasSac=status&&status.length>0;
+  if(!sites.length&&!note&&!hasWeight&&!hasCage&&!hasSac){alert('Nothing to save — enter a measurement, weight, note, or select a status.');return;}
   var btn=document.querySelector('#il-'+mid+' .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<div class="spin"></div>';}
   try{
@@ -1386,7 +1387,7 @@ function taskSection(title,icon,items){
       +'<span style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end">'+(isMeasure&&t.mouseId?sizeWeightBadges(t.expId,t.mouseId,t.date,needsTumor):(t.dose?'<span class="burden-badge">'+t.dose+(t.route?' '+t.route:'')+'</span>':''))+'</span>'
       +'<span style="font-size:10px;color:var(--text3)">'+(t.dayInTx!=null?'d'+t.dayInTx:'')+'</span>'
       +'<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">'
-        +(isMeasure?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
+        +((isMeasure||t.type==='note-only')&&t.mouseId&&t.expId?'<button class="btn btn-g btn-xs" onclick="openLogD(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-plus"></i> Log</button>':'')
         +(isMeasure&&isActive?'<button class="btn btn-xs btn-icon" title="Move mouse (group / cage)" onclick="showCageTransfer(\''+t.expId+'\',\''+t.mouseId+'\')"><i class="ti ti-arrows-exchange"></i></button>':'')
         +(t.type==='custom'?'<button class="btn btn-xs '+(t.done?'btn-g':'')+'" onclick="toggleAdHoc(\''+t.adHocId+'\')">'+(t.done?'✓ Done':'Done')+'</button>':'')
         +'<button class="btn btn-xs btn-icon" data-tam-btn="'+rsIdx+'" onclick="taskActionMenu('+rsIdx+')" title="Reschedule, delete, or add note"><i class="ti ti-dots-vertical"></i></button>'
@@ -1749,7 +1750,12 @@ function renderDaily(){
     +'<div class="mc"><div class="mc-l">Blood / IVIS</div><div class="mc-v">'+tasks.filter(function(t){return t.type==='blood'||t.type==='ivis'}).length+'</div></div>'
     +'</div>';
   var epS=new Set();
-  raw.forEach(function(t){if(t.m&&nearEP(t.m.id,t.expId)&&!epS.has(t.mouseId)){epS.add(t.mouseId);var l=lastMs(t.m.id,t.expId);html+='<div class="alert"><i class="ti ti-alert-triangle"></i><span>Mouse <strong>'+t.mouseId+'</strong> ('+t.expId+') - burden '+(l?bShort(l.tumor_sites,false):'?')+' - <strong>approaching endpoint</strong></span>'+harvestTipHTML(t.exp)+'</div>';}});
+  raw.forEach(function(t){if(t.m&&nearEP(t.m.id,t.expId)&&!epS.has(t.mouseId))epS.add(t.mouseId);});
+  if(epS.size>0){
+    var epList=raw.filter(function(t){return epS.has(t.mouseId)}).reduce(function(acc,t){if(!acc.find(function(x){return x.mouseId===t.mouseId}))acc.push(t);return acc;},[]);
+    var epTip=epList.map(function(t){var l=lastMs(t.m.id,t.expId);return t.mouseId+' ('+t.expId+')'+(l?' '+bShort(l.tumor_sites,false):'');}).join(', ');
+    html+='<div class="alert" title="'+esc(epTip)+'" style="cursor:default"><i class="ti ti-alert-triangle"></i><span><strong>'+epS.size+' '+(epS.size===1?'mouse':'mice')+' approaching endpoint</strong> — hover for details</span></div>';
+  }
   // Distress checks always shown separately at top if any
   var distressTasks=tasks.filter(function(t){return t.type==='distress'});
   var normalTasks=tasks.filter(function(t){return t.type!=='distress'});
@@ -2596,7 +2602,7 @@ function renderMouseHist(m,eid){
         +'<td><span class="badge bg" style="font-size:9px">measure</span></td>'
         +'<td>'+sitesHTML+'</td>'
         +(multi?'<td class="mono">'+(b?b+'mm2':'--')+'</td>':'')
-        +'<td style="font-size:10px">'+(m.weight?m.weight+'g':'--')+'</td>'
+        +'<td style="font-size:10px">'+(ms.weight!=null?ms.weight+'g':'--')+'</td>'
         +'<td style="font-size:10px">'+(ms.note||'--')+(ms.edited_at?'<span style="font-size:9px;color:var(--text3);margin-left:4px">edited '+ms.edited_at+'</span>':'')+'</td>'
         +'<td style="font-size:10px;color:var(--text3)">'+(ms.logged_by||'--')+'</td>'
         +'<td><div style="display:flex;gap:3px">'
