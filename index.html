@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v84</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v85</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2511,7 +2511,7 @@ async function renderExp(eid){
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +'<label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:5px">Threshold %<input type="number" id="wt-thr" value="'+thrVal+'" placeholder="e.g. −20" style="width:72px;padding:3px 5px;font-size:11px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface2);color:var(--text)" oninput="saveWtThreshold(\''+eid+'\')"></label>'
       +'</div></div>'
-      +'<div style="font-size:10px;color:var(--text3);margin-bottom:6px">First recorded weight per mouse = 0 % baseline. Hover a line to see mouse details.</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-bottom:6px">Day 0 = each mouse\'s first recorded weight (baseline). Hover a line to see mouse ID, group, and weight.</div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'+qualWtGroups.map(function(g){var h=S.hiddenWtGrps[eid].has(g.id);return'<button id="wtgrpleg-'+g.id+'" onclick="toggleWtGrpVis(\''+eid+'\',\''+g.id+'\')" style="display:flex;align-items:center;gap:4px;font-size:10px;background:none;border:1px solid '+(h?'var(--border)':g.color)+';border-radius:12px;padding:2px 9px 2px 7px;cursor:pointer;color:'+(h?'var(--text3)':'var(--text)')+';opacity:'+(h?.5:1)+'"><span style="width:11px;height:11px;background:'+(h?'var(--border)':g.color)+';display:inline-block;border-radius:3px;flex-shrink:0"></span>'+g.name+'</button>';}).join('')+'</div>'
       +'<div style="height:480px;max-width:780px"><canvas id="weightChart">Weight data.</canvas></div></div>';
   } else if(S.expTab==='sched'){
@@ -2806,13 +2806,16 @@ function drawWeightChart(exp,groups){
   var eid=exp.id;
   var key='w'+eid;if(charts[key])charts[key].destroy();
   var miceAll=S.mice[eid]||[];
-  // Collect all dates that have at least one weight measurement
-  var allDates=new Set();
+  // Collect all relative days (days since each mouse's first weight) across all mice
+  var allDays=new Set();
   miceAll.forEach(function(m){
     var msl=(S.measurements[eid]||{})[m.id]||[];
-    msl.forEach(function(ms){if(ms.weight!=null)allDates.add(ms.measured_at);});
+    var wtPts=msl.filter(function(ms){return ms.weight!=null;}).sort(function(a,b){return a.measured_at.localeCompare(b.measured_at);});
+    if(!wtPts.length)return;
+    var baseDate=new Date(wtPts[0].measured_at);
+    wtPts.forEach(function(ms){allDays.add(Math.round((new Date(ms.measured_at)-baseDate)/86400000));});
   });
-  var labs=Array.from(allDates).sort();
+  var labs=Array.from(allDays).sort(function(a,b){return a-b;});
   if(!labs.length){ctx.parentElement.innerHTML='<div class="empty">No weight measurements recorded yet.</div>';return;}
   var datasets=[];
   if(!S.hiddenWtGrps)S.hiddenWtGrps={};if(!S.hiddenWtGrps[eid])S.hiddenWtGrps[eid]=new Set();
@@ -2823,32 +2826,35 @@ function drawWeightChart(exp,groups){
       var msl=(S.measurements[eid]||{})[m.id]||[];
       var wtPts=msl.filter(function(ms){return ms.weight!=null;}).sort(function(a,b){return a.measured_at.localeCompare(b.measured_at);});
       if(!wtPts.length)return;
+      var baseDate=new Date(wtPts[0].measured_at);
       var baseline=wtPts[0].weight;
-      // Map onto shared date axis
-      var byDate={};wtPts.forEach(function(ms){byDate[ms.measured_at]={pct:Math.round(((ms.weight-baseline)/baseline)*1000)/10,abs:ms.weight};});
-      var data=labs.map(function(d){return byDate[d]?byDate[d].pct:null;});
-      var absData=labs.map(function(d){return byDate[d]?byDate[d].abs:null;});
+      var byDay={};
+      wtPts.forEach(function(ms){
+        var d=Math.round((new Date(ms.measured_at)-baseDate)/86400000);
+        byDay[d]={pct:Math.round(((ms.weight-baseline)/baseline)*1000)/10,abs:ms.weight};
+      });
+      var data=labs.map(function(d){return byDay[d]!=null?byDay[d].pct:null;});
+      var absData=labs.map(function(d){return byDay[d]!=null?byDay[d].abs:null;});
       if(data.every(function(v){return v===null;}))return;
-      datasets.push({label:m.id,data:data,absData:absData,borderColor:g.color,backgroundColor:'transparent',tension:.3,fill:false,spanGaps:true,pointRadius:3,pointHoverRadius:5,borderWidth:1.8});
+      datasets.push({label:m.id,groupName:g.name,data:data,absData:absData,borderColor:g.color,backgroundColor:'transparent',tension:.3,fill:false,spanGaps:true,pointRadius:3,pointHoverRadius:5,borderWidth:1.8});
     });
   });
   if(!datasets.length){ctx.parentElement.innerHTML='<div class="empty">No weight data to display — toggle groups or add weight measurements.</div>';return;}
-  // Threshold line dataset
   var thr=exp.weight_threshold!=null?parseFloat(exp.weight_threshold):null;
   if(thr!=null&&!isNaN(thr)){
     datasets.push({label:'__threshold__',data:labs.map(function(){return thr;}),borderColor:'#DC2626',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false,spanGaps:true,tension:0,order:-1});
   }
   charts[key]=new Chart(ctx,{type:'line',
-    data:{labels:labs.map(function(d){return d.slice(5);}),datasets:datasets},
+    data:{labels:labs.map(function(d){return 'd'+d;}),datasets:datasets},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},
         tooltip:{filter:function(item){return item.dataset.label!=='__threshold__';},
           callbacks:{
-            title:function(items){return items[0]?labs[items[0].dataIndex]:'';},
-            label:function(c){var abs=c.dataset.absData?c.dataset.absData[c.dataIndex]:null;return c.dataset.label+': '+(c.raw!=null?(c.raw>0?'+':'')+c.raw+'%':'--')+(abs!=null?' ('+abs+'g)':'');}
+            title:function(items){return items[0]?'Day '+labs[items[0].dataIndex]:'';},
+            label:function(c){var abs=c.dataset.absData?c.dataset.absData[c.dataIndex]:null;return c.dataset.label+' ('+c.dataset.groupName+'): '+(c.raw!=null?(c.raw>0?'+':'')+c.raw+'%':'--')+(abs!=null?' — '+abs+'g':'');}
           }}},
       scales:{
-        x:{ticks:{font:{size:9},maxRotation:45},grid:{color:'rgba(128,128,128,0.08)'},title:{display:true,text:'Date',font:{size:9}}},
+        x:{ticks:{font:{size:9},maxRotation:45},grid:{color:'rgba(128,128,128,0.08)'},title:{display:true,text:'Days from first weight',font:{size:9}}},
         y:{title:{display:true,text:'Weight change (%)',font:{size:9}},ticks:{font:{size:9},callback:function(v){return(v>0?'+':'')+v+'%';}},grid:{color:'rgba(128,128,128,0.08)'},
           afterDataLimits:function(scale){var pad=5;scale.min=Math.floor((scale.min-pad)/5)*5;scale.max=Math.ceil((scale.max+pad)/5)*5;}
         }
