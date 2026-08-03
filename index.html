@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v92</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v93</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2216,7 +2216,8 @@ async function deleteMs(msId,eid){
   if(!confirm('Delete this log entry? This cannot be undone.'))return;
   await sb.from('tumor_sites').delete().eq('measurement_id',msId);
   await sb.from('measurements').delete().eq('id',msId);
-  await loadAll(eid);renderExp(eid);
+  var row=document.getElementById('histrow-'+msId);if(row)row.remove();
+  Object.keys(S.measurements[eid]||{}).forEach(function(mid){S.measurements[eid][mid]=(S.measurements[eid][mid]||[]).filter(function(ms){return ms.id!==msId;});});
 }
 async function deleteExp(eid){
   var exp=S.experiments.find(function(e){return e.id===eid});
