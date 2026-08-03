@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v88</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v89</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -357,6 +357,7 @@ function wkMon(off){var d=new Date(TODAY);var day=d.getDay();d.setDate(d.getDate
 function fmtD(iso){return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function uname(){return S.user&&S.user.name?S.user.name:'Unknown'}
+function showToast(msg){var t=document.createElement('div');t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#166534;color:#fff;padding:7px 18px;border-radius:8px;font-size:12px;z-index:9999;pointer-events:none;opacity:1;transition:opacity .4s';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.remove();},450);},1400);}
 
 // AUTH
 async function loadUsers(){
@@ -910,11 +911,13 @@ if(insErr)throw new Error(insErr.message);
         var nid=logOrder[idx+1];
         var neid=S.experiments.find(function(e){return(S.mice[e.id]||[]).find(function(mm){return mm.id===nid})});
         neid=neid?neid.id:eid;
-        var cc=document.getElementById('ilc-d-'+mid);
         await loadAll(eid);
         if(neid!==eid)await loadAll(neid);
         renderDaily();
-        openLogD(neid,nid);return;
+        openLogD(neid,nid);
+        showToast('Saved'+(sites[0]?' – '+sites[0].dim1+'\xd7'+sites[0].dim2:''));
+        setTimeout(function(){var el=document.getElementById('ilc-d-'+nid);if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});},80);
+        return;
       }
     }
     await loadAll(eid);if(S.view==='daily')renderDaily();else renderExp(eid);
