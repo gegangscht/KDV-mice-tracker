@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v89</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v90</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -481,7 +481,8 @@ async function dbLoad(){
 async function loadMs(eid){
   const ids=(S.mice[eid]||[]).map(function(m){return m.id});
   if(!ids.length){S.measurements[eid]={};return;}
-  const{data}=await sb.from('measurements').select('*,tumor_sites(*)').in('mouse_id',ids).order('measured_at');
+  const{data,error}=await sb.from('measurements').select('*,tumor_sites(*)').in('mouse_id',ids).order('measured_at');
+  console.log('[loadMs] eid='+eid+' ids='+JSON.stringify(ids)+' rows='+(data?data.length:'null')+' error='+JSON.stringify(error));
   S.measurements[eid]={};
   (data||[]).forEach(function(ms){if(!S.measurements[eid][ms.mouse_id])S.measurements[eid][ms.mouse_id]=[];S.measurements[eid][ms.mouse_id].push(ms);});
 }
