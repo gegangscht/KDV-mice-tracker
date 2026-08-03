@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v85</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v86</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -883,10 +883,13 @@ async function submitLog(eid,mid,ei){
     if(ei>=0){
       var ms=(S.measurements[eid]||{})[mid]&&(S.measurements[eid]||{})[mid][ei];
       if(ms){var msWeight2=wStr?parseFloat(wStr):null;
-      await sb.from('measurements').update({measured_at:dv,note:note,edited_at:TISO,weight:msWeight2!==null?msWeight2:ms.weight}).eq('id',ms.id);await sb.from('tumor_sites').delete().eq('measurement_id',ms.id);if(sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:ms.id})}));}
+      var{error:upErr}=await sb.from('measurements').update({measured_at:dv,note:note,edited_at:TISO,weight:msWeight2!==null?msWeight2:ms.weight}).eq('id',ms.id);
+      if(upErr)throw new Error(upErr.message);
+      await sb.from('tumor_sites').delete().eq('measurement_id',ms.id);if(sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:ms.id})}));}
     } else {
       var msWeight=wStr?parseFloat(wStr):null;
-    var msD=(await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dv,note:note,logged_by:uname(),weight:msWeight}).select().single()).data;
+      var{data:msD,error:insErr}=await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dv,note:note,logged_by:uname(),weight:msWeight}).select().single();
+      if(insErr)throw new Error(insErr.message);
       if(msD&&sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id})}));
     }
     // Only update mouse.weight when explicitly typed (used as last known weight reference)
@@ -1696,12 +1699,14 @@ async function sheetSaveRow(eid,mid){
     if(idx>=0){
       var ms=(S.measurements[eid]||{})[mid][idx];
       var msWeight=wStr?parseFloat(wStr):null;
-      await sb.from('measurements').update({note:note,edited_at:TISO,weight:msWeight!==null?msWeight:ms.weight}).eq('id',ms.id);
+      var{error:ssUpErr}=await sb.from('measurements').update({note:note,edited_at:TISO,weight:msWeight!==null?msWeight:ms.weight}).eq('id',ms.id);
+      if(ssUpErr)throw new Error(ssUpErr.message);
       await sb.from('tumor_sites').delete().eq('measurement_id',ms.id);
       if(sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:ms.id});}));
     } else {
       var msWeight2=wStr?parseFloat(wStr):null;
-      var msD=(await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dateIso,note:note,logged_by:uname(),weight:msWeight2}).select().single()).data;
+      var{data:msD,error:ssInsErr}=await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dateIso,note:note,logged_by:uname(),weight:msWeight2}).select().single();
+      if(ssInsErr)throw new Error(ssInsErr.message);
       if(msD&&sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id});}));
     }
     if(wStr){var w=parseFloat(wStr);if(!isNaN(w))await sb.from('mice').update({weight:w}).eq('id',mid);}
