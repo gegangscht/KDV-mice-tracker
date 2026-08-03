@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v91</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v92</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -357,7 +357,6 @@ function wkMon(off){var d=new Date(TODAY);var day=d.getDay();d.setDate(d.getDate
 function fmtD(iso){return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function uname(){return S.user&&S.user.name?S.user.name:'Unknown'}
-function showToast(msg){var t=document.createElement('div');t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#166534;color:#fff;padding:7px 18px;border-radius:8px;font-size:12px;z-index:9999;pointer-events:none;opacity:1;transition:opacity .4s';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.remove();},450);},1400);}
 
 // AUTH
 async function loadUsers(){
@@ -922,7 +921,6 @@ if(insErr)throw new Error(insErr.message);
         if(neid!==eid)await loadAll(neid);
         renderDaily();
         openLogD(neid,nid);
-        showToast('Saved'+(sites[0]?' – '+sites[0].dim1+'\xd7'+sites[0].dim2:''));
         setTimeout(function(){var el=document.getElementById('ilc-d-'+nid);if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});},80);
         return;
       }
@@ -2214,6 +2212,12 @@ async function unarchiveExp(eid){
   await sb.from('experiments').update({status:'active'}).eq('id',eid);
   await dbLoad();renderExps();buildExpNav();
 }
+async function deleteMs(msId,eid){
+  if(!confirm('Delete this log entry? This cannot be undone.'))return;
+  await sb.from('tumor_sites').delete().eq('measurement_id',msId);
+  await sb.from('measurements').delete().eq('id',msId);
+  await loadAll(eid);renderExp(eid);
+}
 async function deleteExp(eid){
   var exp=S.experiments.find(function(e){return e.id===eid});
   if(!confirm('PERMANENTLY DELETE '+eid+' — '+( exp?exp.name:'')+' and ALL its data (mice, measurements, events)?\n\nThis cannot be undone.'))return;
@@ -2649,6 +2653,7 @@ function renderMouseHist(m,eid){
         +'<td><div style="display:flex;gap:3px">'
         +(showD0Btn?'<button class="d0-btn" onclick="setDay0(\''+m.id+'\',\''+eid+'\',\''+ms.measured_at+'\')">'+(isD0?'Day 0 set':'Set day 0')+'</button>':'')
         +'<button class="btn btn-xs btn-icon" onclick="openLogE(\''+eid+'\',\''+m.id+'\','+msIdx+')"><i class="ti ti-pencil"></i></button>'
+        +'<button class="btn btn-xs btn-icon btn-r" title="Delete this log entry" onclick="deleteMs(\''+ms.id+'\',\''+eid+'\')"><i class="ti ti-trash"></i></button>'
         +'</div></td></tr>';
     } else {
       var ev=row.data;
