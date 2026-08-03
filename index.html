@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v94</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v95</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -466,21 +466,23 @@ async function fetchAll(query){
   return all;
 }
 async function dbLoad(){
-  const[exps,grps,evts,adhoc,users,skipped]=await Promise.all([
+  const[exps,grps,evts,users]=await Promise.all([
     sb.from('experiments').select('*').order('started',{ascending:false}),
     sb.from('experiment_groups').select('*').order('sort_order'),
     sb.from('scheduled_events').select('*').order('sort_order'),
-    sb.from('adhoc_tasks').select('*').order('task_date'),
     sb.from('lab_users').select('*').eq('active',true).order('name'),
-    sb.from('skipped_tasks').select('task_id'),
   ]);
-  var miceAll=await fetchAll(sb.from('mice').select('*').order('enrolled'));
+  const[miceAll,adhocAll,skippedAll]=await Promise.all([
+    fetchAll(sb.from('mice').select('*').order('enrolled')),
+    fetchAll(sb.from('adhoc_tasks').select('*').order('task_date')),
+    fetchAll(sb.from('skipped_tasks').select('task_id')),
+  ]);
   S.experiments=exps.data||[];S.users=users.data||[];
   S.groups={};(grps.data||[]).forEach(function(g){if(!S.groups[g.experiment_id])S.groups[g.experiment_id]=[];S.groups[g.experiment_id].push(g);});
   S.events={};(evts.data||[]).forEach(function(ev){if(!S.events[ev.group_id])S.events[ev.group_id]=[];S.events[ev.group_id].push(ev);});
   S.mice={};miceAll.forEach(function(m){if(!S.mice[m.experiment_id])S.mice[m.experiment_id]=[];S.mice[m.experiment_id].push(m);});
-  S.adhoc={};(adhoc.data||[]).forEach(function(t){var k=t.task_date;if(!S.adhoc[k])S.adhoc[k]=[];S.adhoc[k].push(t);});
-  S.skipped=new Set((skipped.data||[]).map(function(s){return s.task_id}));
+  S.adhoc={};adhocAll.forEach(function(t){var k=t.task_date;if(!S.adhoc[k])S.adhoc[k]=[];S.adhoc[k].push(t);});
+  S.skipped=new Set(skippedAll.map(function(s){return s.task_id}));
 }
 async function loadMs(eid){
   const ids=(S.mice[eid]||[]).map(function(m){return m.id});
@@ -499,9 +501,9 @@ async function loadMs(eid){
 async function loadMev(eid){
   const ids=(S.mice[eid]||[]).map(function(m){return m.id});
   if(!ids.length){S.mevents[eid]={};return;}
-  const{data}=await sb.from('mouse_events').select('*').in('mouse_id',ids).order('event_date');
+  var all=await fetchAll(sb.from('mouse_events').select('*').in('mouse_id',ids).order('event_date'));
   S.mevents[eid]={};
-  (data||[]).forEach(function(ev){if(!S.mevents[eid][ev.mouse_id])S.mevents[eid][ev.mouse_id]=[];S.mevents[eid][ev.mouse_id].push(ev);});
+  all.forEach(function(ev){if(!S.mevents[eid][ev.mouse_id])S.mevents[eid][ev.mouse_id]=[];S.mevents[eid][ev.mouse_id].push(ev);});
 }
 async function loadAll(eid){await dbLoad();if(eid)await Promise.all([loadMs(eid),loadMev(eid)]);}
 async function init(){
