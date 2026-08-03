@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v93</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v94</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -460,20 +460,25 @@ function launchApp(){
 }
 
 // DB
+async function fetchAll(query){
+  var all=[],from=0,PAGE=1000;
+  while(true){var{data,error}=await query.range(from,from+PAGE-1);if(!data||!data.length||error)break;all=all.concat(data);if(data.length<PAGE)break;from+=PAGE;}
+  return all;
+}
 async function dbLoad(){
-  const[exps,grps,evts,mice,adhoc,users,skipped]=await Promise.all([
+  const[exps,grps,evts,adhoc,users,skipped]=await Promise.all([
     sb.from('experiments').select('*').order('started',{ascending:false}),
     sb.from('experiment_groups').select('*').order('sort_order'),
     sb.from('scheduled_events').select('*').order('sort_order'),
-    sb.from('mice').select('*').order('enrolled'),
     sb.from('adhoc_tasks').select('*').order('task_date'),
     sb.from('lab_users').select('*').eq('active',true).order('name'),
     sb.from('skipped_tasks').select('task_id'),
   ]);
+  var miceAll=await fetchAll(sb.from('mice').select('*').order('enrolled'));
   S.experiments=exps.data||[];S.users=users.data||[];
   S.groups={};(grps.data||[]).forEach(function(g){if(!S.groups[g.experiment_id])S.groups[g.experiment_id]=[];S.groups[g.experiment_id].push(g);});
   S.events={};(evts.data||[]).forEach(function(ev){if(!S.events[ev.group_id])S.events[ev.group_id]=[];S.events[ev.group_id].push(ev);});
-  S.mice={};(mice.data||[]).forEach(function(m){if(!S.mice[m.experiment_id])S.mice[m.experiment_id]=[];S.mice[m.experiment_id].push(m);});
+  S.mice={};miceAll.forEach(function(m){if(!S.mice[m.experiment_id])S.mice[m.experiment_id]=[];S.mice[m.experiment_id].push(m);});
   S.adhoc={};(adhoc.data||[]).forEach(function(t){var k=t.task_date;if(!S.adhoc[k])S.adhoc[k]=[];S.adhoc[k].push(t);});
   S.skipped=new Set((skipped.data||[]).map(function(s){return s.task_id}));
 }
