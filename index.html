@@ -249,7 +249,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v86</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v87</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -889,6 +889,7 @@ async function submitLog(eid,mid,ei){
     } else {
       var msWeight=wStr?parseFloat(wStr):null;
       var{data:msD,error:insErr}=await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dv,note:note,logged_by:uname(),weight:msWeight}).select().single();
+      console.log('[submitLog] insert result',{msD,insErr,eid,mid,dv});
       if(insErr)throw new Error(insErr.message);
       if(msD&&sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id})}));
     }
