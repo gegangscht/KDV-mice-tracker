@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v98</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v99</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -268,6 +268,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
     <div class="sidebar">
       <div class="nav-sec">Technician</div>
       <div class="nav-i act" id="nav-daily" onclick="go('daily')"><i class="ti ti-calendar-today"></i> Daily tasks</div>
+      <div class="nav-i" id="nav-kepdaily" onclick="go('kepdaily')"><i class="ti ti-clipboard-list"></i> Daily palpations</div>
       <div class="nav-i" id="nav-week" onclick="go('week')"><i class="ti ti-calendar-week"></i> Week view</div>
       <div class="ndiv"></div>
       <div class="nav-sec">Experiments</div>
@@ -305,7 +306,7 @@ const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined'
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
 const S={view:'daily',curExp:null,expTab:'mice',sortBy:'exp',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{},
-  kep:{mice:[],cages:[],externalExps:[],measurements:{},mevents:{},loaded:false,tab:'watch',selected:{},sortBy:'id',sortDir:'asc'}};
+  kep:{mice:[],cages:[],externalExps:[],measurements:{},mevents:{},loaded:false,tab:'watch',selected:{},sortBy:'group',sortDir:'asc'}};
 var kepMouseOrder=[];
 var kepDailyOrder=[];
 var _kepDragIds=[];
@@ -4219,7 +4220,7 @@ function buildExpNav(){
 function go(view){
   S.view=view;S.curExp=null;S.expTab='mice';
   if(typeof clearSelection==='function')clearSelection();
-  ['daily','week','exps','new','kep'].forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.toggle('act',n===view);});
+  ['daily','week','exps','new','kep','kepdaily'].forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.toggle('act',n===view);});
   if(view==='daily'){S.dailyDate=TISO;renderDaily();}
   else if(view==='week')renderWeek();
   else if(view==='exps')renderExps();
@@ -4228,8 +4229,12 @@ function go(view){
     if(S.kep.loaded)renderKep();
     else{document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';loadKep().then(renderKep);}
   }
+  else if(view==='kepdaily'){
+    if(S.kep.loaded)renderKepDailyTop();
+    else{document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';loadKep().then(renderKepDailyTop);}
+  }
   else if(view.indexOf('exp-')===0){
-    ['daily','week','exps','new'].forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.remove('act');});
+    ['daily','week','exps','new','kep','kepdaily'].forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.remove('act');});
     S.curExp=view.replace('exp-','');window.scrollTo(0,0);renderExp(S.curExp);
   }
 }
@@ -4480,12 +4485,10 @@ function renderKep(){
     :'';
   var html='<div class="tabs">'
     +'<div class="tab '+(S.kep.tab==='watch'?'act':'')+'" onclick="STKep(\'watch\')">Watch list</div>'
-    +'<div class="tab '+(S.kep.tab==='daily'?'act':'')+'" onclick="STKep(\'daily\')">Daily palpations</div>'
     +'<div class="tab '+(S.kep.tab==='allocated'?'act':'')+'" onclick="STKep(\'allocated\')">Allocated</div>'
     +'<div class="tab '+(S.kep.tab==='needs'?'act':'')+'" onclick="STKep(\'needs\')">Needs KEPs</div>'
     +'</div>';
   if(S.kep.tab==='watch')html+=renderKepWatchList();
-  else if(S.kep.tab==='daily')html+=renderKepDaily();
   else if(S.kep.tab==='allocated')html+=renderKepAllocatedView();
   else html+=renderKepNeedsKepsPanel();
   document.getElementById('content').innerHTML=html;
@@ -4497,57 +4500,72 @@ function kepQualifyingMs(kmid){
     return ms.kep_tumor_sites&&ms.kep_tumor_sites.some(function(s){return s.dim1||s.status==='nm';});
   });
 }
+function kepGroupMembers(cageId){
+  return S.kep.mice.filter(function(m){return m.kep_cage_id===cageId&&m.status==='active'&&m.alloc_status==='none';}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+}
 function kepCageLabel(cageId){
   if(!cageId)return'Ungrouped';
-  var idx=S.kep.cages.findIndex(function(c){return c.id===cageId;});
-  return idx>=0?'Group '+(idx+1):'Ungrouped';
+  var members=kepGroupMembers(cageId);
+  return members.length?'· '+members[0].id:'Ungrouped';
+}
+function kepGroupDropdownLabel(cageId){
+  var members=kepGroupMembers(cageId);
+  if(!members.length)return'(empty group)';
+  return'With '+members[0].id+(members.length>1?' +'+(members.length-1)+' more':'');
 }
 function ageWeeks(dob){if(!dob)return null;return(new Date(TISO)-new Date(dob))/86400000/7;}
 
-// --- Watch list: sortable table, grouped via chips + drag-and-drop ---
+// --- Watch list: grouped-cluster view by default (like the spreadsheet — adjacent, no numbering), or sortable flat list ---
 function kepSetSort(field){
+  if(field==='group'){S.kep.sortBy='group';renderKep();return;}
   if(S.kep.sortBy===field)S.kep.sortDir=S.kep.sortDir==='asc'?'desc':'asc';
   else{S.kep.sortBy=field;S.kep.sortDir='asc';}
   renderKep();
 }
 function kepSortArrow(field){return S.kep.sortBy!==field?'':(S.kep.sortDir==='asc'?' ↑':' ↓');}
+function kepWatchOrder(mice){
+  if(S.kep.sortBy==='id'||S.kep.sortBy==='dob'){
+    return mice.slice().sort(function(a,b){
+      var av=S.kep.sortBy==='dob'?(a.dob||''):a.id,bv=S.kep.sortBy==='dob'?(b.dob||''):b.id;
+      var cmp=S.kep.sortBy==='dob'?(av<bv?-1:av>bv?1:0):av.localeCompare(bv,undefined,{numeric:true});
+      return S.kep.sortDir==='asc'?cmp:-cmp;
+    });
+  }
+  var order=[];
+  S.kep.cages.forEach(function(c){
+    var members=mice.filter(function(m){return m.kep_cage_id===c.id;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+    if(members.length)order=order.concat(members).concat([null]);
+  });
+  var ungrouped=mice.filter(function(m){return!m.kep_cage_id;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+  return order.concat(ungrouped);
+}
 function renderKepWatchList(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
   if(!mice.length)return'<div class="empty">No KEP mice being watched yet — add some with "Add KEP mice".</div>';
-  var sorted=mice.slice().sort(function(a,b){
-    var av=S.kep.sortBy==='dob'?(a.dob||''):a.id,bv=S.kep.sortBy==='dob'?(b.dob||''):b.id;
-    var cmp=S.kep.sortBy==='dob'?(av<bv?-1:av>bv?1:0):av.localeCompare(bv,undefined,{numeric:true});
-    return S.kep.sortDir==='asc'?cmp:-cmp;
-  });
-  kepMouseOrder=sorted.map(function(m){return m.id;});
-  var html='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.5rem">';
-  S.kep.cages.forEach(function(c,i){
-    var n=mice.filter(function(m){return m.kep_cage_id===c.id;}).length;
-    html+='<div class="badge bp" style="font-size:10px;padding:3px 8px" ondragover="event.preventDefault()" ondrop="kepDrop(event,\''+c.id+'\')">Group '+(i+1)+' ('+n+')</div>';
-  });
-  var ungroupedN=mice.filter(function(m){return!m.kep_cage_id;}).length;
-  html+='<div class="badge" style="font-size:10px;padding:3px 8px" ondragover="event.preventDefault()" ondrop="kepDrop(event,null)">Ungrouped ('+ungroupedN+')</div>';
-  html+='<div class="badge" style="font-size:10px;padding:3px 8px;border-style:dashed;color:var(--text3)" ondragover="event.preventDefault()" ondrop="kepDropNew(event)">+ New group (drop here)</div>';
-  html+='</div>';
+  var ordered=kepWatchOrder(mice);
+  kepMouseOrder=ordered.filter(Boolean).map(function(m){return m.id;});
+  var html='<div style="display:flex;gap:6px;align-items:center;margin-bottom:.5rem">'
+    +'<button class="btn btn-xs'+(S.kep.sortBy==='group'?' btn-p':'')+'" onclick="kepSetSort(\'group\')">Grouped view</button>'
+    +'<button class="btn btn-xs" onclick="showKepGroupBuilder()"><i class="ti ti-search"></i> Build group by barcode</button>'
+    +'</div>';
   html+='<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
   html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border)">'
     +'<th style="padding:6px 8px;width:24px"></th>'
     +'<th style="padding:6px 8px;cursor:pointer" onclick="kepSetSort(\'id\')">Barcode'+kepSortArrow('id')+'</th>'
     +'<th style="padding:6px 8px;cursor:pointer" onclick="kepSetSort(\'dob\')">DOB'+kepSortArrow('dob')+'</th>'
     +'<th style="padding:6px 8px">Age (wks)</th>'
-    +'<th style="padding:6px 8px">Group</th>'
     +'<th style="padding:6px 8px">Last log</th>'
     +'<th style="padding:6px 8px"></th></tr></thead><tbody>';
-  sorted.forEach(function(m){
+  ordered.forEach(function(m){
+    if(!m){html+='<tr><td colspan="6" style="height:10px;border:none"></td></tr>';return;}
     var wks=ageWeeks(m.dob);
     var due=wks!=null&&wks>=21.7;
     var lastQ=kepQualifyingMs(m.id);var last=lastQ.length?lastQ[lastQ.length-1]:null;
-    html+='<tr draggable="true" ondragstart="kepDragStart(event,\''+m.id+'\')" style="border-bottom:.5px solid var(--border)">'
+    html+='<tr draggable="true" ondragstart="kepDragStart(event,\''+m.id+'\')" ondragover="event.preventDefault()" ondrop="kepDropOnMouse(event,\''+m.id+'\')" style="border-bottom:.5px solid var(--border)">'
       +'<td style="padding:6px 8px"><input type="checkbox" class="kep-chk" data-kmid="'+m.id+'" '+(S.kep.selected[m.id]?'checked':'')+' onclick="onKepRowCheck(event,this)" style="width:13px;height:13px"></td>'
       +'<td style="padding:6px 8px" class="mono">'+m.id+'</td>'
       +'<td style="padding:6px 8px">'+(m.dob?fmtD(m.dob):'--')+'</td>'
       +'<td style="padding:6px 8px'+(due?';color:var(--amber);font-weight:600':'')+'">'+(wks!=null?wks.toFixed(1):'--')+(due?' <span class="badge ba" style="font-size:8px">5mo+</span>':'')+'</td>'
-      +'<td style="padding:6px 8px">'+kepCageLabel(m.kep_cage_id)+'</td>'
       +'<td style="padding:6px 8px">'+(last?bShort(last.kep_tumor_sites,true):'--')+'</td>'
       +'<td style="padding:6px 8px;text-align:right;white-space:nowrap">'
       +'<button class="btn btn-xs" onclick="showKepLog(\''+m.id+'\')" title="Log finding"><i class="ti ti-ruler-2"></i></button> '
@@ -4558,28 +4576,99 @@ function renderKepWatchList(){
   html+='</tbody></table></div>';
   return html;
 }
-
-// --- Daily palpations: fast quick-entry workflow ---
-function kepShorthandOf(s){
-  if(!s)return'';
-  if(s.status==='nm')return(s.location||'')+(s.location==='skin'?'':' nm');
-  if(s.status==='gone')return(s.location||'')+' gone';
-  return(s.location?s.location+' ':'')+s.dim1+'x'+s.dim2;
+async function kepDropOnMouse(event,targetId){
+  event.preventDefault();event.stopPropagation();
+  if(!_kepDragIds.length)return;
+  var ids=_kepDragIds.slice();_kepDragIds=[];
+  if(ids.indexOf(targetId)>=0)return;
+  var target=S.kep.mice.find(function(x){return x.id===targetId;});
+  if(!target)return;
+  var groupId=target.kep_cage_id;
+  if(!groupId){
+    var g=await createKepGroup();if(!g)return;
+    groupId=g.id;
+    ids.push(targetId);
+  }
+  await moveKepMiceToGroup(ids,groupId);
 }
-function parseKepQuickShorthand(text,lastSite){
-  text=(text||'').trim();
-  if(!text)return null;
-  var lower=text.toLowerCase();
-  if(lower==='skin')return{location:'skin',is_skin:true,status:'nm',dim1:null,dim2:null};
-  if(lower==='gone'){var loc=lastSite?lastSite.location:'';return{location:loc,is_skin:loc==='skin',status:'gone',dim1:0,dim2:0};}
-  if(lower==='nm'){var loc2=lastSite?lastSite.location:'';return{location:loc2,is_skin:loc2==='skin',status:'nm',dim1:null,dim2:null};}
-  var locMatch=LOCS.find(function(l){return lower.indexOf(l.toLowerCase())===0;});
-  var rest=locMatch?text.slice(locMatch.length).trim():text;
-  var sz=parseSz(rest);
-  if(locMatch&&sz)return{location:locMatch,is_skin:locMatch==='skin',status:'ok',dim1:sz.v1,dim2:sz.v2};
-  if(!locMatch&&sz){var loc3=lastSite?lastSite.location:'';return{location:loc3,is_skin:loc3==='skin',status:'ok',dim1:sz.v1,dim2:sz.v2};}
-  if(locMatch&&!sz)return{location:locMatch,is_skin:locMatch==='skin',status:'nm',dim1:null,dim2:null};
-  return undefined;
+
+// --- Build a group by typing barcode fragments ---
+function showKepGroupBuilder(){
+  S._kepGroupBuilder={staged:[],results:[],activeIdx:-1};
+  showModal('Build a group',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Type part of a barcode, use ↑/↓ to pick a match, Enter to add it. Repeat for more mice, then click Make group.</div>'
+    +'<div class="fg" style="margin-bottom:6px"><label class="fl">Search barcode</label><input class="fi" id="kgb-search" autocomplete="off" placeholder="e.g. 8523" oninput="kgbSearch()" onkeydown="kgbKey(event)"></div>'
+    +'<div id="kgb-results"></div>'
+    +'<div id="kgb-staged" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:4px"></div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitKepGroupBuilder()"><i class="ti ti-check"></i> Make group</button>',true);
+  setTimeout(function(){var el=document.getElementById('kgb-search');if(el)el.focus();renderKgbStaged();},50);
+}
+function kgbSearch(){
+  var b=S._kepGroupBuilder;if(!b)return;
+  var q=(document.getElementById('kgb-search').value||'').trim();
+  if(!q){b.results=[];b.activeIdx=-1;renderKgbResults();return;}
+  var stagedIds=b.staged.map(function(m){return m.id;});
+  b.results=S.kep.mice.filter(function(m){
+    return m.status==='active'&&m.id.indexOf(q)>=0&&stagedIds.indexOf(m.id)<0;
+  }).slice(0,8);
+  b.activeIdx=b.results.length?0:-1;
+  renderKgbResults();
+}
+function renderKgbResults(){
+  var b=S._kepGroupBuilder;if(!b)return;
+  var resEl=document.getElementById('kgb-results');if(!resEl)return;
+  var matches=b.results||[];
+  var q=(document.getElementById('kgb-search')&&document.getElementById('kgb-search').value)||'';
+  if(!matches.length){resEl.innerHTML=q?'<div style="font-size:10px;color:var(--text3);padding:4px">No matches</div>':'';return;}
+  resEl.innerHTML='<div style="border:1px solid var(--border);border-radius:var(--r);max-height:160px;overflow-y:auto">'
+    +matches.map(function(m,i){
+      var active=i===b.activeIdx;
+      return'<div style="padding:5px 8px;font-size:11px;cursor:pointer;'+(active?'background:var(--blue-bg);color:var(--blue)':'')+'" onmouseenter="S._kepGroupBuilder.activeIdx='+i+';renderKgbResults()" onclick="kgbSelect('+i+')">'
+        +m.id+' <span style="font-size:9px;color:var(--text3)">'+(m.kep_cage_id?kepCageLabel(m.kep_cage_id):'ungrouped')+'</span>'
+        +'</div>';
+    }).join('')
+    +'</div>';
+}
+function kgbKey(e){
+  var b=S._kepGroupBuilder;if(!b)return;
+  var matches=b.results||[];
+  if(e.key==='ArrowDown'){e.preventDefault();if(matches.length)b.activeIdx=Math.min((b.activeIdx<0?-1:b.activeIdx)+1,matches.length-1);renderKgbResults();}
+  else if(e.key==='ArrowUp'){e.preventDefault();if(matches.length)b.activeIdx=Math.max(b.activeIdx-1,0);renderKgbResults();}
+  else if(e.key==='Enter'){e.preventDefault();if(b.activeIdx>=0&&matches[b.activeIdx])kgbSelect(b.activeIdx);}
+}
+function kgbSelect(i){
+  var b=S._kepGroupBuilder;if(!b)return;
+  var m=(b.results||[])[i];if(!m)return;
+  b.staged.push(m);
+  var input=document.getElementById('kgb-search');if(input)input.value='';
+  b.results=[];b.activeIdx=-1;
+  renderKgbResults();renderKgbStaged();
+  if(input)input.focus();
+}
+function kgbRemove(i){var b=S._kepGroupBuilder;if(!b)return;b.staged.splice(i,1);renderKgbStaged();}
+function renderKgbStaged(){
+  var b=S._kepGroupBuilder;if(!b)return;
+  var el=document.getElementById('kgb-staged');if(!el)return;
+  var staged=b.staged||[];
+  el.innerHTML=staged.length
+    ?staged.map(function(m,i){return'<span class="badge bp" style="font-size:10px">'+m.id+' <i class="ti ti-x" style="cursor:pointer;margin-left:3px" onclick="kgbRemove('+i+')"></i></span>';}).join('')
+    :'<span style="font-size:10px;color:var(--text3)">No mice added yet</span>';
+}
+async function submitKepGroupBuilder(){
+  var b=S._kepGroupBuilder;if(!b||!b.staged.length){alert('Add at least one mouse');return;}
+  var g=await createKepGroup();if(!g)return;
+  closeModal();
+  await moveKepMiceToGroup(b.staged.map(function(m){return m.id;}),g.id);
+}
+
+// --- Daily palpations: full multi-site inline form, modeled on the experiment daily log form (no weight) ---
+// Top-level sidebar view (separate from the KEP watch tab bar) — technicians land here directly, same as Daily tasks.
+function renderKepDailyTop(){
+  document.getElementById('tb-acts').innerHTML='';
+  document.getElementById('pg-title').textContent='Daily palpations (KEP)';
+  document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add KEP mice</button>';
+  document.getElementById('content').innerHTML=renderKepDaily();
 }
 function renderKepDaily(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
@@ -4600,23 +4689,40 @@ function renderKepDaily(){
   html+='</div>';
   return html;
 }
+function kepDailyFormHTML(kmid,templateSites,lastNote,submitFn){
+  submitFn=submitFn||'submitKepDailyLog';
+  var siteCols=templateSites.length
+    ?templateSites.map(function(site,si){return kepSiteRowHTML(kmid,si,site);}).join('')
+    :kepBlankSiteRowHTML(kmid,0);
+  return '<div class="il-row" id="il-'+kmid+'" onkeydown="kepDailyRowKey(event,\''+kmid+'\',\''+submitFn+'\')" style="display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
+    +siteCols
+    +'<button class="btn btn-xs btn-icon" id="il-addsite-'+kmid+'" onclick="addKepBlankSite(\''+kmid+'\')" title="Add tumor site"><i class="ti ti-plus"></i></button>'
+    +'<div class="il-g" style="min-width:130px;flex:1"><div class="il-l">Note</div><input class="il-in" id="il-n-'+kmid+'" value="'+(lastNote||'')+'" style="width:100%"></div>'
+    +'<button class="btn btn-g btn-xs" onclick="'+submitFn+'(\''+kmid+'\')"><i class="ti ti-check"></i></button>'
+    +'</div>';
+}
 function kepDailyRowHTML(m){
   var msl=kepQualifyingMs(m.id);var last=msl.length?msl[msl.length-1]:null;
-  var lastSite=last&&last.kep_tumor_sites&&last.kep_tumor_sites.length?last.kep_tumor_sites[0]:null;
+  var templateSites=last&&last.kep_tumor_sites&&last.kep_tumor_sites.length?last.kep_tumor_sites:[];
   var doneToday=!!(last&&last.measured_at===TISO);
-  var fieldHtml=doneToday
-    ?'<span class="mono" style="font-size:11px">'+kepShorthandOf(lastSite)+'</span> <button class="btn btn-xs btn-icon" onclick="kepReopenQuick(\''+m.id+'\')" title="Edit"><i class="ti ti-pencil"></i></button>'
-    :'<input class="il-in" id="kq-'+m.id+'" value="'+(lastSite?kepShorthandOf(lastSite):'')+'" style="width:110px" onkeydown="kepQuickKey(event,\''+m.id+'\')">';
-  return '<div id="kqrow-'+m.id+'" style="display:flex;align-items:center;gap:8px;padding:6px .75rem;border-bottom:.5px solid var(--border);'+(doneToday?'opacity:.5':'')+'">'
-    +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
+  var formHtml=doneToday
+    ?'<span style="font-size:10px;color:var(--green)"><i class="ti ti-check"></i> Logged today: '+bShort(last.kep_tumor_sites,true)+(last.note?' — '+last.note:'')+'</span> <button class="btn btn-xs btn-icon" onclick="kepReopenDaily(\''+m.id+'\')" title="Edit"><i class="ti ti-pencil"></i></button>'
+    :kepDailyFormHTML(m.id,templateSites,last?last.note:'');
+  return '<div id="kqrow-'+m.id+'" style="padding:8px .75rem;border-bottom:.5px solid var(--border);'+(doneToday?'opacity:.6':'')+'">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+    +'<span class="mono" style="font-size:11px">'+m.id+'</span>'
     +'<span class="badge bp" style="font-size:8px">'+kepCageLabel(m.kep_cage_id)+'</span>'
-    +'<div id="kqfield-'+m.id+'" style="flex:1;display:flex;justify-content:flex-end;gap:4px">'+fieldHtml+'</div>'
+    +'</div>'
+    +'<div id="kqform-'+m.id+'">'+formHtml+'</div>'
     +'</div>';
 }
 function kepDailyRow2HTML(m){
   var wks=ageWeeks(m.dob);
   var due=wks!=null&&wks>=21.7;
-  return '<div id="kqrow2-'+m.id+'" style="display:flex;align-items:center;gap:8px;padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+'">'
+  var allMs=S.kep.measurements[m.id]||[];
+  var lastAny=allMs.length?allMs[allMs.length-1]:null;
+  return '<div id="kqrow2-'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+'">'
+    +'<div style="display:flex;align-items:center;gap:8px">'
     +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
     +'<span class="badge bp" style="font-size:8px">'+kepCageLabel(m.kep_cage_id)+'</span>'
     +'<span style="font-size:9px;color:var(--text3);width:60px">'+(wks!=null?wks.toFixed(1)+'w':'?')+'</span>'
@@ -4625,76 +4731,81 @@ function kepDailyRow2HTML(m){
     +'<button class="btn btn-xs" onclick="kepQuickPromptMeasure(\''+m.id+'\')">Tumor measured</button>'
     +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'possible\')">Possible tumor</button>'
     +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'skin\')">Skin</button>'
-    +'</div></div>';
+    +'</div></div>'
+    +(lastAny&&lastAny.note?'<div style="font-size:9px;color:var(--text3);margin-top:2px;padding-left:88px">'+lastAny.note+' ('+fmtD(lastAny.measured_at)+')</div>':'')
+    +'</div>';
 }
-function kepQuickKey(e,kmid){if(e.key==='Enter'){e.preventDefault();submitKepQuickLog(kmid);}}
+function kepDailyRowKey(e,kmid,submitFn){
+  if(e.key!=='Enter')return;
+  var t=e.target;
+  if(!t||t.tagName==='SELECT'||t.tagName==='BUTTON')return;
+  e.preventDefault();
+  window[submitFn||'submitKepDailyLog'](kmid);
+}
 function kepDailyAdvance(kmid){
   var idx=kepDailyOrder.indexOf(kmid);
   for(var i=idx+1;i<kepDailyOrder.length;i++){
-    var el=document.getElementById('kq-'+kepDailyOrder[i]);
-    if(el){el.focus();el.select();return;}
+    var nid=kepDailyOrder[i];
+    var el=document.getElementById('il-sz-'+nid+'-0')||document.getElementById('il-loc-sel-'+nid+'-0');
+    if(el){el.focus();if(el.select)el.select();return;}
   }
 }
-function kepReopenQuick(kmid){
+function kepReopenDaily(kmid){
   var row=document.getElementById('kqrow-'+kmid);if(row)row.style.opacity='1';
-  var field=document.getElementById('kqfield-'+kmid);if(!field)return;
+  var formWrap=document.getElementById('kqform-'+kmid);if(!formWrap)return;
   var msl=kepQualifyingMs(kmid);var last=msl.length?msl[msl.length-1]:null;
-  var lastSite=last&&last.kep_tumor_sites&&last.kep_tumor_sites.length?last.kep_tumor_sites[0]:null;
-  field.innerHTML='<input class="il-in" id="kq-'+kmid+'" value="'+(lastSite?kepShorthandOf(lastSite):'')+'" style="width:110px" onkeydown="kepQuickKey(event,\''+kmid+'\')">';
-  var el=document.getElementById('kq-'+kmid);if(el){el.focus();el.select();}
+  var templateSites=last&&last.kep_tumor_sites&&last.kep_tumor_sites.length?last.kep_tumor_sites:[];
+  formWrap.innerHTML=kepDailyFormHTML(kmid,templateSites,last?last.note:'');
 }
-async function submitKepQuickLog(kmid){
-  var input=document.getElementById('kq-'+kmid);if(!input)return;
-  var msl=kepQualifyingMs(kmid);var last=msl.length?msl[msl.length-1]:null;
-  var lastSite=last&&last.kep_tumor_sites&&last.kep_tumor_sites.length?last.kep_tumor_sites[0]:null;
-  var parsed=parseKepQuickShorthand(input.value,lastSite);
-  if(parsed===null){kepDailyAdvance(kmid);return;}
-  if(parsed===undefined){input.style.borderColor='var(--red)';input.title='Could not understand this — try "skin", "3L 5x5", or "gone"';return;}
-  input.disabled=true;
-  var{data:msD,error:insErr}=await sb.from('kep_measurements').insert({kep_mouse_id:kmid,measured_at:TISO,logged_by:uname()}).select().single();
-  if(insErr){alert('Error: '+insErr.message);input.disabled=false;return;}
-  var{data:siteD,error:siteErr}=await sb.from('kep_tumor_sites').insert(Object.assign({},parsed,{measurement_id:msD.id,sort_order:0})).select().single();
-  if(siteErr){alert('Error: '+siteErr.message);input.disabled=false;return;}
-  msD.kep_tumor_sites=[siteD];
+async function submitKepDailyLog(kmid){
+  var note=((document.getElementById('il-n-'+kmid)&&document.getElementById('il-n-'+kmid).value)||'').trim();
+  var sites=getKepSites(kmid);
+  if(!sites.length&&!note){alert('Nothing to save — enter a measurement or note.');return;}
+  var{data:msD,error:insErr}=await sb.from('kep_measurements').insert({kep_mouse_id:kmid,measured_at:TISO,note:note,logged_by:uname()}).select().single();
+  if(insErr){alert('Error: '+insErr.message);return;}
+  msD.kep_tumor_sites=[];
+  if(sites.length){
+    var{data:sitesD,error:siteErr}=await sb.from('kep_tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id});})).select();
+    if(siteErr){alert('Error: '+siteErr.message);return;}
+    msD.kep_tumor_sites=sitesD;
+  }
   if(!S.kep.measurements[kmid])S.kep.measurements[kmid]=[];
   S.kep.measurements[kmid].push(msD);
   var row=document.getElementById('kqrow-'+kmid);
-  if(row){
-    row.style.opacity='.5';
-    var field=document.getElementById('kqfield-'+kmid);
-    if(field)field.innerHTML='<span class="mono" style="font-size:11px">'+kepShorthandOf(siteD)+'</span> <button class="btn btn-xs btn-icon" onclick="kepReopenQuick(\''+kmid+'\')" title="Edit"><i class="ti ti-pencil"></i></button>';
-  }
+  var formWrap=document.getElementById('kqform-'+kmid);
+  if(row)row.style.opacity='.6';
+  if(formWrap)formWrap.innerHTML='<span style="font-size:10px;color:var(--green)"><i class="ti ti-check"></i> Logged today: '+bShort(msD.kep_tumor_sites,true)+(msD.note?' — '+msD.note:'')+'</span> <button class="btn btn-xs btn-icon" onclick="kepReopenDaily(\''+kmid+'\')" title="Edit"><i class="ti ti-pencil"></i></button>';
   kepDailyAdvance(kmid);
 }
 function kepQuickPromptMeasure(kmid){
   var field=document.getElementById('kq2field-'+kmid);if(!field)return;
-  field.innerHTML='<input class="il-in" id="kq2-'+kmid+'" placeholder="3L 5x5" style="width:110px" onkeydown="kepQuick2Key(event,\''+kmid+'\')">';
-  var el=document.getElementById('kq2-'+kmid);if(el)el.focus();
+  field.innerHTML=kepDailyFormHTML(kmid,[],'','submitKepPromote');
+  var el=document.getElementById('il-loc-sel-'+kmid+'-0');if(el)el.focus();
 }
-function kepQuick2Key(e,kmid){if(e.key==='Enter'){e.preventDefault();kepQuickPromoteSubmit(kmid);}}
-async function kepInsertQuickMeasurement(kmid,site,note){
+async function kepInsertQuickMeasurement(kmid,sites,note){
   var{data:msD,error:insErr}=await sb.from('kep_measurements').insert({kep_mouse_id:kmid,measured_at:TISO,note:note||null,logged_by:uname()}).select().single();
   if(insErr){alert('Error: '+insErr.message);return false;}
-  if(site){
-    var{error:siteErr}=await sb.from('kep_tumor_sites').insert(Object.assign({},site,{measurement_id:msD.id,sort_order:0}));
+  if(sites&&sites.length){
+    var{error:siteErr}=await sb.from('kep_tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id});}));
     if(siteErr){alert('Error: '+siteErr.message);return false;}
   }
   return true;
 }
-async function kepQuickPromoteSubmit(kmid){
-  var input=document.getElementById('kq2-'+kmid);if(!input)return;
-  var parsed=parseKepQuickShorthand(input.value,null);
-  if(!parsed){input.style.borderColor='var(--red)';return;}
-  var ok=await kepInsertQuickMeasurement(kmid,parsed,null);
+function renderKepCurrent(){if(S.view==='kepdaily')renderKepDailyTop();else renderKep();}
+async function submitKepPromote(kmid){
+  var note=((document.getElementById('il-n-'+kmid)&&document.getElementById('il-n-'+kmid).value)||'').trim();
+  var sites=getKepSites(kmid);
+  if(!sites.length){alert('Enter at least one tumor site');return;}
+  var ok=await kepInsertQuickMeasurement(kmid,sites,note||null);
   if(!ok)return;
-  await loadKep();renderKep();
+  await loadKep();renderKepCurrent();
 }
 async function kepQuickAction(kmid,kind){
-  var site=kind==='skin'?{location:'skin',is_skin:true,status:'nm',dim1:null,dim2:null}:null;
+  var sites=kind==='skin'?[{location:'skin',is_skin:true,status:'nm',dim1:null,dim2:null,sort_order:0}]:[];
   var note=kind==='possible'?'Possible tumor':null;
-  var ok=await kepInsertQuickMeasurement(kmid,site,note);
+  var ok=await kepInsertQuickMeasurement(kmid,sites,note);
   if(!ok)return;
-  await loadKep();renderKep();
+  await loadKep();renderKepCurrent();
 }
 
 // --- Selection + floating bar ---
@@ -4732,7 +4843,7 @@ function updateKepFloatBar(){
   var sel=document.getElementById('kep-float-group-sel');
   if(sel){
     sel.innerHTML='<option value="new">+ New group</option>'
-      +S.kep.cages.map(function(c,i){return'<option value="'+c.id+'">Group '+(i+1)+'</option>';}).join('')
+      +S.kep.cages.filter(function(c){return kepGroupMembers(c.id).length;}).map(function(c){return'<option value="'+c.id+'">'+kepGroupDropdownLabel(c.id)+'</option>';}).join('')
       +'<option value="">Ungrouped</option>';
   }
 }
@@ -4778,19 +4889,6 @@ function kepDragStart(event,mid){
   _kepDragIds=S.kep.selected[mid]?Object.keys(S.kep.selected):[mid];
   event.dataTransfer.effectAllowed='move';
   event.dataTransfer.setData('text/plain',mid);
-}
-function kepDrop(event,groupId){
-  event.preventDefault();
-  if(!_kepDragIds.length)return;
-  var ids=_kepDragIds.slice();_kepDragIds=[];
-  moveKepMiceToGroup(ids,groupId);
-}
-async function kepDropNew(event){
-  event.preventDefault();
-  if(!_kepDragIds.length)return;
-  var ids=_kepDragIds.slice();_kepDragIds=[];
-  var g=await createKepGroup();if(!g)return;
-  await moveKepMiceToGroup(ids,g.id);
 }
 
 // --- Batch add ---
@@ -4860,7 +4958,7 @@ async function submitKepBulkAdd(){
     else{await sb.from('kep_mouse_events').insert({kep_mouse_id:r.id,event_date:TISO,event_type:'created',label:'Added to KEP watch',logged_by:uname()});}
   }
   if(errors.length)alert('Some mice could not be added:\n'+errors.join('\n'));
-  closeModal();await loadKep();renderKep();
+  closeModal();await loadKep();renderKepCurrent();
 }
 
 // --- Log finding ---
@@ -5033,7 +5131,8 @@ function kepActionMenu(event,kmid){
   var menu=document.createElement('div');
   menu.id=id;
   menu.style.cssText='position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:1000;padding:3px;display:flex;flex-direction:column;gap:2px;min-width:190px';
-  menu.innerHTML='<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepMoveToExperiment(\''+kmid+'\')"><i class="ti ti-arrows-exchange"></i> Move to experiment (real)</button>'
+  menu.innerHTML='<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepEditMouse(\''+kmid+'\')"><i class="ti ti-pencil"></i> Edit mouse</button>'
+    +'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepMoveToExperiment(\''+kmid+'\')"><i class="ti ti-arrows-exchange"></i> Move to experiment (real)</button>'
     +'<button class="btn btn-xs btn-r" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepDeceased(\''+kmid+'\')"><i class="ti ti-heart-broken"></i> Mark deceased</button>';
   document.body.appendChild(menu);
   var r=btn.getBoundingClientRect();
@@ -5044,6 +5143,28 @@ function kepActionMenu(event,kmid){
   menu.style.left=left+'px';
   function closeOnOutside(e){if(!menu.contains(e.target)&&e.target!==btn){menu.remove();document.removeEventListener('click',closeOnOutside);}}
   setTimeout(function(){document.addEventListener('click',closeOnOutside);},0);
+}
+function showKepEditMouse(kmid){
+  var m=S.kep.mice.find(function(x){return x.id===kmid;});if(!m)return;
+  S._kepEditCtx={kmid:kmid};
+  showModal('Edit mouse — '+kmid,
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">DOB</label><input class="fi" id="ke-dob" type="date" value="'+(m.dob||'')+'"></div>'
+    +'<div class="fg"><label class="fl">Strain</label><input class="fi" id="ke-strain" value="'+(m.strain||'')+'"></div>'
+    +'<div class="fg"><label class="fl">Genotype</label><input class="fi" id="ke-geno" value="'+(m.genotype||'')+'"></div>'
+    +'<div class="fg full"><label class="fl">Notes</label><textarea class="fi" id="ke-notes" rows="2" style="resize:vertical">'+(m.notes||'')+'</textarea></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitKepEditMouse()"><i class="ti ti-check"></i> Save</button>');
+}
+async function submitKepEditMouse(){
+  var d=S._kepEditCtx;if(!d)return;
+  var dob=(document.getElementById('ke-dob')&&document.getElementById('ke-dob').value)||null;
+  var strain=(document.getElementById('ke-strain')&&document.getElementById('ke-strain').value)||'';
+  var geno=(document.getElementById('ke-geno')&&document.getElementById('ke-geno').value)||'';
+  var notes=(document.getElementById('ke-notes')&&document.getElementById('ke-notes').value)||'';
+  await sb.from('kep_mice').update({dob:dob,strain:strain,genotype:geno,notes:notes}).eq('id',d.kmid);
+  closeModal();await loadKep();renderKep();
 }
 
 // --- Allocation (soft — no real transfer yet) ---
