@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v96</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v97</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -4677,44 +4677,70 @@ async function kepDropNew(event){
 }
 
 // --- Batch add ---
+function parseKepDob(v){
+  v=(v||'').trim();if(!v)return null;
+  var m=v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m)return m[3]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[1]).slice(-2);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v;
+  if(/^\d+$/.test(v)){var d=new Date(Date.UTC(1899,11,30));d.setUTCDate(d.getUTCDate()+parseInt(v,10));return d.toISOString().slice(0,10);}
+  return null;
+}
+function parseKepPaste(raw){
+  return raw.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length;}).map(function(line){
+    var parts=line.indexOf('\t')>=0?line.split('\t'):line.split(',');
+    parts=parts.map(function(p){return p.trim();});
+    var dobRaw=parts[3]||'';
+    return{id:parts[0]||'',strain:parts[1]||'',genotype:parts[2]||'',dobRaw:dobRaw,dob:parseKepDob(dobRaw)};
+  });
+}
+function renderKepPastePreview(raw){
+  var prev=document.getElementById('ken-preview');if(!prev)return;
+  var rows=parseKepPaste(raw);
+  if(!rows.length){prev.innerHTML='';return;}
+  var html='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--text3)">'
+    +'<th style="padding:2px 6px">Barcode</th><th style="padding:2px 6px">Strain</th><th style="padding:2px 6px">Genotype</th><th style="padding:2px 6px">DOB</th></tr></thead><tbody>';
+  var nBad=0;
+  rows.forEach(function(r){
+    var bad=!r.id||!/^\d+$/.test(r.id)||(r.dobRaw&&!r.dob);
+    if(bad)nBad++;
+    html+='<tr style="'+(bad?'color:var(--red)':'')+'">'
+      +'<td style="padding:2px 6px" class="mono">'+(r.id||'--')+'</td>'
+      +'<td style="padding:2px 6px">'+(r.strain||'--')+'</td>'
+      +'<td style="padding:2px 6px">'+(r.genotype||'--')+'</td>'
+      +'<td style="padding:2px 6px">'+(r.dob||(r.dobRaw?'? '+r.dobRaw:'--'))+'</td>'
+      +'</tr>';
+  });
+  html+='</tbody></table><div style="margin-top:4px;color:var(--text3)">'+rows.length+' row'+(rows.length>1?'s':'')
+    +(nBad?' — <span style="color:var(--red)">'+nBad+' row'+(nBad>1?'s':'')+' have a missing/invalid barcode or unparseable date and will be skipped</span>':'')
+    +'</div>';
+  prev.innerHTML=html;
+}
 function showKepBulkAdd(){
   showModal('Add KEP mice',
-    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste one or more mouse IDs below — one per line, or separated by commas/spaces. All mice will share the same DOB/strain/genotype and start ungrouped.</div>'
-    +'<div class="fg" style="margin-bottom:8px"><label class="fl">Mouse IDs</label>'
-    +'<textarea class="fi" id="ken-ids" rows="4" placeholder="2618149&#10;2618150&#10;2618151" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
-    +'<div class="f2">'
-    +'<div class="fg"><label class="fl">DOB</label><input class="fi" id="ken-dob" type="date"></div>'
-    +'<div class="fg"><label class="fl">Strain</label><input class="fi" id="ken-strain" placeholder="Kcre;EcdF;P53F"></div>'
-    +'<div class="fg"><label class="fl">Genotype</label><input class="fi" id="ken-geno" placeholder="het.;hom.;het."></div>'
-    +'</div>'
-    +'<div id="ken-preview" style="font-size:10px;color:var(--text3);margin-top:4px"></div>',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, strain, genotype, DOB</strong> (tab-separated, or comma-separated). Each mouse keeps its own DOB. All start ungrouped.</div>'
+    +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
+    +'<textarea class="fi" id="ken-paste" rows="8" placeholder="2591266\tKcre;EcdF;P53F\thet hom hom\t31/10/2025&#10;2599822\tKcre;EcdF;P53F\thet hom hom\t19/12/2025" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
+    +'<div id="ken-preview" style="font-size:10px;overflow-x:auto"></div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitKepBulkAdd()"><i class="ti ti-check"></i> Add</button>',true);
   setTimeout(function(){
-    var ta=document.getElementById('ken-ids');
+    var ta=document.getElementById('ken-paste');
     if(ta){
       ta.focus();
-      ta.addEventListener('input',function(){
-        var ids=parseMouseIds(ta.value);
-        var prev=document.getElementById('ken-preview');
-        if(prev)prev.textContent=ids.length?ids.length+' mouse ID'+(ids.length>1?'s':'')+' detected: '+ids.join(', '):'';
-      });
+      ta.addEventListener('input',function(){renderKepPastePreview(ta.value);});
     }
   },50);
 }
 async function submitKepBulkAdd(){
-  var raw=(document.getElementById('ken-ids')&&document.getElementById('ken-ids').value)||'';
-  var ids=parseMouseIds(raw);
-  if(!ids.length){alert('Enter at least one mouse ID');return;}
-  var dob=(document.getElementById('ken-dob')&&document.getElementById('ken-dob').value)||null;
-  var strain=(document.getElementById('ken-strain')&&document.getElementById('ken-strain').value)||'';
-  var geno=(document.getElementById('ken-geno')&&document.getElementById('ken-geno').value)||'';
+  var raw=(document.getElementById('ken-paste')&&document.getElementById('ken-paste').value)||'';
+  var rows=parseKepPaste(raw).filter(function(r){return r.id&&/^\d+$/.test(r.id);});
+  if(!rows.length){alert('Paste at least one row with a valid barcode');return;}
   var errors=[];
-  for(var i=0;i<ids.length;i++){
-    var kmid=ids[i];
-    var result=await sb.from('kep_mice').insert({id:kmid,dob:dob||null,strain:strain,genotype:geno,status:'active',alloc_status:'none'});
-    if(result.error){errors.push(kmid+': '+result.error.message);}
-    else{await sb.from('kep_mouse_events').insert({kep_mouse_id:kmid,event_date:TISO,event_type:'created',label:'Added to KEP watch',logged_by:uname()});}
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    var result=await sb.from('kep_mice').insert({id:r.id,dob:r.dob||null,strain:r.strain,genotype:r.genotype,status:'active',alloc_status:'none'});
+    if(result.error){errors.push(r.id+': '+result.error.message);}
+    else{await sb.from('kep_mouse_events').insert({kep_mouse_id:r.id,event_date:TISO,event_type:'created',label:'Added to KEP watch',logged_by:uname()});}
   }
   if(errors.length)alert('Some mice could not be added:\n'+errors.join('\n'));
   closeModal();await loadKep();renderKep();
