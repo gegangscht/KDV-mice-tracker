@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v101</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v102</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -370,6 +370,7 @@ function sizeWeightBadges(eid,mid,dateIso,needsTumor){
 function nearEP(mid,eid){var l=lastMs(mid,eid);return l?burden(l.tumor_sites,false)>=81:false}
 function dInTx(m){if(!m.tx_start)return null;return Math.round((new Date(TISO)-new Date(m.tx_start))/86400000)}
 function ageMonths(dob){if(!dob)return null;return(new Date(TISO)-new Date(dob))/86400000/30.44}
+function kepDueDate(dob){if(!dob)return null;var d=new Date(dob);d.setMonth(d.getMonth()+5);return d.toISOString().slice(0,10)}
 function addD(iso,n){var d=new Date(iso);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
 function wkMon(off){var d=new Date(TODAY);var day=d.getDay();d.setDate(d.getDate()+(day===0?-6:1-day)+off*7);return d.toISOString().slice(0,10)}
 function fmtD(iso){return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}
@@ -4688,7 +4689,14 @@ function renderKepDaily(){
   var notDue=untracked.filter(function(m){return(ageMonths(m.dob)||0)<5;}).sort(function(a,b){return(ageMonths(b.dob)||0)-(ageMonths(a.dob)||0);});
   var trackedOrdered=kepClusterMice(tracked);
   kepDailyOrder=trackedOrdered.filter(Boolean).map(function(m){return m.id;});
-  var html='<div class="card" style="padding:.5rem 0;margin-bottom:.75rem">';
+  var newlyDue=untracked.filter(function(m){return kepDueDate(m.dob)===TISO;});
+  var html='';
+  if(newlyDue.length){
+    html+='<div style="background:var(--amber-bg);color:var(--amber);border-radius:var(--r);padding:.5rem .75rem;margin-bottom:.75rem;font-size:11px;display:flex;align-items:center;gap:6px">'
+      +'<i class="ti ti-alert-circle"></i> '+newlyDue.length+' mouse'+(newlyDue.length>1?'s':'')+' turned 5 months old today: '
+      +newlyDue.map(function(m){return m.id;}).join(', ')+'</div>';
+  }
+  html+='<div class="card" style="padding:.5rem 0;margin-bottom:.75rem">';
   html+='<div style="font-size:11px;font-weight:600;padding:0 .75rem;margin-bottom:4px">Being measured ('+tracked.length+') <span style="font-weight:400;color:var(--text3)">— grouped, walk cage by cage</span></div>';
   if(!tracked.length)html+='<div class="empty" style="padding:1rem">No mice with an active tumor yet — use the buttons below once one is found.</div>';
   else{
@@ -4717,7 +4725,7 @@ function kepDailyFormHTML(kmid,templateSites,lastNote,submitFn){
   return '<div class="il-row" id="il-'+kmid+'" onkeydown="kepDailyRowKey(event,\''+kmid+'\',\''+submitFn+'\')" style="display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
     +siteCols
     +'<button class="btn btn-xs btn-icon" id="il-addsite-'+kmid+'" onclick="addKepBlankSite(\''+kmid+'\')" title="Add tumor site"><i class="ti ti-plus"></i></button>'
-    +'<div class="il-g" style="min-width:130px;flex:1"><div class="il-l">Note</div><input class="il-in" id="il-n-'+kmid+'" value="'+(lastNote||'')+'" style="width:100%"></div>'
+    +'<div class="il-g" style="min-width:90px;flex:1"><div class="il-l">Note</div><input class="il-in" id="il-n-'+kmid+'" value="'+(lastNote||'')+'" style="width:100%"></div>'
     +'<button class="btn btn-g btn-xs" onclick="'+submitFn+'(\''+kmid+'\')"><i class="ti ti-check"></i></button>'
     +'</div>';
 }
@@ -4732,15 +4740,23 @@ function kepDailyRowHTML(m,color,clusterSize){
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
     +'<span class="mono" style="font-size:11px">'+m.id+'</span>'
     +(clusterSize?'<span style="font-size:9px;color:var(--text3)">'+clusterSize+' in this group</span>':'')
+    +'<button class="btn btn-xs btn-icon" onclick="showKepMoveToExperiment(\''+m.id+'\')" title="Move to experiment" style="margin-left:auto"><i class="ti ti-arrows-exchange"></i></button>'
     +'</div>'
     +'<div id="kqform-'+m.id+'">'+formHtml+'</div>'
     +'</div>';
 }
+function kepLastNote(kmid){
+  var candidates=[];
+  (S.kep.measurements[kmid]||[]).forEach(function(ms){if(ms.note)candidates.push({text:ms.note,date:ms.measured_at});});
+  (S.kep.mevents[kmid]||[]).forEach(function(ev){if(ev.event_type==='note'&&ev.label)candidates.push({text:ev.label,date:ev.event_date});});
+  if(!candidates.length)return null;
+  candidates.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+  return candidates[candidates.length-1];
+}
 function kepDailyRow2HTML(m){
   var age=ageMonths(m.dob);
   var due=age!=null&&age>=5;
-  var allMs=S.kep.measurements[m.id]||[];
-  var lastAny=allMs.length?allMs[allMs.length-1]:null;
+  var lastNote=kepLastNote(m.id);
   var color=kepGroupColor(m.kep_cage_id);
   return '<div id="kqrow2-'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+'">'
     +'<div style="display:flex;align-items:center;gap:8px">'
@@ -4752,9 +4768,24 @@ function kepDailyRow2HTML(m){
     +'<button class="btn btn-xs" onclick="kepQuickPromptMeasure(\''+m.id+'\')">Tumor measured</button>'
     +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'possible\')">Possible tumor</button>'
     +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'skin\')">Skin</button>'
+    +'<button class="btn btn-xs" onclick="kepQuickNotePrompt(\''+m.id+'\')">Note</button>'
     +'</div></div>'
-    +(lastAny&&lastAny.note?'<div style="font-size:9px;color:var(--text3);margin-top:2px;padding-left:88px">'+lastAny.note+' ('+fmtD(lastAny.measured_at)+')</div>':'')
+    +(lastNote?'<div style="font-size:9px;color:var(--text3);margin-top:2px;padding-left:88px">'+lastNote.text+' ('+fmtD(lastNote.date)+')</div>':'')
     +'</div>';
+}
+function kepQuickNotePrompt(kmid){
+  var field=document.getElementById('kq2field-'+kmid);if(!field)return;
+  field.innerHTML='<input class="il-in" id="kqn-'+kmid+'" placeholder="e.g. watch weight" style="width:140px" onkeydown="kepQuickNoteKey(event,\''+kmid+'\')">'
+    +'<button class="btn btn-g btn-xs" onclick="submitKepQuickNote(\''+kmid+'\')"><i class="ti ti-check"></i></button>';
+  var el=document.getElementById('kqn-'+kmid);if(el)el.focus();
+}
+function kepQuickNoteKey(e,kmid){if(e.key==='Enter'){e.preventDefault();submitKepQuickNote(kmid);}}
+async function submitKepQuickNote(kmid){
+  var input=document.getElementById('kqn-'+kmid);if(!input)return;
+  var text=input.value.trim();
+  if(!text)return;
+  await sb.from('kep_mouse_events').insert({kep_mouse_id:kmid,event_date:TISO,event_type:'note',label:text,logged_by:uname()});
+  await loadKep();renderKepCurrent();
 }
 function kepDailyRowKey(e,kmid,submitFn){
   if(e.key!=='Enter')return;
@@ -4990,10 +5021,10 @@ function kepSiteRowHTML(kmid,si,site){
   var prevSz=site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'';
   return '<div class="il-g" id="sr-'+kmid+'-'+si+'" style="min-width:80px">'
     +'<div class="il-l" style="color:'+(isSkin?'var(--amber)':'var(--text3)')+'">'+site.location+'</div>'
-    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" value="'+prevSz+'" style="width:72px" placeholder="7x8"'+(isGone||isNm?' disabled':'')+'>'
-    +'<div style="margin-top:2px;display:flex;flex-direction:column;gap:1px">'
-    +'<label class="skin-chk"><input type="checkbox" id="il-gone-'+kmid+'-'+si+'" onclick="kepToggleGone(\''+kmid+'\','+si+')"'+(isGone?' checked':'')+'>Gone</label>'
-    +'<label class="skin-chk"><input type="checkbox" id="il-nm-'+kmid+'-'+si+'" onclick="kepToggleNm(\''+kmid+'\','+si+')"'+(isNm?' checked':'')+'>Not measurable</label>'
+    +'<div style="display:flex;align-items:center;gap:5px">'
+    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" value="'+prevSz+'" style="width:58px" placeholder="7x8"'+(isGone||isNm?' disabled':'')+'>'
+    +'<label class="skin-chk" style="white-space:nowrap" title="Gone"><input type="checkbox" id="il-gone-'+kmid+'-'+si+'" onclick="kepToggleGone(\''+kmid+'\','+si+')"'+(isGone?' checked':'')+'>Gone</label>'
+    +'<label class="skin-chk" style="white-space:nowrap" title="Not measurable"><input type="checkbox" id="il-nm-'+kmid+'-'+si+'" onclick="kepToggleNm(\''+kmid+'\','+si+')"'+(isNm?' checked':'')+'>NM</label>'
     +'</div>'
     +'<input type="hidden" id="il-loc-'+kmid+'-'+si+'" value="'+site.location+'">'
     +'<input type="hidden" id="il-skin-'+kmid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
@@ -5007,10 +5038,10 @@ function kepBlankSiteRowHTML(kmid,si){
     +'<option value="">select</option>'
     +LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')
     +'</select>'
-    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" style="width:72px" placeholder="7x8">'
-    +'<div style="margin-top:2px;display:flex;flex-direction:column;gap:1px">'
-    +'<label class="skin-chk"><input type="checkbox" id="il-gone-'+kmid+'-'+si+'" onclick="kepToggleGone(\''+kmid+'\','+si+')">Gone</label>'
-    +'<label class="skin-chk"><input type="checkbox" id="il-nm-'+kmid+'-'+si+'" onclick="kepToggleNm(\''+kmid+'\','+si+')">Not measurable</label>'
+    +'<div style="display:flex;align-items:center;gap:5px">'
+    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" style="width:58px" placeholder="7x8">'
+    +'<label class="skin-chk" style="white-space:nowrap" title="Gone"><input type="checkbox" id="il-gone-'+kmid+'-'+si+'" onclick="kepToggleGone(\''+kmid+'\','+si+')">Gone</label>'
+    +'<label class="skin-chk" style="white-space:nowrap" title="Not measurable"><input type="checkbox" id="il-nm-'+kmid+'-'+si+'" onclick="kepToggleNm(\''+kmid+'\','+si+')">NM</label>'
     +'</div>'
     +'<input type="hidden" id="il-loc-'+kmid+'-'+si+'" value="">'
     +'<input type="hidden" id="il-skin-'+kmid+'-'+si+'" value="0">'
@@ -5315,7 +5346,7 @@ async function submitKepMoveToExperiment(){
   await sb.from('mouse_events').insert({mouse_id:d.kmid,experiment_id:eid,event_date:date,event_type:'enrolled',label:'Enrolled in '+gname+' (moved from KEP watch)',logged_by:uname()});
   await sb.from('kep_mice').update({alloc_status:'moved',alloc_experiment_id:eid,alloc_group_id:gid,alloc_group_name:gname,moved_to_mouse_id:d.kmid}).eq('id',d.kmid);
   await sb.from('kep_mouse_events').insert({kep_mouse_id:d.kmid,event_date:date,event_type:'moved_to_experiment',label:'Moved to '+eid+' / '+gname,details:{new_mouse_id:d.kmid,new_experiment_id:eid,new_group_id:gid},logged_by:uname()});
-  closeModal();await loadKep();renderKep();
+  closeModal();await loadKep();renderKepCurrent();
 }
 
 // --- Needs KEPs overview ---
