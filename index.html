@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v110</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v111</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -368,7 +368,7 @@ function sizeWeightBadges(eid,mid,dateIso,needsTumor){
   return needsTumor?(sizeHTML+weightHTML):weightHTML;
 }
 function nearEP(mid,eid){var l=lastMs(mid,eid);return l?burden(l.tumor_sites,false)>=81:false}
-function dInTx(m){if(!m.tx_start)return null;return Math.round((new Date(TISO)-new Date(m.tx_start))/86400000)}
+function dInTx(m){var d0=m.day0_date||m.tx_start;if(!d0)return null;return Math.round((new Date(TISO)-new Date(d0))/86400000)}
 function ageMonths(dob){if(!dob)return null;return(new Date(TISO)-new Date(dob))/86400000/30.44}
 function kepDueDate(dob){if(!dob)return null;var d=new Date(dob);d.setMonth(d.getMonth()+5);return d.toISOString().slice(0,10)}
 function addD(iso,n){var d=new Date(iso);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
@@ -1103,6 +1103,7 @@ async function submitTransfer(eid,mid){
 // ENROLL
 function showEnroll(eid,gid,gname){
   S._enrollCtx={eid:eid,gid:gid,gname:gname};
+  var destHasTreatment=(S.events[gid]||[]).some(function(ev){return ev.type==='treatment';});
   showModal('Enroll mice — '+gname,
     '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste one or more mouse IDs below — one per line, or separated by commas/spaces. All mice will share the same enrollment settings.</div>'
     +'<div class="fg" style="margin-bottom:8px"><label class="fl">Mouse IDs</label>'
@@ -1111,7 +1112,7 @@ function showEnroll(eid,gid,gname){
     +'<div class="f2">'
     +'<div class="fg"><label class="fl">Cage number</label><input class="fi" id="en-cage" placeholder="e.g. C14"></div>'
     +'<div class="fg"><label class="fl">Enrolled date</label><input class="fi" id="en-date" type="date" value="'+TISO+'"></div>'
-    +'<div class="fg"><label class="fl">Tx start date <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="fi" id="en-tx" type="date"></div>'
+    +'<div class="fg"><label class="fl">Tx start date '+(destHasTreatment?'':'<span style="font-weight:400;color:var(--text3)">(optional)</span>')+'</label><input class="fi" id="en-tx" type="date"'+(destHasTreatment?' value="'+TISO+'"':'')+'></div>'
     +'<div class="fg"><label class="fl">Genotype</label><input class="fi" id="en-geno" placeholder="het.;hom.;het."></div>'
     +'<div class="fg"><label class="fl">DOB</label><input class="fi" id="en-dob" type="date"></div>'
     +'<div class="fg"><label class="fl">Weight (g)</label><input class="fi" id="en-wt" type="number" step="0.1"></div>'
@@ -2538,7 +2539,7 @@ async function renderExp(eid){
   if(!S.measurements[eid]){document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';await loadAll(eid);}
   var mice=S.mice[eid]||[];var groups=S.groups[eid]||[];var act=mice.filter(function(m){return m.status==='active'}).length;
   var qualGrowthGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis;});});
-  var qualKMGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&!m.excluded_from_analysis&&(exp.is_mastectomy?m.mx_date:m.tx_start);});});
+  var qualKMGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&!m.excluded_from_analysis&&(m.day0_date||(exp.is_mastectomy?m.mx_date:m.tx_start));});});
   var harBadge=exp.harvest_updated_at?(' <span class="badge ba" style="font-size:8px"><i class="ti ti-alert-triangle"></i> Updated '+exp.harvest_updated_at+'</span>'):'';  var html='<div class="card">'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;font-size:11px">'
     +(function(){
@@ -2869,7 +2870,7 @@ function toggleGrpVis(eid,gid){
   var allMice=S.mice[eid]||[];
   var allGroups=S.groups[eid]||[];
   var qualGrowth=allGroups.filter(function(g){return allMice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis;});});
-  var qualKM=allGroups.filter(function(g){return allMice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&!m.excluded_from_analysis&&(exp&&exp.is_mastectomy?m.mx_date:m.tx_start);});});
+  var qualKM=allGroups.filter(function(g){return allMice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&!m.excluded_from_analysis&&(m.day0_date||(exp&&exp.is_mastectomy?m.mx_date:m.tx_start));});});
   if(S.expTab==='growth')drawGrowth(exp,qualGrowth);
   else if(S.expTab==='km')drawKM(exp,qualKM);
   allGroups.forEach(function(g){
@@ -2947,7 +2948,7 @@ function drawKM(exp,groups){
     // Skip excluded mice
     var evs=mice.map(function(m){
       if(m.excluded_from_analysis)return null;
-      var day0=isMx?(m.mx_date||null):(m.tx_start||null);
+      var day0=m.day0_date||(isMx?(m.mx_date||null):(m.tx_start||null));
       if(!day0)return null;
       var eD=m.sac_date?new Date(m.sac_date):TODAY;
       return{days:Math.round((eD-new Date(day0))/86400000),event:m.cause==='endpoint'?1:0};
@@ -2963,7 +2964,7 @@ function drawKM(exp,groups){
     return{label:g.name,data:buildKM(mice),borderColor:g.color,backgroundColor:'transparent',stepped:'before',tension:0,fill:false,pointRadius:0,borderWidth:2};
   }).filter(Boolean);
   if(!datasets.length){ctx.parentElement.innerHTML='<div class="empty">No survival data yet</div>';return;}
-  charts[key]=new Chart(ctx,{type:'line',data:{datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{type:'linear',title:{display:true,text:isMx?'Days from mastectomy':'Days from tx start',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'}},y:{min:0,max:1,title:{display:true,text:'Survival',font:{size:9}},ticks:{font:{size:9},callback:function(v){return Math.round(v*100)+'%'}},grid:{color:'rgba(128,128,128,0.08)'}}}}});
+  charts[key]=new Chart(ctx,{type:'line',data:{datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{type:'linear',title:{display:true,text:'Days from day 0',font:{size:9}},ticks:{font:{size:9}},grid:{color:'rgba(128,128,128,0.08)'}},y:{min:0,max:1,title:{display:true,text:'Survival',font:{size:9}},ticks:{font:{size:9},callback:function(v){return Math.round(v*100)+'%'}},grid:{color:'rgba(128,128,128,0.08)'}}}}});
 }
 
 function drawWeightChart(exp,groups){
@@ -4533,24 +4534,41 @@ async function bulkMoveGroup(){
   var gv=document.getElementById('float-group-sel')&&document.getElementById('float-group-sel').value||'';
   if(!gv){alert('Select a group');return;}
   var parts=gv.split('|'),ngid=parts[0],ngname=parts[1];
+  var destHasTreatment=(S.events[ngid]||[]).some(function(ev){return ev.type==='treatment';});
+  if(destHasTreatment){
+    showModal('Move '+mids.length+' mice to '+ngname,
+      '<div style="font-size:11px;color:var(--text2);margin-bottom:.5rem">This group has treatment scheduled — set when treatment starts for these mice.</div>'
+      +'<div class="fg"><label class="fl">First treatment date</label><input class="fi" id="bm-tx" type="date" value="'+TISO+'"></div>',
+      '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+      +'<button class="btn btn-p btn-xs" onclick="submitBulkMoveGroup(\''+eid+'\',\''+ngid+'\',\''+ngname+'\')"><i class="ti ti-check"></i> Move</button>');
+    return;
+  }
   if(!confirm('Move '+mids.length+' mice to '+ngname+'?'))return;
+  await submitBulkMoveGroup(eid,ngid,ngname);
+}
+async function submitBulkMoveGroup(eid,ngid,ngname){
+  var mids=Object.keys(S._selectedMice);
+  var txs=(document.getElementById('bm-tx')&&document.getElementById('bm-tx').value)||null;
   var errors=[];
   for(var i=0;i<mids.length;i++){
     var mid=mids[i];
     var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
     if(!m){continue;}
-    var r=await sb.from('mice').update({group_id:ngid,group_name:ngname}).eq('id',mid);
+    var updates={group_id:ngid,group_name:ngname};
+    if(txs)updates.tx_start=txs;
+    var r=await sb.from('mice').update(updates).eq('id',mid);
     if(r.error){errors.push(mid);continue;}
     await sb.from('mouse_events').insert({
       mouse_id:mid,experiment_id:eid,event_date:TISO,
       event_type:'transferred',
       label:'Bulk moved by '+uname()+': '+m.group_name+' to '+ngname,
-      details:{from_group:m.group_name,to_group:ngname,bulk:true,moved_with:mids},
+      details:{from_group:m.group_name,to_group:ngname,bulk:true,moved_with:mids,first_tx_date:txs||null},
       logged_by:uname()
     });
+    if(txs)await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:txs,event_type:'tx_start',label:'Treatment started',logged_by:uname()});
   }
   if(errors.length)alert('Could not move: '+errors.join(', '));
-  clearSelection();await loadAll(eid);renderExp(eid);
+  closeModal();clearSelection();await loadAll(eid);renderExp(eid);
 }
 
 async function bulkAddNote(){
@@ -5618,10 +5636,14 @@ function showKepMoveToExperiment(kmid){
   showModal('Move to experiment (real transfer) — '+kmid,
     '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">This creates a real mouse record in the chosen experiment and removes '+kmid+' from KEP watch permanently. Its KEP-phase measurement history stays here for reference.</div>'
     +'<div class="fg full"><label class="fl">Experiment</label><select class="fs" id="km-wp" onchange="kmWpChanged()" style="width:100%"><option value="">Select...</option>'+exps.map(function(e){return'<option value="'+e.id+'"'+(e.id===defEid?' selected':'')+'>'+e.id+' — '+e.name+'</option>';}).join('')+'</select></div>'
-    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Group</label><select class="fs" id="km-group" disabled style="width:100%"><option value="">Select an experiment first</option></select></div>'
+    +'<div class="fg full" style="margin-top:.5rem"><label class="fl">Group</label><select class="fs" id="km-group" disabled onchange="kmGroupChanged()" style="width:100%"><option value="">Select an experiment first</option></select></div>'
     +'<div class="f2" style="margin-top:.5rem">'
     +'<div class="fg"><label class="fl">Enrolled date</label><input class="fi" id="km-date" type="date" value="'+TISO+'"></div>'
     +'<div class="fg"><label class="fl">Cage number</label><input class="fi" id="km-cage" placeholder="e.g. C14"></div>'
+    +'</div>'
+    +'<div id="km-tx-fields" style="display:none;margin-top:.5rem">'
+    +'<div style="font-size:9px;color:var(--text3);margin-bottom:6px">This group has treatment scheduled — set when treatment starts for this mouse.</div>'
+    +'<div class="fg"><label class="fl">First treatment date</label><input class="fi" id="km-tx" type="date" value="'+TISO+'"></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitKepMoveToExperiment()"><i class="ti ti-check"></i> Move</button>',true);
@@ -5630,10 +5652,20 @@ function showKepMoveToExperiment(kmid){
 function kmWpChanged(){
   var eid=document.getElementById('km-wp').value;
   var gSel=document.getElementById('km-group');
-  if(!eid){gSel.innerHTML='<option value="">Select an experiment first</option>';gSel.disabled=true;return;}
+  if(!eid){gSel.innerHTML='<option value="">Select an experiment first</option>';gSel.disabled=true;kmGroupChanged();return;}
   var groups=S.groups[eid]||[];
   gSel.innerHTML='<option value="">Select...</option>'+groups.map(function(g){return'<option value="'+g.id+'|'+g.name+'">'+g.name+'</option>';}).join('');
   gSel.disabled=false;
+  kmGroupChanged();
+}
+function kmGroupChanged(){
+  var gv=(document.getElementById('km-group')&&document.getElementById('km-group').value)||'';
+  var fields=document.getElementById('km-tx-fields');
+  if(!fields)return;
+  if(!gv){fields.style.display='none';return;}
+  var gid=gv.split('|')[0];
+  var hasTreatment=(S.events[gid]||[]).some(function(ev){return ev.type==='treatment';});
+  fields.style.display=hasTreatment?'block':'none';
 }
 async function submitKepMoveToExperiment(){
   var d=S._kepMoveCtx;if(!d)return;
@@ -5643,10 +5675,13 @@ async function submitKepMoveToExperiment(){
   var cage=(document.getElementById('km-cage')&&document.getElementById('km-cage').value)||'';
   if(!eid||!gRaw){alert('Select an experiment and group');return;}
   var gParts=gRaw.split('|');var gid=gParts[0],gname=gParts[1];
+  var destHasTreatment=(S.events[gid]||[]).some(function(ev){return ev.type==='treatment';});
+  var txs=destHasTreatment?((document.getElementById('km-tx')&&document.getElementById('km-tx').value)||date):null;
   var m=S.kep.mice.find(function(x){return x.id===d.kmid;});if(!m)return;
-  var result=await sb.from('mice').insert({id:d.kmid,experiment_id:eid,group_id:gid,group_name:gname,enrolled:date,cage_number:cage,genotype:m.genotype||'',dob:m.dob||null,status:'active',weight:m.weight||null,notes:m.notes||'',completed_events:[],post_mx_status:'active'});
+  var result=await sb.from('mice').insert({id:d.kmid,experiment_id:eid,group_id:gid,group_name:gname,enrolled:date,tx_start:txs,cage_number:cage,genotype:m.genotype||'',dob:m.dob||null,status:'active',weight:m.weight||null,notes:m.notes||'',completed_events:[],post_mx_status:'active'});
   if(result.error){alert('Error: '+result.error.message);return;}
   await sb.from('mouse_events').insert({mouse_id:d.kmid,experiment_id:eid,event_date:date,event_type:'enrolled',label:'Enrolled in '+gname+' (moved from KEP watch)',logged_by:uname()});
+  if(txs)await sb.from('mouse_events').insert({mouse_id:d.kmid,experiment_id:eid,event_date:txs,event_type:'tx_start',label:'Treatment started',logged_by:uname()});
   await sb.from('kep_mice').update({alloc_status:'moved',alloc_experiment_id:eid,alloc_group_id:gid,alloc_group_name:gname,moved_to_mouse_id:d.kmid}).eq('id',d.kmid);
   await sb.from('kep_mouse_events').insert({kep_mouse_id:d.kmid,event_date:date,event_type:'moved_to_experiment',label:'Moved to '+eid+' / '+gname,details:{new_mouse_id:d.kmid,new_experiment_id:eid,new_group_id:gid},logged_by:uname()});
   closeModal();await loadKep();renderKepCurrent();
