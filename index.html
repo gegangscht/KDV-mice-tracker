@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v99</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v100</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -4513,7 +4513,23 @@ function kepGroupDropdownLabel(cageId){
   if(!members.length)return'(empty group)';
   return'With '+members[0].id+(members.length>1?' +'+(members.length-1)+' more':'');
 }
+function kepGroupColor(cageId){
+  if(!cageId)return null;
+  var idx=S.kep.cages.findIndex(function(c){return c.id===cageId;});
+  return idx>=0?COLS[idx%COLS.length]:null;
+}
 function ageWeeks(dob){if(!dob)return null;return(new Date(TISO)-new Date(dob))/86400000/7;}
+
+// --- Shared clustering: groups adjacent (creation order), each sorted by barcode, null = gap marker, ungrouped trail at the end ---
+function kepClusterMice(mice){
+  var order=[];
+  S.kep.cages.forEach(function(c){
+    var members=mice.filter(function(m){return m.kep_cage_id===c.id;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+    if(members.length)order=order.concat(members).concat([null]);
+  });
+  var ungrouped=mice.filter(function(m){return!m.kep_cage_id;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+  return order.concat(ungrouped);
+}
 
 // --- Watch list: grouped-cluster view by default (like the spreadsheet — adjacent, no numbering), or sortable flat list ---
 function kepSetSort(field){
@@ -4531,13 +4547,7 @@ function kepWatchOrder(mice){
       return S.kep.sortDir==='asc'?cmp:-cmp;
     });
   }
-  var order=[];
-  S.kep.cages.forEach(function(c){
-    var members=mice.filter(function(m){return m.kep_cage_id===c.id;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
-    if(members.length)order=order.concat(members).concat([null]);
-  });
-  var ungrouped=mice.filter(function(m){return!m.kep_cage_id;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
-  return order.concat(ungrouped);
+  return kepClusterMice(mice);
 }
 function renderKepWatchList(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
@@ -4557,11 +4567,12 @@ function renderKepWatchList(){
     +'<th style="padding:6px 8px">Last log</th>'
     +'<th style="padding:6px 8px"></th></tr></thead><tbody>';
   ordered.forEach(function(m){
-    if(!m){html+='<tr><td colspan="6" style="height:10px;border:none"></td></tr>';return;}
+    if(!m){html+='<tr><td colspan="6" style="height:14px;border:none;background:var(--bg)"></td></tr>';return;}
     var wks=ageWeeks(m.dob);
     var due=wks!=null&&wks>=21.7;
     var lastQ=kepQualifyingMs(m.id);var last=lastQ.length?lastQ[lastQ.length-1]:null;
-    html+='<tr draggable="true" ondragstart="kepDragStart(event,\''+m.id+'\')" ondragover="event.preventDefault()" ondrop="kepDropOnMouse(event,\''+m.id+'\')" style="border-bottom:.5px solid var(--border)">'
+    var color=kepGroupColor(m.kep_cage_id);
+    html+='<tr draggable="true" ondragstart="kepDragStart(event,\''+m.id+'\')" ondragover="event.preventDefault()" ondrop="kepDropOnMouse(event,\''+m.id+'\')" style="border-bottom:.5px solid var(--border)'+(color?';background:'+color+'14':'')+'">'
       +'<td style="padding:6px 8px"><input type="checkbox" class="kep-chk" data-kmid="'+m.id+'" '+(S.kep.selected[m.id]?'checked':'')+' onclick="onKepRowCheck(event,this)" style="width:13px;height:13px"></td>'
       +'<td style="padding:6px 8px" class="mono">'+m.id+'</td>'
       +'<td style="padding:6px 8px">'+(m.dob?fmtD(m.dob):'--')+'</td>'
@@ -4672,15 +4683,25 @@ function renderKepDailyTop(){
 }
 function renderKepDaily(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
-  var tracked=mice.filter(function(m){return kepQualifyingMs(m.id).length>0;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+  var tracked=mice.filter(function(m){return kepQualifyingMs(m.id).length>0;});
   var untracked=mice.filter(function(m){return kepQualifyingMs(m.id).length===0;});
   var due=untracked.filter(function(m){return(ageWeeks(m.dob)||0)>=21.7;}).sort(function(a,b){return(ageWeeks(b.dob)||0)-(ageWeeks(a.dob)||0);});
   var notDue=untracked.filter(function(m){return(ageWeeks(m.dob)||0)<21.7;}).sort(function(a,b){return(ageWeeks(b.dob)||0)-(ageWeeks(a.dob)||0);});
-  kepDailyOrder=tracked.map(function(m){return m.id;});
+  var trackedOrdered=kepClusterMice(tracked);
+  kepDailyOrder=trackedOrdered.filter(Boolean).map(function(m){return m.id;});
   var html='<div class="card" style="padding:.5rem 0;margin-bottom:.75rem">';
-  html+='<div style="font-size:11px;font-weight:600;padding:0 .75rem;margin-bottom:4px">Being measured ('+tracked.length+')</div>';
+  html+='<div style="font-size:11px;font-weight:600;padding:0 .75rem;margin-bottom:4px">Being measured ('+tracked.length+') <span style="font-weight:400;color:var(--text3)">— grouped, walk cage by cage</span></div>';
   if(!tracked.length)html+='<div class="empty" style="padding:1rem">No mice with an active tumor yet — use the buttons below once one is found.</div>';
-  else tracked.forEach(function(m){html+=kepDailyRowHTML(m);});
+  else{
+    var atClusterStart=true;
+    trackedOrdered.forEach(function(m){
+      if(!m){html+='<div style="height:10px;background:var(--bg)"></div>';atClusterStart=true;return;}
+      var color=kepGroupColor(m.kep_cage_id);
+      var clusterSize=atClusterStart&&m.kep_cage_id?kepGroupMembers(m.kep_cage_id).length:0;
+      html+=kepDailyRowHTML(m,color,clusterSize);
+      atClusterStart=false;
+    });
+  }
   html+='</div>';
   html+='<div class="card" style="padding:.5rem 0">';
   html+='<div style="font-size:11px;font-weight:600;padding:0 .75rem;margin-bottom:4px">Not yet found ('+untracked.length+')</div>';
@@ -4701,17 +4722,17 @@ function kepDailyFormHTML(kmid,templateSites,lastNote,submitFn){
     +'<button class="btn btn-g btn-xs" onclick="'+submitFn+'(\''+kmid+'\')"><i class="ti ti-check"></i></button>'
     +'</div>';
 }
-function kepDailyRowHTML(m){
+function kepDailyRowHTML(m,color,clusterSize){
   var msl=kepQualifyingMs(m.id);var last=msl.length?msl[msl.length-1]:null;
   var templateSites=last&&last.kep_tumor_sites&&last.kep_tumor_sites.length?last.kep_tumor_sites:[];
   var doneToday=!!(last&&last.measured_at===TISO);
   var formHtml=doneToday
     ?'<span style="font-size:10px;color:var(--green)"><i class="ti ti-check"></i> Logged today: '+bShort(last.kep_tumor_sites,true)+(last.note?' — '+last.note:'')+'</span> <button class="btn btn-xs btn-icon" onclick="kepReopenDaily(\''+m.id+'\')" title="Edit"><i class="ti ti-pencil"></i></button>'
     :kepDailyFormHTML(m.id,templateSites,last?last.note:'');
-  return '<div id="kqrow-'+m.id+'" style="padding:8px .75rem;border-bottom:.5px solid var(--border);'+(doneToday?'opacity:.6':'')+'">'
+  return '<div id="kqrow-'+m.id+'" style="padding:8px .75rem;border-bottom:.5px solid var(--border);'+(color?'background:'+color+'14;':'')+(doneToday?'opacity:.6':'')+'">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
     +'<span class="mono" style="font-size:11px">'+m.id+'</span>'
-    +'<span class="badge bp" style="font-size:8px">'+kepCageLabel(m.kep_cage_id)+'</span>'
+    +(clusterSize?'<span style="font-size:9px;color:var(--text3)">'+clusterSize+' in this group</span>':'')
     +'</div>'
     +'<div id="kqform-'+m.id+'">'+formHtml+'</div>'
     +'</div>';
@@ -4721,10 +4742,11 @@ function kepDailyRow2HTML(m){
   var due=wks!=null&&wks>=21.7;
   var allMs=S.kep.measurements[m.id]||[];
   var lastAny=allMs.length?allMs[allMs.length-1]:null;
+  var color=kepGroupColor(m.kep_cage_id);
   return '<div id="kqrow2-'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+'">'
     +'<div style="display:flex;align-items:center;gap:8px">'
+    +'<span class="edot" style="background:'+(color||'transparent')+'"></span>'
     +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
-    +'<span class="badge bp" style="font-size:8px">'+kepCageLabel(m.kep_cage_id)+'</span>'
     +'<span style="font-size:9px;color:var(--text3);width:60px">'+(wks!=null?wks.toFixed(1)+'w':'?')+'</span>'
     +(due?'<span class="badge ba" style="font-size:8px">due</span>':'<span></span>')
     +'<div id="kq2field-'+m.id+'" style="flex:1;display:flex;gap:4px;justify-content:flex-end">'
