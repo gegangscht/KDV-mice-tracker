@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v107</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v108</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -4902,7 +4902,7 @@ function kepDailyRow2HTML(m){
     +'<div id="kq2field-'+m.id+'" style="display:flex;gap:4px;flex-shrink:0">'
     +'<button class="btn btn-xs" onclick="kepQuickPromptMeasure(\''+m.id+'\')">Tumor measured</button>'
     +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'possible\')">Possible tumor</button>'
-    +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'skin\')">Skin</button>'
+    +'<button class="btn btn-xs" onclick="kepQuickPromptSkin(\''+m.id+'\')">Skin</button>'
     +'<button class="btn btn-xs" onclick="kepQuickNotePrompt(\''+m.id+'\')">Note</button>'
     +'</div></div>'
     +'</div>';
@@ -4969,6 +4969,11 @@ function kepQuickPromptMeasure(kmid){
   field.innerHTML=kepDailyFormHTML(kmid,[],'','submitKepPromote');
   var el=document.getElementById('il-loc-sel-'+kmid+'-0');if(el)el.focus();
 }
+function kepQuickPromptSkin(kmid){
+  var field=document.getElementById('kq2field-'+kmid);if(!field)return;
+  field.innerHTML=kepDailyFormHTML(kmid,[{location:'skin',is_skin:true,dim1:null,dim2:null,status:'ok'}],'','submitKepPromote');
+  var el=document.getElementById('il-sz-'+kmid+'-0');if(el)el.focus();
+}
 async function kepInsertQuickMeasurement(kmid,sites,note){
   var{data:msD,error:insErr}=await sb.from('kep_measurements').insert({kep_mouse_id:kmid,measured_at:S.kep.logDate,note:note||null,logged_by:uname()}).select().single();
   if(insErr){alert('Error: '+insErr.message);return false;}
@@ -4988,9 +4993,8 @@ async function submitKepPromote(kmid){
   await loadKep();renderKepCurrent();
 }
 async function kepQuickAction(kmid,kind){
-  var sites=kind==='skin'?[{location:'skin',is_skin:true,status:'nm',dim1:null,dim2:null,sort_order:0}]:[];
   var note=kind==='possible'?'Possible tumor':null;
-  var ok=await kepInsertQuickMeasurement(kmid,sites,note);
+  var ok=await kepInsertQuickMeasurement(kmid,[],note);
   if(!ok)return;
   await loadKep();renderKepCurrent();
 }
@@ -5152,18 +5156,16 @@ async function submitKepBulkAdd(){
 function kepSiteRowHTML(kmid,si,site){
   var isSkin=site.location==='skin'||site.is_skin;
   var isGone=site.status==='gone';
-  var isNm=site.status==='nm';
   var prevSz=site.dim1&&site.dim2?site.dim1+'x'+site.dim2:'';
   return '<div class="il-g" id="sr-'+kmid+'-'+si+'">'
     +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:nowrap">'
     +'<span style="font-size:10px;font-weight:500;color:'+(isSkin?'var(--amber)':'var(--text3)')+';flex-shrink:0">'+site.location+'</span>'
-    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" value="'+prevSz+'" style="width:58px;color:var(--text3)" onfocus="this.select()" oninput="this.style.color=\'var(--text)\'" placeholder="7x8"'+(isGone||isNm?' disabled':'')+'>'
+    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" value="'+prevSz+'" style="width:58px;color:var(--text3)" onfocus="this.select()" onmouseup="event.preventDefault()" oninput="this.style.color=\'var(--text)\'"'+(isGone?' disabled':'')+'>'
     +'<label class="skin-chk" style="white-space:nowrap"><input type="checkbox" id="il-gone-'+kmid+'-'+si+'" onclick="kepToggleGone(\''+kmid+'\','+si+')"'+(isGone?' checked':'')+'>Gone</label>'
-    +'<label class="skin-chk" style="white-space:nowrap"><input type="checkbox" id="il-nm-'+kmid+'-'+si+'" onclick="kepToggleNm(\''+kmid+'\','+si+')"'+(isNm?' checked':'')+'>Not measurable</label>'
     +'</div>'
     +'<input type="hidden" id="il-loc-'+kmid+'-'+si+'" value="'+site.location+'">'
     +'<input type="hidden" id="il-skin-'+kmid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
-    +'<input type="hidden" id="il-status-'+kmid+'-'+si+'" value="'+(isGone?'gone':(isNm?'nm':'ok'))+'">'
+    +'<input type="hidden" id="il-status-'+kmid+'-'+si+'" value="'+(isGone?'gone':'ok')+'">'
     +'</div>';
 }
 function kepBlankSiteRowHTML(kmid,si){
@@ -5173,9 +5175,8 @@ function kepBlankSiteRowHTML(kmid,si){
     +'<option value="">select</option>'
     +LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')
     +'</select>'
-    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" style="width:58px" placeholder="7x8">'
+    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" style="width:58px" onfocus="this.select()" onmouseup="event.preventDefault()">'
     +'<label class="skin-chk" style="white-space:nowrap"><input type="checkbox" id="il-gone-'+kmid+'-'+si+'" onclick="kepToggleGone(\''+kmid+'\','+si+')">Gone</label>'
-    +'<label class="skin-chk" style="white-space:nowrap"><input type="checkbox" id="il-nm-'+kmid+'-'+si+'" onclick="kepToggleNm(\''+kmid+'\','+si+')">Not measurable</label>'
     +'</div>'
     +'<input type="hidden" id="il-loc-'+kmid+'-'+si+'" value="">'
     +'<input type="hidden" id="il-skin-'+kmid+'-'+si+'" value="0">'
@@ -5191,32 +5192,15 @@ function kepLocChanged(kmid,si){
 }
 function kepToggleGone(kmid,si){
   var goneChk=document.getElementById('il-gone-'+kmid+'-'+si);
-  var nmChk=document.getElementById('il-nm-'+kmid+'-'+si);
   var statusEl=document.getElementById('il-status-'+kmid+'-'+si);
   var szEl=document.getElementById('il-sz-'+kmid+'-'+si);
   if(!goneChk||!statusEl)return;
   if(goneChk.checked){
     statusEl.value='gone';
-    if(nmChk)nmChk.checked=false;
     if(szEl){szEl.value='';szEl.disabled=true;szEl.placeholder='Gone';}
   } else {
     statusEl.value='ok';
-    if(szEl){szEl.disabled=false;szEl.placeholder='7x8';}
-  }
-}
-function kepToggleNm(kmid,si){
-  var nmChk=document.getElementById('il-nm-'+kmid+'-'+si);
-  var goneChk=document.getElementById('il-gone-'+kmid+'-'+si);
-  var statusEl=document.getElementById('il-status-'+kmid+'-'+si);
-  var szEl=document.getElementById('il-sz-'+kmid+'-'+si);
-  if(!nmChk||!statusEl)return;
-  if(nmChk.checked){
-    statusEl.value='nm';
-    if(goneChk)goneChk.checked=false;
-    if(szEl){szEl.value='';szEl.disabled=true;szEl.placeholder='Not measurable';}
-  } else {
-    statusEl.value='ok';
-    if(szEl){szEl.disabled=false;szEl.placeholder='7x8';}
+    if(szEl){szEl.disabled=false;szEl.placeholder='';}
   }
 }
 function addKepBlankSite(kmid){
@@ -5241,12 +5225,13 @@ function getKepSites(kmid){
     var status=statusEl?statusEl.value:'ok';
     if(status==='gone'){
       if(locVal)sites.push({location:locVal,dim1:0,dim2:0,is_skin:isSkin,status:'gone',sort_order:si});
-    } else if(status==='nm'){
-      if(locVal)sites.push({location:locVal,dim1:null,dim2:null,is_skin:isSkin,status:'nm',sort_order:si});
     } else if(sz){
       var p=parseSz(sz);
       if(p&&locVal)sites.push({location:locVal,dim1:p.v1,dim2:p.v2,is_skin:isSkin,status:'ok',sort_order:si});
       else if(p)sites.push({location:'',dim1:p.v1,dim2:p.v2,is_skin:false,status:'ok',sort_order:si});
+    } else if(locVal){
+      // a site is selected but no size was entered -> assume not measurable yet
+      sites.push({location:locVal,dim1:null,dim2:null,is_skin:isSkin,status:'nm',sort_order:si});
     }
     si++;
   }
