@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v102</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v103</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -306,7 +306,7 @@ const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined'
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
 const S={view:'daily',curExp:null,expTab:'mice',sortBy:'exp',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{},
-  kep:{mice:[],cages:[],externalExps:[],measurements:{},mevents:{},loaded:false,tab:'watch',selected:{},sortBy:'group',sortDir:'asc'}};
+  kep:{mice:[],cages:[],externalExps:[],measurements:{},mevents:{},loaded:false,tab:'watch',selected:{},sortBy:'group',sortDir:'asc',panelOpen:true,panelExpanded:{}}};
 var kepMouseOrder=[];
 var kepDailyOrder=[];
 var _kepDragIds=[];
@@ -4489,9 +4489,15 @@ function renderKep(){
     +'<div class="tab '+(S.kep.tab==='allocated'?'act':'')+'" onclick="STKep(\'allocated\')">Allocated</div>'
     +'<div class="tab '+(S.kep.tab==='needs'?'act':'')+'" onclick="STKep(\'needs\')">Needs KEPs</div>'
     +'</div>';
-  if(S.kep.tab==='watch')html+=renderKepWatchList();
-  else if(S.kep.tab==='allocated')html+=renderKepAllocatedView();
-  else html+=renderKepNeedsKepsPanel();
+  if(S.kep.tab==='needs'){
+    html+=renderKepNeedsKepsPanel();
+  } else {
+    var mainHtml=S.kep.tab==='watch'?renderKepWatchList():renderKepAllocatedView();
+    html+='<div style="display:flex;gap:.75rem;align-items:flex-start">'
+      +'<div style="flex:1;min-width:0">'+mainHtml+'</div>'
+      +renderKepProtocolPanel()
+      +'</div>';
+  }
   document.getElementById('content').innerHTML=html;
 }
 function STKep(t){clearKepSelection();S.kep.tab=t;renderKep();}
@@ -4679,7 +4685,11 @@ function renderKepDailyTop(){
   document.getElementById('tb-acts').innerHTML='';
   document.getElementById('pg-title').textContent='Daily palpations (KEP)';
   document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add KEP mice</button>';
-  document.getElementById('content').innerHTML=renderKepDaily();
+  var mainHtml=renderKepDaily();
+  document.getElementById('content').innerHTML='<div style="display:flex;gap:.75rem;align-items:flex-start">'
+    +'<div style="flex:1;min-width:0">'+mainHtml+'</div>'
+    +renderKepProtocolPanel()
+    +'</div>';
 }
 function renderKepDaily(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
@@ -5217,6 +5227,61 @@ async function submitKepEditMouse(){
   var notes=(document.getElementById('ke-notes')&&document.getElementById('ke-notes').value)||'';
   await sb.from('kep_mice').update({dob:dob,strain:strain,genotype:geno,notes:notes}).eq('id',d.kmid);
   closeModal();await loadKep();renderKep();
+}
+
+// --- Protocol panel: ambient view of which protocols need KEPs, their prereqs, and progress ---
+// Kept visible on Watch list / Daily palpations / Allocated so prereqs (e.g. size) are seen
+// *before* a mouse is measured, not just at the allocate click when it may be too late.
+function toggleKepPanel(){S.kep.panelOpen=!S.kep.panelOpen;renderKepCurrent();}
+function toggleKepProtocolFold(id){S.kep.panelExpanded[id]=!S.kep.panelExpanded[id];renderKepCurrent();}
+function kepProtocolSummaries(){
+  var real=kepModelExps().map(function(e){
+    var groups=S.groups[e.id]||[];
+    var arms=groups.map(function(g){
+      var have=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.alloc_group_id===g.id&&m.status==='active';}).length;
+      return{name:g.name,have:have,target:g.target_n};
+    });
+    var allocated=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.status==='active';}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
+    return{id:e.id,researcher:e.researcher,prereqs:e.kep_prereqs,arms:arms,
+      totalHave:arms.reduce(function(s,a){return s+a.have;},0),totalTarget:arms.reduce(function(s,a){return s+(a.target||0);},0),
+      last:allocated[0]||null};
+  });
+  var ext=(S.kep.externalExps||[]).map(function(e){
+    var allocated=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.status==='active';}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
+    return{id:e.id,researcher:e.researcher,prereqs:e.note,arms:[],totalHave:allocated.length,totalTarget:null,last:allocated[0]||null};
+  });
+  return real.concat(ext);
+}
+function renderKepProtocolPanel(){
+  if(!S.kep.panelOpen)return'<div style="flex-shrink:0"><button class="btn btn-xs btn-icon" onclick="toggleKepPanel()" title="Show protocols"><i class="ti ti-chevron-left"></i></button></div>';
+  var protos=kepProtocolSummaries();
+  var html='<div style="width:230px;flex-shrink:0"><div class="card" style="padding:.6rem">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+    +'<div style="font-size:11px;font-weight:600">Protocols</div>'
+    +'<button class="btn btn-xs btn-icon" onclick="toggleKepPanel()" title="Hide"><i class="ti ti-chevron-right"></i></button>'
+    +'</div>';
+  if(!protos.length)html+='<div style="font-size:10px;color:var(--text3)">None yet — tag an experiment\'s Model with "KEP", or add an external one from Needs KEPs.</div>';
+  protos.forEach(function(p){
+    var expanded=!!S.kep.panelExpanded[p.id];
+    html+='<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:.5px solid var(--border)">'
+      +'<div style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick="toggleKepProtocolFold(\''+p.id+'\')">'
+      +'<i class="ti ti-chevron-'+(expanded?'down':'right')+'" style="font-size:10px;color:var(--text3);flex-shrink:0"></i>'
+      +'<div style="flex:1;min-width:0;font-size:10px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+p.id+' — '+(p.researcher||'--')+'</div>'
+      +'<div style="font-size:9px;color:var(--text3);white-space:nowrap;flex-shrink:0">'+p.totalHave+(p.totalTarget!=null?'/'+p.totalTarget:'')+'</div>'
+      +'</div>'
+      +(p.prereqs?'<div style="font-size:9px;color:var(--amber);margin:2px 0 0 14px;'+(expanded?'':'white-space:nowrap;overflow:hidden;text-overflow:ellipsis')+'">'+p.prereqs+'</div>':'');
+    if(expanded){
+      html+='<div style="margin:4px 0 0 14px">';
+      p.arms.forEach(function(a){
+        html+='<div style="font-size:9px;color:var(--text2);display:flex;justify-content:space-between"><span>'+a.name+'</span><span>'+a.have+'/'+a.target+'</span></div>';
+      });
+      html+='<div style="font-size:9px;color:var(--text3);margin-top:3px">'+(p.last?'Last: '+p.last.id+' ('+fmtD(p.last.alloc_date)+')':'No allocations yet')+'</div>';
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+  html+='</div></div>';
+  return html;
 }
 
 // --- Allocation (soft — no real transfer yet) ---
