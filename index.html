@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v104</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v105</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5242,7 +5242,7 @@ function kepProtocolSummaries(){
       return{name:g.name,have:have,target:g.target_n};
     });
     var allocated=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.status==='active';}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
-    return{id:e.id,researcher:e.researcher,prereqs:e.kep_prereqs,arms:arms,
+    return{id:e.id,name:e.name,researcher:e.researcher,prereqs:e.kep_prereqs,arms:arms,kind:'real',
       totalHave:arms.reduce(function(s,a){return s+a.have;},0),totalTarget:arms.reduce(function(s,a){return s+(a.target||0);},0),
       last:allocated[0]||null};
   });
@@ -5253,12 +5253,18 @@ function kepProtocolSummaries(){
       return{name:a.name,have:have,target:a.target_n};
     });
     var allocated=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.status==='active';}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
-    return{id:e.id,researcher:e.researcher,prereqs:e.note,arms:arms,
+    return{id:e.id,name:null,researcher:e.researcher,prereqs:e.note,arms:arms,kind:'external',
       totalHave:arms.length?arms.reduce(function(s,a){return s+a.have;},0):allocated.length,
       totalTarget:arms.length?arms.reduce(function(s,a){return s+(a.target||0);},0):null,
       last:allocated[0]||null};
   });
   return real.concat(ext);
+}
+function kepLastAllocBadge(lastDate){
+  if(!lastDate)return'<span class="badge br" style="font-size:9px">never</span>';
+  var days=Math.round((new Date(TISO)-new Date(lastDate))/86400000);
+  var cls=days<=7?'bg':(days<=21?'ba':'br');
+  return'<span class="badge '+cls+'" style="font-size:9px" title="'+fmtD(lastDate)+'">'+days+'d ago</span>';
 }
 function renderKepProtocolPanel(){
   if(!S.kep.panelOpen)return'<div style="flex-shrink:0"><button class="btn btn-xs btn-icon" onclick="toggleKepPanel()" title="Show protocols"><i class="ti ti-chevron-left"></i></button></div>';
@@ -5277,13 +5283,14 @@ function renderKepProtocolPanel(){
       +'<div style="flex:1;min-width:0;font-size:10px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+p.id+' — '+(p.researcher||'--')+'</div>'
       +'<div style="font-size:9px;color:var(--text3);white-space:nowrap;flex-shrink:0">'+p.totalHave+(p.totalTarget!=null?'/'+p.totalTarget:'')+'</div>'
       +'</div>'
+      +'<div style="margin:2px 0 0 14px">'+kepLastAllocBadge(p.last?p.last.alloc_date:null)+'</div>'
       +(p.prereqs?'<div style="font-size:9px;color:var(--amber);margin:2px 0 0 14px;'+(expanded?'':'white-space:nowrap;overflow:hidden;text-overflow:ellipsis')+'">'+p.prereqs+'</div>':'');
     if(expanded){
       html+='<div style="margin:4px 0 0 14px">';
       p.arms.forEach(function(a){
         html+='<div style="font-size:9px;color:var(--text2);display:flex;justify-content:space-between"><span>'+a.name+'</span><span>'+a.have+'/'+a.target+'</span></div>';
       });
-      html+='<div style="font-size:9px;color:var(--text3);margin-top:3px">'+(p.last?'Last: '+p.last.id+' ('+fmtD(p.last.alloc_date)+')':'No allocations yet')+'</div>';
+      html+='<div style="font-size:9px;color:var(--text3);margin-top:3px">'+(p.last?'Last mouse: '+p.last.id:'No allocations yet')+'</div>';
       html+='</div>';
     }
     html+='</div>';
@@ -5357,7 +5364,7 @@ async function cancelKepAllocation(kmid){
   await loadKep();renderKep();
 }
 function renderKepAllocatedView(){
-  var mice=S.kep.mice.filter(function(m){return m.alloc_status==='allocated';}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
+  var mice=S.kep.mice.filter(function(m){return m.alloc_status==='allocated'&&m.status==='active';}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
   if(!mice.length)return'<div class="empty">No KEPs currently allocated.</div>';
   var html='<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
   html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border)">'
@@ -5376,7 +5383,8 @@ function renderKepAllocatedView(){
       +'<td style="padding:6px 8px">'+(last?bShort(last.kep_tumor_sites,true):'--')+'</td>'
       +'<td style="padding:6px 8px;text-align:right">'
       +'<button class="btn btn-xs" onclick="cancelKepAllocation(\''+m.id+'\')">Cancel</button> '
-      +(m.alloc_is_external?'':'<button class="btn btn-xs" onclick="showKepMoveToExperiment(\''+m.id+'\')">Move</button>')
+      +(m.alloc_is_external?'':'<button class="btn btn-xs" onclick="showKepMoveToExperiment(\''+m.id+'\')">Move</button> ')
+      +'<button class="btn btn-xs btn-r" onclick="showKepDeceased(\''+m.id+'\')">Deceased</button>'
       +'</td></tr>';
   });
   html+='</tbody></table></div>';
@@ -5428,21 +5436,24 @@ async function submitKepMoveToExperiment(){
 
 // --- Needs KEPs overview ---
 function renderKepNeedsKepsPanel(){
-  var exps=S.experiments.filter(function(e){return e.status==='active'&&/KEP/i.test(e.model||'');});
+  var protos=kepProtocolSummaries();
+  var real=protos.filter(function(p){return p.kind==='real';});
+  var ext=protos.filter(function(p){return p.kind==='external';});
   var html='';
-  if(!exps.length){
+  if(!real.length){
     html+='<div class="empty">No active experiments are tagged with a KEP model yet. Add "KEP" to an experiment\'s Model field to have it show up here.</div>';
   } else {
     html+='<div class="card" style="margin-bottom:.75rem">';
-    exps.forEach(function(exp){
-      var groups=S.groups[exp.id]||[];
+    real.forEach(function(p){
       html+='<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:.5px solid var(--border)">'
-        +'<div style="font-size:12px;font-weight:500">'+exp.id+' — '+exp.name+' <span style="font-size:10px;color:var(--text3)">('+(exp.researcher||'--')+')</span></div>'
-        +(exp.kep_prereqs?'<div style="font-size:10px;color:var(--amber);margin-top:2px"><i class="ti ti-info-circle"></i> '+exp.kep_prereqs+'</div>':'')
+        +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+        +'<div style="font-size:12px;font-weight:500">'+p.id+' — '+p.name+' <span style="font-size:10px;color:var(--text3)">('+(p.researcher||'--')+')</span></div>'
+        +kepLastAllocBadge(p.last?p.last.alloc_date:null)
+        +'</div>'
+        +(p.prereqs?'<div style="font-size:10px;color:var(--amber);margin-top:2px"><i class="ti ti-info-circle"></i> '+p.prereqs+'</div>':'')
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
-        +groups.map(function(g){
-          var have=S.kep.mice.filter(function(m){return m.alloc_experiment_id===exp.id&&m.alloc_group_id===g.id&&m.status==='active';}).length;
-          return'<div class="badge '+(have>=g.target_n?'bg':'bgy')+'" style="font-size:10px">'+g.name+': '+have+' / '+g.target_n+'</div>';
+        +p.arms.map(function(a){
+          return'<div class="badge '+(a.have>=a.target?'bg':'bgy')+'" style="font-size:10px">'+a.name+': '+a.have+' / '+a.target+'</div>';
         }).join('')
         +'</div></div>';
     });
@@ -5452,20 +5463,21 @@ function renderKepNeedsKepsPanel(){
   html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">'
     +'<div style="font-size:12px;font-weight:500">External experiments <span style="font-weight:400;color:var(--text3)">(not using the tool yet — added manually)</span></div>'
     +'<button class="btn btn-xs" onclick="showKepAddExternalExp()"><i class="ti ti-plus"></i> Add</button></div>';
-  var ext=S.kep.externalExps||[];
   if(!ext.length){
     html+='<div class="empty" style="padding:1rem 0">None added yet.</div>';
   } else {
-    ext.forEach(function(e){
-      var arms=e.arms||[];
-      var have=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.status==='active';}).length;
+    ext.forEach(function(p){
       html+='<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:.5px solid var(--border)">'
-        +'<div style="font-size:11px;font-weight:500">'+e.id+' — '+(e.researcher||'--')+(arms.length?'':' <span style="font-size:10px;color:var(--text3)">('+have+' allocated)</span>')+'</div>'
-        +(e.note?'<div style="font-size:10px;color:var(--amber);margin-top:2px">'+e.note+'</div>':'')
-        +(arms.length?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
-          +arms.map(function(a){
-            var armHave=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.alloc_group_name===a.name&&m.status==='active';}).length;
-            return'<div class="badge '+(armHave>=a.target_n?'bg':'bgy')+'" style="font-size:10px">'+a.name+': '+armHave+' / '+a.target_n+'</div>';
+        +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+        +'<div style="font-size:11px;font-weight:500">'+p.id+' — '+(p.researcher||'--')+(p.arms.length?'':' <span style="font-size:10px;color:var(--text3)">('+p.totalHave+' allocated)</span>')+'</div>'
+        +kepLastAllocBadge(p.last?p.last.alloc_date:null)
+        +'<button class="btn btn-xs btn-icon" onclick="showKepEditExternalExp(\''+p.id+'\')" title="Edit"><i class="ti ti-pencil"></i></button>'
+        +'<button class="btn btn-xs btn-icon" onclick="deleteKepExternalExp(\''+p.id+'\')" title="Delete"><i class="ti ti-trash"></i></button>'
+        +'</div>'
+        +(p.prereqs?'<div style="font-size:10px;color:var(--amber);margin-top:2px">'+p.prereqs+'</div>':'')
+        +(p.arms.length?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'
+          +p.arms.map(function(a){
+            return'<div class="badge '+(a.have>=a.target?'bg':'bgy')+'" style="font-size:10px">'+a.name+': '+a.have+' / '+a.target+'</div>';
           }).join('')+'</div>':'')
         +'</div>';
     });
@@ -5511,6 +5523,42 @@ async function submitKepAddExternalExp(){
   var{error}=await sb.from('kep_external_experiments').insert({id:wp,researcher:res,note:note,arms:arms});
   if(error){alert('Error: '+error.message);return;}
   closeModal();await loadKep();renderKep();
+}
+function showKepEditExternalExp(id){
+  var e=(S.kep.externalExps||[]).find(function(x){return x.id===id;});if(!e)return;
+  KEPARMS=(e.arms&&e.arms.length)?JSON.parse(JSON.stringify(e.arms)):[{name:'Arm A',target_n:6}];
+  S._kepEditExtId=id;
+  showModal('Edit external experiment — '+id,
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Researcher(s)</label><input class="fi" id="kx-res" value="'+(e.researcher||'')+'"></div>'
+    +'<div class="fg full"><label class="fl">Note <span style="font-weight:400;color:var(--text3)">(inclusion criteria etc.)</span></label><textarea class="fi" id="kx-note" rows="2" style="resize:vertical">'+(e.note||'')+'</textarea></div>'
+    +'</div>'
+    +'<hr class="div">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">'
+    +'<div style="font-size:11px;font-weight:500">Treatment arms</div>'
+    +'<button class="btn btn-xs" onclick="kepExtAddArm()"><i class="ti ti-plus"></i> Add arm</button></div>'
+    +'<div id="kx-arms">'+kepExtArmsHTML()+'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitKepEditExternalExp()"><i class="ti ti-check"></i> Save</button>',true);
+}
+async function submitKepEditExternalExp(){
+  var id=S._kepEditExtId;if(!id)return;
+  var res=(document.getElementById('kx-res')&&document.getElementById('kx-res').value)||'';
+  var note=(document.getElementById('kx-note')&&document.getElementById('kx-note').value)||'';
+  var arms=KEPARMS.filter(function(a){return a.name&&a.name.trim();});
+  var{error}=await sb.from('kep_external_experiments').update({researcher:res,note:note,arms:arms}).eq('id',id);
+  if(error){alert('Error: '+error.message);return;}
+  closeModal();await loadKep();renderKep();
+}
+async function deleteKepExternalExp(id){
+  var activeCount=S.kep.mice.filter(function(m){return m.alloc_experiment_id===id&&m.status==='active';}).length;
+  var msg='Delete external experiment '+id+'?'+(activeCount?' '+activeCount+' KEP mouse'+(activeCount>1?'s are':' is')+' currently allocated to it and will fall back to unallocated.':'');
+  if(!confirm(msg))return;
+  if(activeCount){
+    await sb.from('kep_mice').update({alloc_status:'none',alloc_experiment_id:null,alloc_group_id:null,alloc_group_name:null,alloc_date:null,alloc_by:null}).eq('alloc_experiment_id',id);
+  }
+  await sb.from('kep_external_experiments').delete().eq('id',id);
+  await loadKep();renderKep();
 }
 function renderKepRecentAllocations(){
   var cutoff=addD(TISO,-30);
