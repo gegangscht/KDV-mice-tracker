@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v106</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v107</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -4505,7 +4505,7 @@ function STKep(t){clearKepSelection();S.kep.tab=t;renderKep();}
 
 function kepQualifyingMs(kmid){
   return(S.kep.measurements[kmid]||[]).filter(function(ms){
-    return ms.kep_tumor_sites&&ms.kep_tumor_sites.some(function(s){return s.dim1||s.status==='nm';});
+    return ms.kep_tumor_sites&&ms.kep_tumor_sites.some(function(s){return s.dim1||s.status==='nm'||s.status==='gone';});
   });
 }
 function kepGroupMembers(cageId){
@@ -4556,42 +4556,63 @@ function kepWatchOrder(mice){
   }
   return kepClusterMice(mice);
 }
+function kepMeasureCellText(sites){
+  if(!sites||!sites.length)return'--';
+  return sites.map(function(s){
+    var loc=s.location?s.location+' ':'';
+    if(s.status==='gone')return loc+'gone';
+    if(s.status==='nm')return loc+'not measurable';
+    return loc+s.dim1+'x'+s.dim2;
+  }).join(', ');
+}
+var KEP_HIST_COLS=5;
 function renderKepWatchList(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
   if(!mice.length)return'<div class="empty">No KEP mice being watched yet — add some with "Add KEP mice".</div>';
   var ordered=kepWatchOrder(mice);
   kepMouseOrder=ordered.filter(Boolean).map(function(m){return m.id;});
+  var nCols=6+KEP_HIST_COLS;
   var html='<div style="display:flex;gap:6px;align-items:center;margin-bottom:.5rem">'
     +'<button class="btn btn-xs'+(S.kep.sortBy==='group'?' btn-p':'')+'" onclick="kepSetSort(\'group\')">Grouped view</button>'
     +'<button class="btn btn-xs" onclick="showKepGroupBuilder()"><i class="ti ti-search"></i> Build group by barcode</button>'
     +'</div>';
   html+='<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
   html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border)">'
-    +'<th style="padding:6px 8px;width:24px"></th>'
-    +'<th style="padding:6px 8px;cursor:pointer" onclick="kepSetSort(\'id\')">Barcode'+kepSortArrow('id')+'</th>'
-    +'<th style="padding:6px 8px;cursor:pointer" onclick="kepSetSort(\'dob\')">DOB'+kepSortArrow('dob')+'</th>'
-    +'<th style="padding:6px 8px">Age (mo)</th>'
-    +'<th style="padding:6px 8px">Notes</th>'
-    +'<th style="padding:6px 8px"></th></tr></thead><tbody>';
+    +'<th style="padding:4px 5px;width:22px"></th>'
+    +'<th style="padding:4px 5px;cursor:pointer" onclick="kepSetSort(\'id\')">Barcode'+kepSortArrow('id')+'</th>'
+    +'<th style="padding:4px 5px;cursor:pointer" onclick="kepSetSort(\'dob\')">DOB'+kepSortArrow('dob')+'</th>'
+    +'<th style="padding:4px 5px">Age</th>';
+  for(var h=1;h<=KEP_HIST_COLS;h++)html+='<th style="padding:4px 5px" title="Measurement '+h+'">M'+h+'</th>';
+  html+='<th style="padding:4px 5px">Notes</th>'
+    +'<th style="padding:4px 5px"></th></tr></thead><tbody>';
   ordered.forEach(function(m){
-    if(!m){html+='<tr><td colspan="6" style="height:14px;border:none;background:var(--bg)"></td></tr>';return;}
+    if(!m){html+='<tr><td colspan="'+nCols+'" style="height:14px;border:none;background:var(--bg)"></td></tr>';return;}
     var age=ageMonths(m.dob);
     var due=age!=null&&age>=5;
     var lastNote=kepLastNote(m.id);
     var color=kepGroupColor(m.kep_cage_id);
+    var allQ=kepQualifyingMs(m.id);
+    var overflow=allQ.length>KEP_HIST_COLS;
+    var shown=overflow?allQ.slice(-KEP_HIST_COLS):allQ;
     html+='<tr draggable="true" ondragstart="kepDragStart(event,\''+m.id+'\')" ondragover="event.preventDefault()" ondrop="kepDropOnMouse(event,\''+m.id+'\')" style="border-bottom:.5px solid var(--border)'+(color?';background:'+color+'14':'')+'">'
-      +'<td style="padding:6px 8px"><input type="checkbox" class="kep-chk" data-kmid="'+m.id+'" '+(S.kep.selected[m.id]?'checked':'')+' onclick="onKepRowCheck(event,this)" style="width:13px;height:13px"></td>'
-      +'<td style="padding:6px 8px" class="mono">'+m.id+'</td>'
-      +'<td style="padding:6px 8px">'+(m.dob?fmtD(m.dob):'--')+'</td>'
-      +'<td style="padding:6px 8px'+(due?';color:var(--amber);font-weight:600':'')+'">'+(age!=null?age.toFixed(1):'--')+(due?' <span class="badge ba" style="font-size:8px">5mo+</span>':'')+'</td>'
-      +'<td style="padding:6px 8px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(lastNote?lastNote.text+' <span style="color:var(--text3)">('+fmtD(lastNote.date)+')</span>':'--')+'</td>'
-      +'<td style="padding:6px 8px;text-align:right;white-space:nowrap">'
-      +'<button class="btn btn-xs btn-icon" onclick="toggleKepHist(\''+m.id+'\')" title="History"><i class="ti ti-history"></i></button> '
+      +'<td style="padding:4px 5px"><input type="checkbox" class="kep-chk" data-kmid="'+m.id+'" '+(S.kep.selected[m.id]?'checked':'')+' onclick="onKepRowCheck(event,this)" style="width:13px;height:13px"></td>'
+      +'<td style="padding:4px 5px" class="mono">'+m.id+'</td>'
+      +'<td style="padding:4px 5px">'+(m.dob?fmtD(m.dob):'--')+'</td>'
+      +'<td style="padding:4px 5px'+(due?';color:var(--amber);font-weight:600':'')+'">'+(age!=null?age.toFixed(1):'--')+(due?' <span class="badge ba" style="font-size:7px">5mo+</span>':'')+'</td>';
+    for(var i=0;i<KEP_HIST_COLS;i++){
+      var ms=shown[i];
+      var cell=ms?('<div style="font-size:8px;color:var(--text3)">'+fmtD(ms.measured_at)+'</div><div>'+kepMeasureCellText(ms.kep_tumor_sites)+'</div>'):'<span style="color:var(--text3)">—</span>';
+      if(i===0&&overflow)cell='<span class="badge bgy" style="font-size:7px;padding:0 3px" title="'+(allQ.length-KEP_HIST_COLS)+' earlier — see history">+'+(allQ.length-KEP_HIST_COLS)+'</span> '+cell;
+      html+='<td style="padding:4px 5px;white-space:nowrap;font-size:9px">'+cell+'</td>';
+    }
+    html+='<td style="padding:4px 5px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(lastNote?lastNote.text+' <span style="color:var(--text3)">('+fmtD(lastNote.date)+')</span>':'--')+'</td>'
+      +'<td style="padding:4px 5px;text-align:right;white-space:nowrap">'
+      +'<button class="btn btn-xs btn-icon" onclick="toggleKepHist(\''+m.id+'\')" title="Full history"><i class="ti ti-history"></i></button> '
       +'<button class="btn btn-xs" onclick="showKepLog(\''+m.id+'\')" title="Log finding"><i class="ti ti-ruler-2"></i></button> '
       +'<button class="btn btn-xs" onclick="showKepAllocate(\''+m.id+'\')" title="Allocate"><i class="ti ti-arrow-right"></i></button> '
       +'<button class="btn btn-xs btn-icon" onclick="kepActionMenu(event,\''+m.id+'\')" title="More"><i class="ti ti-dots-vertical"></i></button>'
       +'</td></tr>'
-      +'<tr id="kephist-tr-'+m.id+'" style="display:none"><td colspan="6" style="background:var(--surface2)"></td></tr>';
+      +'<tr id="kephist-tr-'+m.id+'" style="display:none"><td colspan="'+nCols+'" style="background:var(--surface2)"></td></tr>';
   });
   html+='</tbody></table></div>';
   return html;
@@ -4772,15 +4793,27 @@ function doKepPrint(){
   doc.close();
   frame.onload=function(){frame.contentWindow.focus();frame.contentWindow.print();};
 }
+function kepSection2Order(mice,trackedIds){
+  var order=[];
+  S.kep.cages.forEach(function(c){
+    var members=mice.filter(function(m){return m.kep_cage_id===c.id;});
+    if(!members.some(function(m){return!trackedIds[m.id];}))return;
+    var sorted=members.slice().sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+    order=order.concat(sorted).concat([null]);
+  });
+  var ungrouped=mice.filter(function(m){return!m.kep_cage_id&&!trackedIds[m.id];});
+  var due=ungrouped.filter(function(m){return(ageMonths(m.dob)||0)>=5;}).sort(function(a,b){return(ageMonths(b.dob)||0)-(ageMonths(a.dob)||0);});
+  var notDue=ungrouped.filter(function(m){return(ageMonths(m.dob)||0)<5;}).sort(function(a,b){return(ageMonths(b.dob)||0)-(ageMonths(a.dob)||0);});
+  return order.concat(due).concat(notDue);
+}
 function renderKepDaily(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
-  var tracked=mice.filter(function(m){return kepQualifyingMs(m.id).length>0;});
-  var untracked=mice.filter(function(m){return kepQualifyingMs(m.id).length===0;});
-  var due=untracked.filter(function(m){return(ageMonths(m.dob)||0)>=5;}).sort(function(a,b){return(ageMonths(b.dob)||0)-(ageMonths(a.dob)||0);});
-  var notDue=untracked.filter(function(m){return(ageMonths(m.dob)||0)<5;}).sort(function(a,b){return(ageMonths(b.dob)||0)-(ageMonths(a.dob)||0);});
+  var trackedIds={};mice.forEach(function(m){if(kepQualifyingMs(m.id).length>0)trackedIds[m.id]=true;});
+  var tracked=mice.filter(function(m){return trackedIds[m.id];});
+  var untrackedCount=mice.length-tracked.length;
   var trackedOrdered=kepClusterMice(tracked);
   kepDailyOrder=trackedOrdered.filter(Boolean).map(function(m){return m.id;});
-  var newlyDue=untracked.filter(function(m){return kepDueDate(m.dob)===TISO;});
+  var newlyDue=mice.filter(function(m){return!trackedIds[m.id]&&kepDueDate(m.dob)===TISO;});
   var html='';
   if(newlyDue.length){
     html+='<div style="background:var(--amber-bg);color:var(--amber);border-radius:var(--r);padding:.5rem .75rem;margin-bottom:.75rem;font-size:11px;display:flex;align-items:center;gap:6px">'
@@ -4802,11 +4835,21 @@ function renderKepDaily(){
   }
   html+='</div>';
   html+='<div class="card" style="padding:.5rem 0">';
-  html+='<div style="font-size:11px;font-weight:600;padding:0 .75rem;margin-bottom:4px">Not yet found ('+untracked.length+')</div>';
-  if(!untracked.length)html+='<div class="empty" style="padding:1rem">Nothing here.</div>';
-  else due.concat(notDue).forEach(function(m){html+=kepDailyRow2HTML(m);});
+  html+='<div style="font-size:11px;font-weight:600;padding:0 .75rem;margin-bottom:4px">Not yet found ('+untrackedCount+') <span style="font-weight:400;color:var(--text3)">— grouped by cage; already-tracked cage-mates shown greyed for reference</span></div>';
+  var section2=kepSection2Order(mice,trackedIds);
+  if(!section2.length)html+='<div class="empty" style="padding:1rem">Nothing here.</div>';
+  else section2.forEach(function(m){
+    if(!m){html+='<div style="height:8px;background:var(--bg)"></div>';return;}
+    html+=trackedIds[m.id]?kepDailyRow2RefHTML(m):kepDailyRow2HTML(m);
+  });
   html+='</div>';
   return html;
+}
+function kepDailyRow2RefHTML(m){
+  return '<div style="padding:5px .75rem;border-bottom:.5px solid var(--border);opacity:.4;display:flex;align-items:center;gap:8px">'
+    +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
+    +'<span style="font-size:9px;color:var(--text3)">already being measured — see "Being measured" above</span>'
+    +'</div>';
 }
 function kepDailyFormHTML(kmid,templateSites,lastNote,submitFn){
   submitFn=submitFn||'submitKepDailyLog';
@@ -4850,19 +4893,18 @@ function kepDailyRow2HTML(m){
   var due=age!=null&&age>=5;
   var lastNote=kepLastNote(m.id);
   var color=kepGroupColor(m.kep_cage_id);
-  return '<div id="kqrow2-'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+'">'
+  return '<div id="kqrow2-'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+(color?';background:'+color+'14':'')+'">'
     +'<div style="display:flex;align-items:center;gap:8px">'
-    +'<span class="edot" style="background:'+(color||'transparent')+'"></span>'
     +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
     +'<span style="font-size:9px;color:var(--text3);width:60px">'+(age!=null?age.toFixed(1)+'mo':'?')+'</span>'
-    +(due?'<span class="badge ba" style="font-size:8px">due</span>':'<span></span>')
-    +'<div id="kq2field-'+m.id+'" style="flex:1;display:flex;gap:4px;justify-content:flex-end">'
+    +(due?'<span class="badge ba" style="font-size:8px">due</span>':'<span style="width:28px"></span>')
+    +'<span style="flex:1;font-size:9px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px">'+(lastNote?lastNote.text+' ('+fmtD(lastNote.date)+')':'')+'</span>'
+    +'<div id="kq2field-'+m.id+'" style="display:flex;gap:4px;flex-shrink:0">'
     +'<button class="btn btn-xs" onclick="kepQuickPromptMeasure(\''+m.id+'\')">Tumor measured</button>'
     +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'possible\')">Possible tumor</button>'
     +'<button class="btn btn-xs" onclick="kepQuickAction(\''+m.id+'\',\'skin\')">Skin</button>'
     +'<button class="btn btn-xs" onclick="kepQuickNotePrompt(\''+m.id+'\')">Note</button>'
     +'</div></div>'
-    +(lastNote?'<div style="font-size:9px;color:var(--text3);margin-top:2px;padding-left:88px">'+lastNote.text+' ('+fmtD(lastNote.date)+')</div>':'')
     +'</div>';
 }
 function kepQuickNotePrompt(kmid){
@@ -5115,7 +5157,7 @@ function kepSiteRowHTML(kmid,si,site){
   return '<div class="il-g" id="sr-'+kmid+'-'+si+'">'
     +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:nowrap">'
     +'<span style="font-size:10px;font-weight:500;color:'+(isSkin?'var(--amber)':'var(--text3)')+';flex-shrink:0">'+site.location+'</span>'
-    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" value="'+prevSz+'" style="width:58px;color:var(--text3)" oninput="this.style.color=\'var(--text)\'" placeholder="7x8"'+(isGone||isNm?' disabled':'')+'>'
+    +'<input class="il-in" id="il-sz-'+kmid+'-'+si+'" value="'+prevSz+'" style="width:58px;color:var(--text3)" onfocus="this.select()" oninput="this.style.color=\'var(--text)\'" placeholder="7x8"'+(isGone||isNm?' disabled':'')+'>'
     +'<label class="skin-chk" style="white-space:nowrap"><input type="checkbox" id="il-gone-'+kmid+'-'+si+'" onclick="kepToggleGone(\''+kmid+'\','+si+')"'+(isGone?' checked':'')+'>Gone</label>'
     +'<label class="skin-chk" style="white-space:nowrap"><input type="checkbox" id="il-nm-'+kmid+'-'+si+'" onclick="kepToggleNm(\''+kmid+'\','+si+')"'+(isNm?' checked':'')+'>Not measurable</label>'
     +'</div>'
