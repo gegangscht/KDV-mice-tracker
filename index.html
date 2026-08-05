@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v109</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v110</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1623,7 +1623,7 @@ function renderDailySpreadsheet(){
       +harvestTipHTML(exp)+'</div>'
       +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
     var multi=exp&&exp.multi_tumor?true:false;
-    var cols=multi?'70px 46px 70px 60px 64px 1fr 36px':'70px 70px 64px 1fr 36px';
+    var cols=multi?'70px 46px 70px 60px 64px 1fr 50px':'70px 70px 64px 1fr 50px';
     var byCageSS={};var noCageSS=[];
     byExp[eid].forEach(function(mTasks){var cage=mTasks[0].m&&mTasks[0].m.cage_number;if(cage){if(!byCageSS[cage])byCageSS[cage]=[];byCageSS[cage].push(mTasks);}else{noCageSS.push(mTasks);}});
     Object.keys(byCageSS).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){renderSSCage('Cage '+cage,byCageSS[cage],eid,multi,cols);});
@@ -1634,7 +1634,7 @@ function renderDailySpreadsheet(){
   var mixedByCage={};
   Object.keys(byMouseKey).forEach(function(k){var t0=byMouseKey[k][0];if(t0.m&&t0.m.cage_number&&mixedCagesSS.has(t0.m.cage_number)){var c=t0.m.cage_number;if(!mixedByCage[c])mixedByCage[c]=[];mixedByCage[c].push(byMouseKey[k]);}});
   if(Object.keys(mixedByCage).length){
-    var mxCols='70px 70px 64px 1fr 36px';
+    var mxCols='70px 70px 64px 1fr 50px';
     html+='<div style="font-size:13px;font-weight:500;margin:14px 0 4px;padding:4px 0;border-bottom:1.5px solid var(--border2)">Mixed cages</div>';
     Object.keys(mixedByCage).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){
       var wps=[...new Set(mixedByCage[cage].map(function(mTasks){return mTasks[0].expId}))].join(', ');
@@ -1656,6 +1656,11 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
     ?todays.tumor_sites
     :(lastEntry&&lastEntry.tumor_sites&&lastEntry.tumor_sites.length?lastEntry.tumor_sites:[]);
   if(!templateSites.length)templateSites=[{location:LOCS[0],dim1:null,dim2:null,is_skin:false,status:'ok'}];
+  var sheetExtraKey=eid+'|'+mid;
+  var sheetExtraN=(S._sheetExtraSites&&S._sheetExtraSites[sheetExtraKey])||0;
+  if(sheetExtraN){
+    for(var sxi=0;sxi<sheetExtraN;sxi++)templateSites=templateSites.concat([{location:'',dim1:null,dim2:null,is_skin:false,status:'ok'}]);
+  }
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
   var weightVal=todays&&todays.weight!=null&&todays.weight!==''?todays.weight:'';
   var noteVal=todays&&todays.note?todays.note:'';
@@ -1668,12 +1673,22 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
     templateSites.forEach(function(site,si){
       var isSkin=site.location==='skin'||site.is_skin;
       var isGone=site.status==='gone';
-      rows+='<div style="display:flex;flex-direction:column;'+(si>0?'margin-top:4px':'')+'">'
-        +'<input type="hidden" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" value="'+site.location+'">'
-        +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
-        +'<div style="height:26px;display:flex;align-items:center;font-size:11px;color:'+(isSkin?'var(--amber)':'var(--text3)')+'">'+site.location+'</div>'
-        +'</div>';
+      if(site.location===''){
+        rows+='<div style="display:flex;flex-direction:column;'+(si>0?'margin-top:4px':'')+'">'
+          +'<select class="sheet-in" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" style="height:26px;font-size:10px;width:100%" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="loc" onchange="var sk=document.getElementById(\'sheet-skin-'+eid+'-'+mid+'-'+si+'\');if(sk)sk.value=this.value===\'skin\'?\'1\':\'0\'">'
+          +'<option value="">select</option>'+LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')
+          +'</select>'
+          +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="0">'
+          +'</div>';
+      } else {
+        rows+='<div style="display:flex;flex-direction:column;'+(si>0?'margin-top:4px':'')+'">'
+          +'<input type="hidden" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" value="'+site.location+'">'
+          +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="'+(isSkin?'1':'0')+'">'
+          +'<div style="height:26px;display:flex;align-items:center;font-size:11px;color:'+(isSkin?'var(--amber)':'var(--text3)')+'">'+site.location+'</div>'
+          +'</div>';
+      }
     });
+    rows+='<div style="margin-top:4px"><button class="btn btn-xs btn-icon" style="padding:2px" title="Add tumor site" onclick="sheetAddSite(\''+eid+'\',\''+mid+'\')"><i class="ti ti-plus" style="font-size:11px"></i></button></div>';
   }
   var sizeInputs='';
   if(needsTumor){
@@ -1683,10 +1698,16 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
       if(!multi){
         // Carry over location/skin info hidden even in single-tumor (non-multi) experiments,
         // so the same save logic works regardless of the multi_tumor flag.
-        sizeInputs+='<input type="hidden" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" value="'+site.location+'">'
-          +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="'+(site.location==='skin'||site.is_skin?'1':'0')+'">';
+        if(site.location===''){
+          sizeInputs+='<select class="sheet-in" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" style="height:22px;font-size:9px;width:100%;margin-top:2px" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="loc" onchange="var sk=document.getElementById(\'sheet-skin-'+eid+'-'+mid+'-'+si+'\');if(sk)sk.value=this.value===\'skin\'?\'1\':\'0\'"><option value="">location</option>'+LOCS.map(function(l){return'<option value="'+l+'">'+l+'</option>'}).join('')+'</select>'
+            +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="0">';
+        } else {
+          sizeInputs+='<input type="hidden" id="sheet-loc-'+eid+'-'+mid+'-'+si+'" value="'+site.location+'">'
+            +'<input type="hidden" id="sheet-skin-'+eid+'-'+mid+'-'+si+'" value="'+(site.location==='skin'||site.is_skin?'1':'0')+'">';
+        }
       }
     });
+    if(!multi)sizeInputs+='<div style="margin-top:4px"><button class="btn btn-xs btn-icon" style="padding:2px" title="Add tumor site" onclick="sheetAddSite(\''+eid+'\',\''+mid+'\')"><i class="ti ti-plus" style="font-size:11px"></i></button></div>';
   }
   var burdenVal=needsTumor?(todays?Math.round(burden(todays.tumor_sites,S.inclSkin))+'mm2':(lastEntry?Math.round(burden(lastEntry.tumor_sites,S.inclSkin))+'mm2':'--')):'';
 
@@ -1703,14 +1724,17 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
   }
   out+='<div style="padding-top:4px;text-align:right"><input class="sheet-in" id="sheet-w-'+eid+'-'+mid+'" value="'+weightVal+'" placeholder="'+(m&&m.weight?m.weight:'g')+'" style="height:26px;font-size:12px;width:100%;text-align:right" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="w"></div>';
   out+='<div style="padding-top:4px"><input class="sheet-in" id="sheet-n-'+eid+'-'+mid+'" value="'+noteVal+'" placeholder="—" style="height:26px;font-size:12px;width:100%" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="n"></div>';
-  out+='<div style="padding-top:4px;display:flex;gap:4px;justify-content:flex-end" id="sheet-status-icon-'+eid+'-'+mid+'">'+(todays?checkIcon:placeholderIcon)+'</div>';
+  out+='<div style="padding-top:2px;display:flex;gap:3px;justify-content:flex-end;align-items:center">'
+    +'<span id="sheet-status-icon-'+eid+'-'+mid+'">'+(todays?checkIcon:placeholderIcon)+'</span>'
+    +'<button class="btn btn-xs btn-icon" style="padding:2px" title="Sacrifice" onclick="sheetOpenSacrifice(\''+eid+'\',\''+mid+'\')"><i class="ti ti-heart-broken" style="font-size:12px;color:var(--red)"></i></button>'
+    +'</div>';
   out+='</div>';
   return out;
 }
 // Wires autosave-on-blur for every input in the spreadsheet, and lets Enter move to the
 // next row's first input (keyboard-driven flow — Tab already moves cell-to-cell natively).
-function wireSheetTabOrder(){
-  document.querySelectorAll('.sheet-in').forEach(function(el){
+function wireSheetRowInputs(root){
+  root.querySelectorAll('.sheet-in').forEach(function(el){
     el.addEventListener('blur',function(){sheetSaveRow(el.dataset.sheetEid,el.dataset.sheetMid);});
     el.addEventListener('keydown',function(e){
       if(e.key==='Enter'){
@@ -1727,6 +1751,57 @@ function wireSheetTabOrder(){
       }
     });
   });
+}
+function wireSheetTabOrder(){wireSheetRowInputs(document);}
+// Adds a blank tumor-site row to one mouse's spreadsheet row without touching sibling rows —
+// the grid's column widths are fixed regardless of site count, so only this row needs rebuilding.
+function sheetAddSite(eid,mid){
+  S._sheetExtraSites=S._sheetExtraSites||{};
+  var k=eid+'|'+mid;
+  S._sheetExtraSites[k]=(S._sheetExtraSites[k]||0)+1;
+  sheetRerenderRow(eid,mid);
+}
+function sheetRerenderRow(eid,mid){
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  var multi=exp&&exp.multi_tumor?true:false;
+  var cols=multi?'70px 46px 70px 60px 64px 1fr 50px':'70px 70px 64px 1fr 50px';
+  var raw=getTasksForDate(S.dailyDate);
+  var mTasks=raw.filter(function(t){return isMeasureType(t.type)&&t.mouseId===mid&&t.expId===eid;});
+  if(!mTasks.length)return;
+  var rowEl=document.getElementById('sheetrow-'+eid+'-'+mid);
+  if(!rowEl)return;
+  var tmp=document.createElement('div');tmp.innerHTML=sheetRowHTML(mTasks,eid,multi,cols);
+  var newRow=tmp.firstChild;
+  rowEl.replaceWith(newRow);
+  wireSheetRowInputs(newRow);
+}
+function sheetOpenSacrifice(eid,mid){
+  showModal('Sacrifice — '+mid,
+    '<div class="f2">'
+    +'<div class="fg"><label class="fl">Date</label><input class="fi" id="sac-date" type="date" value="'+S.dailyDate+'"></div>'
+    +'<div class="fg"><label class="fl">Reason</label><select class="fs" id="sac-reason">'
+    +'<option value="endpoint">Endpoint</option>'
+    +'<option value="humane">Humane EP</option>'
+    +'<option value="early">Early sacrifice</option>'
+    +'<option value="dead">Found dead</option>'
+    +'</select></div>'
+    +'<div class="fg full"><label class="fl">KDV <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input class="fi" id="sac-kdv" placeholder="26KDV123"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="sheetSubmitSacrifice(\''+eid+'\',\''+mid+'\')"><i class="ti ti-check"></i> Sacrifice</button>');
+  setTimeout(function(){var s=document.getElementById('sac-reason');if(s)s.focus();},80);
+}
+async function sheetSubmitSacrifice(eid,mid){
+  var dv=(document.getElementById('sac-date')&&document.getElementById('sac-date').value)||S.dailyDate;
+  var reason=(document.getElementById('sac-reason')&&document.getElementById('sac-reason').value)||'endpoint';
+  var kdv=((document.getElementById('sac-kdv')&&document.getElementById('sac-kdv').value)||'').trim();
+  var upd={status:'sacrificed',cause:reason,sac_date:dv};if(kdv)upd.kdv=kdv;
+  var{error:sacErr}=await sb.from('mice').update(upd).eq('id',mid);
+  if(sacErr){alert('Error: '+sacErr.message);return;}
+  await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:dv,event_type:'sacrifice',label:'Sacrificed - '+reason+(kdv?' (KDV: '+kdv+')':''),logged_by:uname()});
+  closeModal();
+  await loadAll(eid);
+  renderDailySpreadsheet();
 }
 // Saves one mouse's row from the spreadsheet — reads every input for that mouse, builds the
 // same measurements/tumor_sites shape submitLog uses, and updates in place (no full reload,
