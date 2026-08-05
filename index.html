@@ -258,7 +258,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v108</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v109</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -559,6 +559,8 @@ function getTasksForDate(iso){
   S._dailyNotes={};
   S._wpBanners=S._wpBanners||{};
   S._wpBanners[iso]={};
+  S._generalNotes=S._generalNotes||{};
+  S._generalNotes[iso]=[];
   S.experiments.filter(function(e){return e.status==='active'}).forEach(function(exp){
     (S.mice[exp.id]||[]).filter(function(m){return m.status==='active'}).forEach(function(m){
       var g=(S.groups[exp.id]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});if(!g)return;
@@ -640,8 +642,11 @@ function getTasksForDate(iso){
       }
     });
   });
-  // Fully general notes/tasks (no mouse, no group, no experiment at all) — unchanged from before.
-  (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&!t.experiment_id&&!t.mouse_id&&!t.group_id;}).forEach(function(t){if(t.description)tasks.push({type:'custom',mouseId:'',expId:'',label:t.description,note:t.note||'',done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});});
+  // Fully general notes/tasks (no mouse, no group, no experiment at all).
+  (S.adhoc[iso]||[]).filter(function(t){return !t.original_task_key&&!t.experiment_id&&!t.mouse_id&&!t.group_id;}).forEach(function(t){
+    if(t.description)tasks.push({type:'custom',mouseId:'',expId:'',label:t.description,note:t.note||'',done:t.done,adHocId:t.id,date:iso,taskId:'adhoc-'+t.id});
+    if(t.note)S._generalNotes[iso].push({note:t.note,level:t.note_level||'standard',adHocId:t.id});
+  });
 
   // Add distress checks for post-mastectomy mice
   S.experiments.filter(function(e){return e.status==='active'&&e.is_mastectomy}).forEach(function(exp){
@@ -1580,11 +1585,12 @@ function buildVisibleLogOrder(tasks){
 // tumor sites a mouse has) is carried forward from the last measurement, same as the card
 // view's modal — adding a new site can only be done from there.
 function renderDailySpreadsheet(){
-  var raw=getTasksForDate(S.dailyDate);
+  var raw=getTasksForDate(S.dailyDate);if(S.dailyWpFilter)raw=raw.filter(function(t){return t.expId===S.dailyWpFilter});
   var tasks=raw.filter(function(t){return isMeasureType(t.type)&&t.mouseId;});
-  var html='';
+  var generalNotes=S._generalNotes[S.dailyDate]||[];
+  var html=wpBannerHTML(generalNotes);
   if(!tasks.length){
-    document.getElementById('content').innerHTML='<div class="empty"><i class="ti ti-circle-check"></i>No measurements scheduled for '+(S.dailyDate===TISO?'today':fmtD(S.dailyDate))+'</div>';
+    document.getElementById('content').innerHTML=html+'<div class="empty"><i class="ti ti-circle-check"></i>No measurements scheduled for '+(S.dailyDate===TISO?'today':fmtD(S.dailyDate))+'</div>';
     return;
   }
   // Merge multiple tasks per mouse (e.g. measure-tumor + measure-weight same day) into one row.
@@ -1807,11 +1813,13 @@ function renderDaily(){
     +'<button class="btn btn-xs" style="border:none;border-radius:0;'+(S.dailyViewMode==='cards'?'background:var(--blue-bg);color:var(--blue)':'')+'" onclick="S.dailyViewMode=\'cards\';renderDaily()" title="Card view"><i class="ti ti-list"></i> Cards</button>'
     +'<button class="btn btn-xs" style="border:none;border-radius:0;'+(S.dailyViewMode==='spreadsheet'?'background:var(--blue-bg);color:var(--blue)':'')+'" onclick="S.dailyViewMode=\'spreadsheet\';renderDaily()" title="Spreadsheet view for fast logging"><i class="ti ti-table"></i> Spreadsheet</button>'
     +'</div>'
+    +'<select class="fs" id="daily-wp-filter" onchange="S.dailyWpFilter=this.value;renderDaily()" style="padding:3px 6px;font-size:10px">'
+    +'<option value="">All WPs</option>'+S.experiments.map(function(e){return'<option value="'+e.id+'"'+(S.dailyWpFilter===e.id?' selected':'')+'>'+e.id+'</option>'}).join('')+'</select>'
     +'<button class="btn btn-xs" onclick="showReschedAll()"><i class="ti ti-calendar-event"></i> Reschedule all</button>'
     +'<button class="btn btn-xs" onclick="showAddTask()"><i class="ti ti-plus"></i> Add task</button>'
     +'<button class="btn btn-xs" onclick="doPrint()"><i class="ti ti-printer"></i> Print</button>';
   if(S.dailyViewMode==='spreadsheet'){renderDailySpreadsheet();return;}
-  var raw=getTasksForDate(S.dailyDate);var tasks=sortTasks(raw);
+  var raw=getTasksForDate(S.dailyDate);if(S.dailyWpFilter)raw=raw.filter(function(t){return t.expId===S.dailyWpFilter});var tasks=sortTasks(raw);
   logOrder=buildVisibleLogOrder(tasks);
   var active=S.experiments.reduce(function(s,e){return s+(S.mice[e.id]||[]).filter(function(m){return m.status==='active'}).length},0);
   var html='<div class="mc-grid">'
@@ -1820,6 +1828,7 @@ function renderDaily(){
     +'<div class="mc"><div class="mc-l">Treatments</div><div class="mc-v">'+tasks.filter(function(t){return t.type==='treatment'}).length+'</div></div>'
     +'<div class="mc"><div class="mc-l">Blood / IVIS</div><div class="mc-v">'+tasks.filter(function(t){return t.type==='blood'||t.type==='ivis'}).length+'</div></div>'
     +'</div>';
+  html+=wpBannerHTML(S._generalNotes[S.dailyDate]);
   var epS=new Set();
   raw.forEach(function(t){if(t.m&&nearEP(t.m.id,t.expId)&&!epS.has(t.mouseId))epS.add(t.mouseId);});
   if(epS.size>0){
@@ -2002,29 +2011,39 @@ function renderWeek(){
     +'<option value="">All WPs</option>'+S.experiments.map(function(e){return'<option value="'+e.id+'">'+e.id+'</option>'}).join('')+'</select>'
     +'<button class="btn btn-xs" onclick="showAddTask()"><i class="ti ti-plus"></i> Add task</button>';
   var filter=document.getElementById('wk-filter')&&document.getElementById('wk-filter').value||'';
-  var html='<div class="wk-grid">';
+  var weekNotes=[];
+  var gridHtml='';
   for(var i=0;i<7;i++){
     var d=addD(monIso,i);var isT=d===TISO;var dayD=new Date(d);
     var dt=getTasksForDate(d);if(filter)dt=dt.filter(function(t){return t.expId===filter});dt=sortTasks(dt);
+    if(S._generalNotes[d]&&S._generalNotes[d].length)weekNotes.push({date:d,notes:S._generalNotes[d]});
     var byTy={};dt.forEach(function(t){if(!byTy[t.type])byTy[t.type]=[];byTy[t.type].push(t);});
     var byE={};dt.forEach(function(t){var k=t.expId||'Other';if(!byE[k])byE[k]=[];byE[k].push(t);});
-    html+='<div class="wk-day"><div class="wdh'+(isT?' today':'')+'">'+DOW[dayD.getDay()]+' <span style="opacity:.7;font-size:9px">'+fmtD(d)+'</span>'+(isT?'<span style="font-size:8px;background:var(--blue);color:#fff;border-radius:2px;padding:0 3px;margin-left:2px">today</span>':'')+'</div>';
+    gridHtml+='<div class="wk-day"><div class="wdh'+(isT?' today':'')+'">'+DOW[dayD.getDay()]+' <span style="opacity:.7;font-size:9px">'+fmtD(d)+'</span>'+(isT?'<span style="font-size:8px;background:var(--blue);color:#fff;border-radius:2px;padding:0 3px;margin-left:2px">today</span>':'')+'</div>';
     if(S.sortBy==='type'){
       // Merge all measure variants into one count
       var measureCount=(byTy.measure||[]).length+(byTy['measure-tumor']||[]).length+(byTy['measure-combined']||[]).length+(byTy['measure-weight']||[]).length;
-      if(measureCount)html+='<div class="wt wt-m" onclick="wkDet(\''+d+'\',\'_measure\')">&#128207; '+measureCount+' measure</div>';
-      if(byTy.treatment&&byTy.treatment.length)html+='<div class="wt wt-t" onclick="wkDet(\''+d+'\',\'treatment\')">&#128137; '+byTy.treatment.length+' treat</div>';
-      if(byTy.blood)byTy.blood.forEach(function(t){html+='<div class="wt wt-b" onclick="wkDet(\''+d+'\',\'blood\')">&#129754; '+t.mouseId+'</div>';});
-      if(byTy.ivis)byTy.ivis.forEach(function(t){html+='<div class="wt wt-i">&#128300; '+t.mouseId+'</div>';});
-      if(byTy.custom)byTy.custom.forEach(function(t){html+='<div class="wt wt-c">&#128203; '+(t.label||'').substring(0,16)+'</div>';});
-      if(byTy['note-only']&&byTy['note-only'].length)html+='<div class="wt" style="background:#4B5563;color:#fff" onclick="wkDet(\''+d+'\',\'note-only\')">📌 '+byTy['note-only'].length+' note'+(byTy['note-only'].length>1?'s':'')+'</div>';
+      if(measureCount)gridHtml+='<div class="wt wt-m" onclick="wkDet(\''+d+'\',\'_measure\')">&#128207; '+measureCount+' measure</div>';
+      if(byTy.treatment&&byTy.treatment.length)gridHtml+='<div class="wt wt-t" onclick="wkDet(\''+d+'\',\'treatment\')">&#128137; '+byTy.treatment.length+' treat</div>';
+      if(byTy.blood)byTy.blood.forEach(function(t){gridHtml+='<div class="wt wt-b" onclick="wkDet(\''+d+'\',\'blood\')">&#129754; '+t.mouseId+'</div>';});
+      if(byTy.ivis)byTy.ivis.forEach(function(t){gridHtml+='<div class="wt wt-i">&#128300; '+t.mouseId+'</div>';});
+      if(byTy.custom)byTy.custom.forEach(function(t){gridHtml+='<div class="wt wt-c">&#128203; '+(t.label||'').substring(0,16)+'</div>';});
+      if(byTy['note-only']&&byTy['note-only'].length)gridHtml+='<div class="wt" style="background:#4B5563;color:#fff" onclick="wkDet(\''+d+'\',\'note-only\')">📌 '+byTy['note-only'].length+' note'+(byTy['note-only'].length>1?'s':'')+'</div>';
     } else {
-      Object.keys(byE).sort().forEach(function(eid){var exp=S.experiments.find(function(e){return e.id===eid});var n=byE[eid].length;html+='<div class="wt" style="background:'+(exp&&exp.color?exp.color:'#888')+'22;color:'+(exp&&exp.color?exp.color:'#444')+'" onclick="wkDet(\''+d+'\',\'\',\''+eid+'\')">'+eid+': '+n+'</div>';});
+      Object.keys(byE).sort().forEach(function(eid){var exp=S.experiments.find(function(e){return e.id===eid});var mset={};byE[eid].forEach(function(t){if(t.mouseId)mset[t.mouseId]=true;});var n=Object.keys(mset).length;gridHtml+='<div class="wt" style="background:'+(exp&&exp.color?exp.color:'#888')+'22;color:'+(exp&&exp.color?exp.color:'#444')+'" onclick="wkDet(\''+d+'\',\'\',\''+eid+'\')">'+eid+': '+n+'</div>';});
     }
-    if(!dt.length)html+='<div style="padding:4px 5px;font-size:9px;color:var(--text3)">--</div>';
-    html+='<div style="padding:2px 4px"><button class="btn btn-xs" style="width:100%;justify-content:center;font-size:9px;border-style:dashed;color:var(--text3)" onclick="showAddTask(\''+d+'\')"><i class="ti ti-plus"></i></button></div></div>';
+    if(!dt.length)gridHtml+='<div style="padding:4px 5px;font-size:9px;color:var(--text3)">--</div>';
+    gridHtml+='<div style="padding:2px 4px"><button class="btn btn-xs" style="width:100%;justify-content:center;font-size:9px;border-style:dashed;color:var(--text3)" onclick="showAddTask(\''+d+'\')"><i class="ti ti-plus"></i></button></div></div>';
   }
-  html+='</div><div id="wk-det"></div>';
+  var notesHtml='';
+  if(weekNotes.length){
+    notesHtml='<div style="margin-bottom:8px">'+weekNotes.map(function(wn){
+      var wd=new Date(wn.date);
+      var label=DOW[wd.getDay()]+' '+fmtD(wn.date);
+      return '<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:2px"><span style="font-size:9px;font-weight:600;opacity:.7;white-space:nowrap;padding-top:3px">'+label+':</span><div>'+wpBannerHTML(wn.notes)+'</div></div>';
+    }).join('')+'</div>';
+  }
+  var html=notesHtml+'<div class="wk-grid">'+gridHtml+'</div><div id="wk-det"></div>';
   document.getElementById('content').innerHTML=html;
 }
 function wkDet(d,type,ef){
@@ -4047,13 +4066,15 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
     return h;
   }
 
+  var wpRenderCount=0;
   Object.keys(ptByExp).sort().forEach(function(eid){
     var exp=S.experiments.find(function(e){return e.id===eid});
     var expTasks=ptByExp[eid];
     if(!expTasks.length)return;
 
     // WP header
-    phtml+='<div style="margin-bottom:8px">';
+    phtml+='<div style="margin-bottom:8px'+(wpRenderCount>0?';page-break-before:always':'')+'">';
+    wpRenderCount++;
     phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;display:flex;justify-content:space-between;page-break-after:avoid;break-after:avoid">'
       +'<span>'+eid+' — '+(exp?exp.name:'')+'</span>'
       +'<span style="font-size:8px;font-weight:400;color:#555">'+(exp&&exp.harvest?'Harvest: '+exp.harvest:'')+'</span>'
@@ -4117,7 +4138,7 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
   // Mixed cages section
   var ptMixedTasks=todayTasks.filter(function(t){return t.m&&t.m.cage_number&&ptMixedCages.has(t.m.cage_number);});
   if(ptMixedTasks.length){
-    phtml+='<div style="margin-bottom:8px">';
+    phtml+='<div style="margin-bottom:8px;page-break-before:always">';
     phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #000;margin-bottom:3px;page-break-after:avoid;break-after:avoid">Mixed cages</div>';
     var ptMixByCage={};
     ptMixedTasks.forEach(function(t){var c=t.m.cage_number;if(!ptMixByCage[c])ptMixByCage[c]=[];ptMixByCage[c].push(t);});
@@ -4144,7 +4165,7 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
     var postMxMice=(S.mice[exp.id]||[]).filter(function(m){return m.status==='active'&&m.post_mx_status==='post_mx';});
     if(!postMxMice.length)return;
     postMxMice.sort(function(a,b){return(a.cage_number||'').localeCompare(b.cage_number||'',undefined,{numeric:true});});
-    phtml+='<div style="margin-bottom:8px;page-break-inside:avoid">';
+    phtml+='<div style="margin-bottom:8px;page-break-inside:avoid;page-break-before:always">';
     phtml+='<div style="font-size:10px;font-weight:700;padding:2px 0;border-bottom:1.5px solid #854F0B;margin-bottom:3px;color:#854F0B">'+exp.id+' — Post-Mx distress monitoring</div>';
     phtml+='<table style="width:100%;border-collapse:collapse;font-size:8.5px">';
     phtml+='<thead><tr style="border-bottom:1px solid #000">'
