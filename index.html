@@ -257,12 +257,20 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
     <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
     <button class="btn btn-xs" onclick="clearKepSelection()" style="color:rgba(255,255,255,.6)"><i class="ti ti-x"></i></button>
   </div>
+  <div id="group-float-bar" style="display:none" class="float-bar">
+    <span id="group-float-count" style="font-size:11px;opacity:.8">0 groups selected</span>
+    <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
+    <button class="btn btn-g btn-xs" onclick="showBulkEditGroups()"><i class="ti ti-edit"></i> Bulk edit</button>
+    <button class="btn btn-xs btn-r" onclick="bulkDeleteGroups()"><i class="ti ti-trash"></i> Delete selected</button>
+    <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
+    <button class="btn btn-xs" onclick="clearGroupSelection()" style="color:rgba(255,255,255,.6)"><i class="ti ti-x"></i></button>
+  </div>
   <div class="topbar">
     <div class="tb-left">
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v120</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v121</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2792,11 +2800,12 @@ async function renderExp(eid){
       +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'+qualWtGroups.map(function(g){var h=S.hiddenWtGrps[eid].has(g.id);return'<button id="wtgrpleg-'+g.id+'" onclick="toggleWtGrpVis(\''+eid+'\',\''+g.id+'\')" style="display:flex;align-items:center;gap:4px;font-size:10px;background:none;border:1px solid '+(h?'var(--border)':g.color)+';border-radius:12px;padding:2px 9px 2px 7px;cursor:pointer;color:'+(h?'var(--text3)':'var(--text)')+';opacity:'+(h?.5:1)+'"><span style="width:11px;height:11px;background:'+(h?'var(--border)':g.color)+';display:inline-block;border-radius:3px;flex-shrink:0"></span>'+g.name+'</button>';}).join('')+'</div>'
       +'<div style="height:480px;max-width:780px"><canvas id="weightChart">Weight data.</canvas></div></div>';
   } else if(S.expTab==='sched'){
+    if(S._selectedGroupsEid!==eid){S._selectedGroups={};S._selectedGroupsEid=eid;var gfb=document.getElementById('group-float-bar');if(gfb)gfb.style.display='none';}
     function schedGroupBlockHTML(g){
       var gevts=S.events[g.id]||[];
       var gh='<div class="grp-blk">'
         +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">'
-        +'<div style="display:flex;align-items:center;gap:6px"><div class="edot" style="background:'+g.color+'"></div>'
+        +'<div style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="group-row-chk" data-gid="'+g.id+'" data-eid="'+eid+'" onchange="onGroupRowCheck(this)"'+(S._selectedGroups&&S._selectedGroups[g.id]?' checked':'')+'><div class="edot" style="background:'+g.color+'"></div>'
         +'<span style="font-size:11px;font-weight:500">'+g.name+'</span>'
         +'<span class="badge bgy">target: '+g.target_n+'</span>'
         +(g.egp?'<span class="badge bgy">EGP: '+g.egp+'</span>':'')
@@ -3772,6 +3781,113 @@ async function undoLastBulkGenerateLive(){
   }
   var eid=u.eid;
   S._lastBulkGenUndo=null;
+  await loadAll(eid);renderExp(eid);
+}
+
+// BULK EDIT SELECTED GROUPS — a fixed menu of operations (not a free-form editor) so it stays
+// safe across groups whose existing schedules/values don't match: every field-level change is
+// opt-in via its own "apply" checkbox, and groups lacking the targeted event type are skipped
+// and reported rather than silently doing nothing or erroring.
+function toggleBulkEditField(prefix){
+  var chk=document.getElementById(prefix+'-chk');
+  var input=document.getElementById(prefix+'-val');
+  if(input)input.disabled=!(chk&&chk.checked);
+}
+function bulkEditFieldRow(prefix,label,inputHtml){
+  return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
+    +'<input type="checkbox" id="'+prefix+'-chk" onchange="toggleBulkEditField(\''+prefix+'\')" style="width:14px;height:14px">'
+    +'<span style="font-size:10px;color:var(--text2);width:80px;flex-shrink:0">'+label+'</span>'
+    +inputHtml
+    +'</div>';
+}
+function showBulkEditGroups(){
+  var gids=Object.keys(S._selectedGroups);
+  if(!gids.length)return;
+  var eid=S._selectedGroups[gids[0]];
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  var dowOpts=function(cls){return[1,2,3,4,5].map(function(d){return'<label style="margin-right:5px;font-size:10px"><input type="checkbox" class="'+cls+'" value="'+d+'">'+DOW[d]+'</label>';}).join('');};
+  showModal('Bulk edit '+gids.length+' group(s)',
+    '<div class="fg full" style="margin-bottom:8px"><label class="fl">Target event type</label><select class="fs" id="be-type">'
+    +['measure-tumor','measure-weight','treatment','blood','ivis','custom'].map(function(t){return'<option value="'+t+'">'+t+'</option>';}).join('')
+    +'</select><div style="font-size:9px;color:var(--text3);margin-top:2px">Field changes below apply only to each selected group\'s event(s) of this type — groups without one are skipped.</div></div>'
+    +bulkEditFieldRow('be-label','Label','<input class="fi" id="be-label-val" disabled style="flex:1;font-size:11px;padding:3px 6px">')
+    +bulkEditFieldRow('be-drug','Drug','<input class="fi" id="be-drug-val" disabled style="flex:1;font-size:11px;padding:3px 6px">')
+    +bulkEditFieldRow('be-dose','Dose','<input class="fi" id="be-dose-val" disabled style="flex:1;font-size:11px;padding:3px 6px">')
+    +bulkEditFieldRow('be-route','Route','<input class="fi" id="be-route-val" list="route-opts" disabled style="flex:1;font-size:11px;padding:3px 6px">')
+    +bulkEditFieldRow('be-trigval','Trigger value','<input class="fi" id="be-trigval-val" disabled placeholder="e.g. 4x4" style="flex:1;font-size:11px;padding:3px 6px">')
+    +bulkEditFieldRow('be-dayoff','Day offset','<input class="fi" id="be-dayoff-val" type="number" disabled style="width:80px;font-size:11px;padding:3px 6px">')
+    +bulkEditFieldRow('be-maxdose','Max doses','<input class="fi" id="be-maxdose-val" type="number" disabled placeholder="unlimited" style="width:80px;font-size:11px;padding:3px 6px">')
+    +'<hr class="div">'
+    +'<div style="margin-bottom:5px"><span style="font-size:10px;color:var(--text2)">Add days to schedule:</span> '+dowOpts('be-day-add')+'</div>'
+    +'<div style="margin-bottom:5px"><span style="font-size:10px;color:var(--text2)">Remove days from schedule:</span> '+dowOpts('be-day-rem')+'</div>'
+    +(exp&&exp.discomfort_per_group?('<hr class="div">'+bulkEditFieldRow('be-dis','Discomfort','<select class="fs" id="be-dis-val" disabled style="font-size:11px;padding:3px 6px">'+['Mild','Moderate','Severe'].map(function(o){return'<option>'+o+'</option>';}).join('')+'</select>')):'')
+    +'<div style="font-size:9px;color:var(--text3);margin-top:6px">Only checked fields are changed. Unchecked fields are left exactly as they are on every group.</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitBulkEditGroups()"><i class="ti ti-check"></i> Apply</button>');
+}
+async function submitBulkEditGroups(){
+  var gids=Object.keys(S._selectedGroups);
+  if(!gids.length)return;
+  var eid=S._selectedGroups[gids[0]];
+  var targetType=(document.getElementById('be-type')&&document.getElementById('be-type').value)||'measure-tumor';
+  var fields=['label','drug','dose','route','trigval','dayoff','maxdose'];
+  var fieldMap={label:'label',drug:'drug',dose:'dose',route:'route',trigval:'trigger_value',dayoff:'day_offset',maxdose:'max_doses'};
+  var apply={};
+  fields.forEach(function(f){
+    var chk=document.getElementById('be-'+f+'-chk');
+    if(chk&&chk.checked){
+      var val=document.getElementById('be-'+f+'-val').value;
+      if(f==='dayoff')val=parseInt(val)||0;
+      if(f==='maxdose')val=val&&val.trim()?parseInt(val):null;
+      apply[fieldMap[f]]=val;
+    }
+  });
+  var addDays=[];document.querySelectorAll('.be-day-add:checked').forEach(function(c){addDays.push(parseInt(c.value));});
+  var remDays=[];document.querySelectorAll('.be-day-rem:checked').forEach(function(c){remDays.push(parseInt(c.value));});
+  var disChk=document.getElementById('be-dis-chk');
+  var disVal=disChk&&disChk.checked?document.getElementById('be-dis-val').value:null;
+  var hasFieldChanges=Object.keys(apply).length>0;
+  var hasDayChanges=addDays.length>0||remDays.length>0;
+  if(!hasFieldChanges&&!hasDayChanges&&!disVal){alert('Check at least one field to apply');return;}
+  var matched=0,skipped=0;
+  for(var i=0;i<gids.length;i++){
+    var gid=gids[i];
+    if(disVal)await sb.from('experiment_groups').update({discomfort:disVal}).eq('id',gid);
+    var gevts=(S.events[gid]||[]).filter(function(ev){return ev.type===targetType;});
+    if(!gevts.length){skipped++;continue;}
+    matched++;
+    for(var j=0;j<gevts.length;j++){
+      var ev=gevts[j];
+      var upd=Object.assign({},apply);
+      if(hasDayChanges){
+        var days=(ev.schedule_days||[]).slice();
+        addDays.forEach(function(d){if(!days.includes(d))days.push(d);});
+        remDays.forEach(function(d){var idx=days.indexOf(d);if(idx>=0)days.splice(idx,1);});
+        upd.schedule_days=days;
+      }
+      if(Object.keys(upd).length)await sb.from('scheduled_events').update(upd).eq('id',ev.id);
+    }
+  }
+  closeModal();await loadAll(eid);renderExp(eid);
+  alert('Applied to '+matched+' group(s)'+(skipped?' — '+skipped+' skipped (no '+targetType+' event)':''));
+}
+async function bulkDeleteGroups(){
+  var gids=Object.keys(S._selectedGroups);
+  if(!gids.length)return;
+  var eid=S._selectedGroups[gids[0]];
+  var groups=(S.groups[eid]||[]).filter(function(g){return gids.includes(g.id);});
+  var withMice=[],deletable=[];
+  groups.forEach(function(g){
+    var hasMice=(S.mice[eid]||[]).some(function(m){return m.status==='active'&&(m.group_id===g.id||m.group_name===g.name);});
+    if(hasMice)withMice.push(g.name);else deletable.push(g);
+  });
+  if(!deletable.length){alert('None of the selected groups can be deleted — all still have active mice:\n'+withMice.join(', '));return;}
+  var msg='Delete '+deletable.length+' group(s)?'+(withMice.length?'\n\nSkipping '+withMice.length+' with active mice: '+withMice.join(', '):'');
+  if(!confirm(msg))return;
+  var delIds=deletable.map(function(g){return g.id;});
+  await sb.from('scheduled_events').delete().in('group_id',delIds);
+  await sb.from('experiment_groups').delete().in('id',delIds);
+  clearGroupSelection();
   await loadAll(eid);renderExp(eid);
 }
 function showAddGroup(eid){
@@ -4824,6 +4940,29 @@ function updateFloatBar(eid){
     var filt=document.getElementById('float-group-filter');
     if(filt)filt.value='';
   }
+}
+
+// GROUP MULTI-SELECT (Scheduled events tab) — mirrors the mouse multi-select above.
+S._selectedGroups={}; // {gid: eid}
+
+function onGroupRowCheck(chk){
+  var gid=chk.dataset.gid,eid=chk.dataset.eid;
+  if(chk.checked){S._selectedGroups[gid]=eid;}
+  else{delete S._selectedGroups[gid];}
+  updateGroupFloatBar();
+}
+function clearGroupSelection(){
+  S._selectedGroups={};
+  document.querySelectorAll('.group-row-chk').forEach(function(c){c.checked=false;});
+  document.getElementById('group-float-bar').style.display='none';
+}
+function updateGroupFloatBar(){
+  var count=Object.keys(S._selectedGroups).length;
+  var bar=document.getElementById('group-float-bar');
+  var countEl=document.getElementById('group-float-count');
+  if(!count){bar.style.display='none';return;}
+  bar.style.display='flex';
+  if(countEl)countEl.textContent=count+' group'+(count>1?'s':'')+' selected';
 }
 
 async function bulkMoveGroup(){
