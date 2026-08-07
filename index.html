@@ -260,7 +260,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v112</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v113</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3251,19 +3251,21 @@ async function createExp(){
   var multi=true; // all experiments support multi-site
   var isMx=!!(document.getElementById('nmx')&&document.getElementById('nmx').checked);
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
-  var result=await sb.from('experiments').insert({id:wp,name:tit,researcher:res,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
-  if(result.error){alert('Error: '+result.error.message);if(btn)btn.disabled=false;return;}
-  for(var i=0;i<NG.length;i++){
-    var g=NG[i];
-    var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard'}).select().single();
-    if(gResult.error||!gResult.data)continue;
-    var gD=gResult.data;
-    for(var j=0;j<g.events.length;j++){
-      var ev=g.events[j];
-      await sb.from('scheduled_events').insert({group_id:gD.id,experiment_id:wp,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',schedule_type:ev.schedule,schedule_days:ev.days||[],interval_days:ev.schedule==='interval'?ev.intervalDays:null,trigger_type:ev.trigger,trigger_value:ev.triggerVal||'',day_offset:ev.dayOffset||0,max_doses:ev.maxDoses||null,sort_order:j});
+  try{
+    var result=await sb.from('experiments').insert({id:wp,name:tit,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
+    if(result.error)throw new Error(result.error.message);
+    for(var i=0;i<NG.length;i++){
+      var g=NG[i];
+      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard'}).select().single();
+      if(gResult.error||!gResult.data)continue;
+      var gD=gResult.data;
+      for(var j=0;j<g.events.length;j++){
+        var ev=g.events[j];
+        await sb.from('scheduled_events').insert({group_id:gD.id,experiment_id:wp,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',schedule_type:ev.schedule,schedule_days:ev.days||[],interval_days:ev.schedule==='interval'?ev.intervalDays:null,trigger_type:ev.trigger,trigger_value:ev.triggerVal||'',day_offset:ev.dayOffset||0,max_doses:ev.maxDoses||null,sort_order:j});
+      }
     }
-  }
-  await assignCageSlot(wp);await assignCageSlot(wp);await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
+    await assignCageSlot(wp);await assignCageSlot(wp);await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
+  }catch(err){alert('Error: '+err.message);if(btn)btn.disabled=false;}
 }
 
 // EDIT EXPERIMENT
