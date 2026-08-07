@@ -262,7 +262,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v119</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v120</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2833,6 +2833,7 @@ async function renderExp(eid){
       +'<div style="font-size:11px;font-weight:500">Scheduled events by group</div>'
       +'<div style="display:flex;align-items:center;gap:8px">'
       +(hasAxes?groupByAxisSelectHTML(exp,eid):'')
+      +((S._lastBulkGenUndo&&S._lastBulkGenUndo.mode==='live'&&S._lastBulkGenUndo.eid===eid)?'<button class="btn btn-xs btn-a" onclick="undoLastBulkGenerateLive()"><i class="ti ti-arrow-back-up"></i> Undo last bulk generate</button>':'')
       +'<button class="btn btn-xs btn-p" onclick="showAddGroup(\''+eid+'\')"><i class="ti ti-plus"></i> Add group</button>'
       +'</div></div>';
     var groupBy=hasAxes?(S.schedGroupBy&&S.schedGroupBy[eid])||'':'';
@@ -3211,6 +3212,7 @@ function renderNew(){
   document.getElementById('pg-title').textContent='New experiment';
   document.getElementById('tb-acts').innerHTML='';document.getElementById('pg-acts').innerHTML='';
   NG_AXES={name1:'',name2:'',name3:''};
+  S._lastBulkGenUndo=null;
   NG=[
     {name:'Group 1 (Control)',n:8,color:COLS[0],note:'',note_level:'standard',events:[
       {type:'measure-tumor',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
@@ -3280,7 +3282,8 @@ function newFormHTML(){
 }
 function renderNGGroups(){
   var discPerGroup=!!(document.getElementById('n-dis-pg')&&document.getElementById('n-dis-pg').checked);
-  return NG.map(function(g,gi){
+  var undoBar=(S._lastBulkGenUndo&&S._lastBulkGenUndo.mode==='ng')?'<button class="btn btn-xs btn-a" style="margin-bottom:8px" onclick="undoLastBulkGenerateNG()"><i class="ti ti-arrow-back-up"></i> Undo last bulk generate</button>':'';
+  return undoBar+NG.map(function(g,gi){
     return '<div class="grp-blk">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">'
       +'<div style="display:flex;align-items:center;gap:7px">'
@@ -3442,9 +3445,17 @@ function submitBulkGenerateNG(){
     copy.color=COLS[(NG.length+idx)%COLS.length];
     return copy;
   });
+  S._lastBulkGenUndo={mode:'ng',ng:JSON.parse(JSON.stringify(NG)),axes:Object.assign({},NG_AXES)};
   NG.splice.apply(NG,[d.gi,1].concat(generated));
   NG_AXES={name1:axes[0]?axes[0].name:'',name2:axes[1]?axes[1].name:'',name3:axes[2]?axes[2].name:''};
   closeModal();
+  document.getElementById('ng-cont').innerHTML=renderNGGroups();
+}
+function undoLastBulkGenerateNG(){
+  var u=S._lastBulkGenUndo;if(!u||u.mode!=='ng')return;
+  NG=u.ng;
+  NG_AXES=u.axes;
+  S._lastBulkGenUndo=null;
   document.getElementById('ng-cont').innerHTML=renderNGGroups();
 }
 async function createExp(){
@@ -3718,9 +3729,11 @@ async function submitBulkGenerateLive(){
   if(!axes.length){alert('Enter at least one axis with values');return;}
   var combos=crossProductAxes(axes);
   var g=(S.groups[d.eid]||[]).find(function(x){return x.id===d.gid});if(!g)return;
+  var exp=S.experiments.find(function(e){return e.id===d.eid});
   var evts=S.events[d.gid]||[];
   var sortOrder=(S.groups[d.eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
+  var newGroupIds=[];
   for(var i=0;i<combos.length;i++){
     var c=combos[i];
     var name=c.label.join(' / ');
@@ -3728,6 +3741,7 @@ async function submitBulkGenerateLive(){
     var gResult=await sb.from('experiment_groups').insert({experiment_id:d.eid,name:name,color:color,target_n:g.target_n,sort_order:sortOrder+i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',tag1:c.tags[0]||'',tag2:c.tags[1]||'',tag3:c.tags[2]||''}).select().single();
     if(gResult.error||!gResult.data)continue;
     var newGid=gResult.data.id;
+    newGroupIds.push(newGid);
     if(evts.length){
       var rows=evts.map(function(ev,j){return{
         group_id:newGid,experiment_id:d.eid,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',
@@ -3738,12 +3752,27 @@ async function submitBulkGenerateLive(){
       await sb.from('scheduled_events').insert(rows);
     }
   }
-  var axUpd={};
-  if(axes[0])axUpd.axis1_name=axes[0].name;
-  if(axes[1])axUpd.axis2_name=axes[1].name;
-  if(axes[2])axUpd.axis3_name=axes[2].name;
+  var axUpd={};var clearedAxisNames=[];
+  if(axes[0]){axUpd.axis1_name=axes[0].name;if(!exp.axis1_name)clearedAxisNames.push('axis1_name');}
+  if(axes[1]){axUpd.axis2_name=axes[1].name;if(!exp.axis2_name)clearedAxisNames.push('axis2_name');}
+  if(axes[2]){axUpd.axis3_name=axes[2].name;if(!exp.axis3_name)clearedAxisNames.push('axis3_name');}
   await sb.from('experiments').update(axUpd).eq('id',d.eid);
+  S._lastBulkGenUndo={mode:'live',eid:d.eid,groupIds:newGroupIds,clearedAxisNames:clearedAxisNames};
   closeModal();await loadAll(d.eid);renderExp(d.eid);
+}
+async function undoLastBulkGenerateLive(){
+  var u=S._lastBulkGenUndo;if(!u||u.mode!=='live')return;
+  if(!confirm('Undo the last bulk generate — delete '+u.groupIds.length+' group(s) just created?'))return;
+  if(u.groupIds.length)await sb.from('scheduled_events').delete().in('group_id',u.groupIds);
+  if(u.groupIds.length)await sb.from('experiment_groups').delete().in('id',u.groupIds);
+  if(u.clearedAxisNames.length){
+    var revert={};
+    u.clearedAxisNames.forEach(function(f){revert[f]=null;});
+    await sb.from('experiments').update(revert).eq('id',u.eid);
+  }
+  var eid=u.eid;
+  S._lastBulkGenUndo=null;
+  await loadAll(eid);renderExp(eid);
 }
 function showAddGroup(eid){
   S._addGrpEid=eid;
