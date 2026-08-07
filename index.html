@@ -262,7 +262,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v117</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v118</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -730,13 +730,14 @@ function sortTasks(tasks){
 // LOG FORM
 var logOrder=[];
 function logHTML(eid,mid,ei,viewDate){
-  var exp=S.experiments.find(function(e){return e.id===eid});
   var msl=(S.measurements[eid]||{})[mid]||[];
   var entry=ei>=0?msl[ei]:null;
   var lastMeas=msl.length>0?msl[msl.length-1]:null;
   var defD=entry?entry.measured_at:(viewDate||TISO);
   var defN=entry?entry.note||'':'';
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+  var mGroup=m&&(S.groups[eid]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});
+  var showPm=!!(mGroup&&mGroup.twice_daily_weight);
   var defW=m&&m.weight?m.weight:'';
   var isEdit=ei>=0;
   var templateSites=entry&&entry.tumor_sites&&entry.tumor_sites.length
@@ -771,7 +772,7 @@ function logHTML(eid,mid,ei,viewDate){
     +siteCols
     +'<button class="btn btn-xs btn-icon" id="il-addsite-'+mid+'" title="Add tumor site" style="margin-top:14px;align-self:flex-start"><i class="ti ti-plus"></i></button>'
     +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+(isEdit&&entry&&entry.weight!=null?entry.weight:'')+'" style="width:58px" placeholder="'+(defW||'g')+'" tabindex="50" data-lastw="'+(defW||'')+'"></div>'
-    +(exp&&exp.twice_daily_weight?'<div class="il-g"><div class="il-l">PM weight (g)</div><input class="il-in" id="il-wpm-'+mid+'" value="'+(isEdit&&entry&&entry.weight_pm!=null?entry.weight_pm:'')+'" style="width:58px" placeholder="g" tabindex="50"></div>':'')
+    +(showPm?'<div class="il-g"><div class="il-l">PM weight (g)</div><input class="il-in" id="il-wpm-'+mid+'" value="'+(isEdit&&entry&&entry.weight_pm!=null?entry.weight_pm:'')+'" style="width:58px" placeholder="g" tabindex="50"></div>':'')
     +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:52px" placeholder="C01" tabindex="51"></div>'
     +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..." tabindex="52"></div>'
     +'<div class="il-g"><div class="il-l">&nbsp;</div>'
@@ -1707,7 +1708,7 @@ function renderDailySpreadsheet(){
   function renderSSCage(label,mList,ceid,multi,cols,showPm){
     html+='<div style="font-size:9px;font-weight:600;color:var(--text3);margin:6px 0 2px 4px">'+label+'</div>';
     html+='<div style="border:.5px solid var(--border);border-radius:var(--r);overflow:hidden">'+ssColHdr(multi,cols,showPm);
-    mList.slice().sort(function(a,b){return a[0].mouseId.localeCompare(b[0].mouseId,undefined,{numeric:true})}).forEach(function(mTasks){html+=sheetRowHTML(mTasks,ceid||mTasks[0].expId,multi,cols);});
+    mList.slice().sort(function(a,b){return a[0].mouseId.localeCompare(b[0].mouseId,undefined,{numeric:true})}).forEach(function(mTasks){html+=sheetRowHTML(mTasks,ceid||mTasks[0].expId,multi,cols,showPm);});
     html+='</div>';
   }
 
@@ -1719,7 +1720,7 @@ function renderDailySpreadsheet(){
       +harvestTipHTML(exp)+'</div>'
       +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
     var multi=exp&&exp.multi_tumor?true:false;
-    var showPm=!!(exp&&exp.twice_daily_weight);
+    var showPm=(S.groups[eid]||[]).some(function(g){return g.twice_daily_weight;});
     var cols=(multi?'70px 46px 70px 60px 64px':'70px 70px 64px')+(showPm?' 64px':'')+' 1fr 50px';
     var byCageSS={};var noCageSS=[];
     byExp[eid].forEach(function(mTasks){var cage=mTasks[0].m&&mTasks[0].m.cage_number;if(cage){if(!byCageSS[cage])byCageSS[cage]=[];byCageSS[cage].push(mTasks);}else{noCageSS.push(mTasks);}});
@@ -1742,10 +1743,8 @@ function renderDailySpreadsheet(){
   document.getElementById('content').innerHTML='<div class="card" style="padding:.75rem">'+html+'</div>';
   wireSheetTabOrder();
 }
-function sheetRowHTML(mTasks,eid,multi,sheetCols){
+function sheetRowHTML(mTasks,eid,multi,sheetCols,showPm){
   var t0=mTasks[0];var mid=t0.mouseId;
-  var exp=S.experiments.find(function(e){return e.id===eid});
-  var showPm=!!(exp&&exp.twice_daily_weight);
   var needsTumor=mTasks.some(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined';});
   var msl=(S.measurements[eid]||{})[mid]||[];
   var todayIdx=findTodaysMeasureIdx(eid,mid,t0.date);
@@ -1761,6 +1760,8 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
     for(var sxi=0;sxi<sheetExtraN;sxi++)templateSites=templateSites.concat([{location:'',dim1:null,dim2:null,is_skin:false,status:'ok'}]);
   }
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
+  var mGroup=m&&(S.groups[eid]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});
+  var rowShowPm=!!(mGroup&&mGroup.twice_daily_weight);
   var weightVal=todays&&todays.weight!=null&&todays.weight!==''?todays.weight:'';
   var weightPmVal=todays&&todays.weight_pm!=null&&todays.weight_pm!==''?todays.weight_pm:'';
   var noteVal=todays&&todays.note?todays.note:'';
@@ -1823,7 +1824,7 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
     out+='<div></div>';
   }
   out+='<div style="padding-top:4px;text-align:right"><input class="sheet-in" id="sheet-w-'+eid+'-'+mid+'" value="'+weightVal+'" placeholder="'+(m&&m.weight?m.weight:'g')+'" style="height:26px;font-size:12px;width:100%;text-align:right" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="w"></div>';
-  if(showPm)out+='<div style="padding-top:4px;text-align:right"><input class="sheet-in" id="sheet-wpm-'+eid+'-'+mid+'" value="'+weightPmVal+'" placeholder="g" style="height:26px;font-size:12px;width:100%;text-align:right" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="wpm"></div>';
+  if(showPm)out+=(rowShowPm?'<div style="padding-top:4px;text-align:right"><input class="sheet-in" id="sheet-wpm-'+eid+'-'+mid+'" value="'+weightPmVal+'" placeholder="g" style="height:26px;font-size:12px;width:100%;text-align:right" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="wpm"></div>':'<div></div>');
   out+='<div style="padding-top:4px"><input class="sheet-in" id="sheet-n-'+eid+'-'+mid+'" value="'+noteVal+'" placeholder="—" style="height:26px;font-size:12px;width:100%" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="n"></div>';
   out+='<div style="padding-top:2px;display:flex;gap:3px;justify-content:flex-end;align-items:center">'
     +'<span id="sheet-status-icon-'+eid+'-'+mid+'">'+(todays?checkIcon:placeholderIcon)+'</span>'
@@ -1865,14 +1866,14 @@ function sheetAddSite(eid,mid){
 function sheetRerenderRow(eid,mid){
   var exp=S.experiments.find(function(e){return e.id===eid});
   var multi=exp&&exp.multi_tumor?true:false;
-  var showPm=!!(exp&&exp.twice_daily_weight);
+  var showPm=(S.groups[eid]||[]).some(function(g){return g.twice_daily_weight;});
   var cols=(multi?'70px 46px 70px 60px 64px':'70px 70px 64px')+(showPm?' 64px':'')+' 1fr 50px';
   var raw=getTasksForDate(S.dailyDate);
   var mTasks=raw.filter(function(t){return isMeasureType(t.type)&&t.mouseId===mid&&t.expId===eid;});
   if(!mTasks.length)return;
   var rowEl=document.getElementById('sheetrow-'+eid+'-'+mid);
   if(!rowEl)return;
-  var tmp=document.createElement('div');tmp.innerHTML=sheetRowHTML(mTasks,eid,multi,cols);
+  var tmp=document.createElement('div');tmp.innerHTML=sheetRowHTML(mTasks,eid,multi,cols,showPm);
   var newRow=tmp.firstChild;
   rowEl.replaceWith(newRow);
   wireSheetRowInputs(newRow);
@@ -2793,6 +2794,7 @@ async function renderExp(eid){
         +'<span class="badge bgy">target: '+g.target_n+'</span>'
         +(g.egp?'<span class="badge bgy">EGP: '+g.egp+'</span>':'')
         +(g.discomfort?'<span class="badge bgy">'+g.discomfort+'</span>':'')
+        +(g.twice_daily_weight?'<span class="badge bgy">2x weight</span>':'')
         +'</div>'
         +'<div style="display:flex;gap:4px">'
         +'<button class="btn btn-xs" onclick="showAddEvent(\''+g.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> Add event</button>'
@@ -3248,11 +3250,6 @@ function newFormHTML(){
     +'<div><label for="nmx" style="font-size:11px;font-weight:500;cursor:pointer">Mastectomy experiment</label>'
     +'<div style="font-size:10px;color:var(--text2)">Primary tumor removed at threshold. Post-Mx mice monitored for respiratory distress. KM survival uses mastectomy date as day 0.</div></div>'
     +'</div>'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:.5rem .75rem;background:var(--amber-bg);border-radius:var(--r)">'
-    +'<input type="checkbox" id="n2xw" style="width:14px;height:14px">'
-    +'<div><label for="n2xw" style="font-size:11px;font-weight:500;cursor:pointer">Twice-daily weighing</label>'
-    +'<div style="font-size:10px;color:var(--text2)">Adds a second (PM) weight box to daily logging, for dosing that depends on same-day afternoon weight.</div></div>'
-    +'</div>'
     +'<hr class="div">'
     +'<div style="font-size:12px;font-weight:500;margin-bottom:.5rem">Endpoint & harvest</div>'
     +'<div class="f2">'
@@ -3286,6 +3283,7 @@ function renderNGGroups(){
       +'<input class="fi" type="number" value="'+g.n+'" style="width:48px;font-size:11px;padding:3px 5px" oninput="NG['+gi+'].n=parseInt(this.value)||0">'
       +'<span style="font-size:10px;color:var(--text2)">EGP:</span>'
       +'<input class="fi" value="'+(g.egp||'')+'" placeholder="EGP number" style="width:100px;font-size:11px;padding:3px 5px" oninput="NG['+gi+'].egp=this.value">'
+      +'<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);cursor:pointer"><input type="checkbox" style="width:13px;height:13px"'+(g.twice_daily_weight?' checked':'')+' onchange="NG['+gi+'].twice_daily_weight=this.checked">2x weight</label>'
       +'</div>'
       +(gi>0?'<button class="btn btn-xs" onclick="NG.splice('+gi+',1);document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()"><i class="ti ti-trash"></i></button>':'')
       +'</div>'
@@ -3453,16 +3451,15 @@ async function createExp(){
   if(!wp||!resId||!tit){alert('Fill WP number, researcher, and title');return;}
   var multi=true; // all experiments support multi-site
   var isMx=!!(document.getElementById('nmx')&&document.getElementById('nmx').checked);
-  var twiceDailyWeight=!!(document.getElementById('n2xw')&&document.getElementById('n2xw').checked);
   var discPerGroup=!!(document.getElementById('n-dis-pg')&&document.getElementById('n-dis-pg').checked);
   var discomfort=(document.getElementById('n-dis')&&document.getElementById('n-dis').value)||'';
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
   try{
-    var result=await sb.from('experiments').insert({id:wp,name:tit,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',is_mastectomy:isMx,twice_daily_weight:twiceDailyWeight,discomfort:discPerGroup?'':discomfort,discomfort_per_group:discPerGroup,axis1_name:NG_AXES.name1||null,axis2_name:NG_AXES.name2||null,axis3_name:NG_AXES.name3||null,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
+    var result=await sb.from('experiments').insert({id:wp,name:tit,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',is_mastectomy:isMx,discomfort:discPerGroup?'':discomfort,discomfort_per_group:discPerGroup,axis1_name:NG_AXES.name1||null,axis2_name:NG_AXES.name2||null,axis3_name:NG_AXES.name3||null,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
     if(result.error)throw new Error(result.error.message);
     for(var i=0;i<NG.length;i++){
       var g=NG[i];
-      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:discPerGroup?(g.discomfort||'Mild'):'',tag1:g.tag1||'',tag2:g.tag2||'',tag3:g.tag3||''}).select().single();
+      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:discPerGroup?(g.discomfort||'Mild'):'',twice_daily_weight:!!g.twice_daily_weight,tag1:g.tag1||'',tag2:g.tag2||'',tag3:g.tag3||''}).select().single();
       if(gResult.error||!gResult.data)continue;
       var gD=gResult.data;
       for(var j=0;j<g.events.length;j++){
@@ -3490,7 +3487,6 @@ function showEditExp(eid){
     +'<div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="ee-ep" value="'+(exp.endpoint_criterion||'')+'"></div>'
     +'<div class="fg"><label class="fl">Status</label><select class="fs" id="ee-status"><option value="active"'+(exp.status==='active'?' selected':'')+'>Active</option><option value="completed"'+(exp.status==='completed'?' selected':'')+'>Completed</option><option value="archived"'+(exp.status==='archived'?' selected':'')+'>Archived</option></select></div>'
     +'<div class="fg"><label class="fl">Type</label><div style="display:flex;align-items:center;gap:6px;padding:6px 0"><input type="checkbox" id="ee-mx"'+(exp.is_mastectomy?' checked':'')+' style="width:14px;height:14px"><label for="ee-mx" style="font-size:11px;cursor:pointer">Mastectomy experiment</label></div></div>'
-    +'<div class="fg"><label class="fl">&nbsp;</label><div style="display:flex;align-items:center;gap:6px;padding:6px 0"><input type="checkbox" id="ee-2xw"'+(exp.twice_daily_weight?' checked':'')+' style="width:14px;height:14px"><label for="ee-2xw" style="font-size:11px;cursor:pointer">Twice-daily weighing</label></div></div>'
     +discomfortFieldsHTML('ee',exp.discomfort||'Mild',!!exp.discomfort_per_group)
     +'<div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="ee-har" rows="3" style="resize:vertical">'+( exp.harvest||'')+'</textarea></div>'
     +'<div class="fg full"><label class="fl">Notes (special things to pay attention to)</label><textarea class="fi" id="ee-notes" rows="2" style="resize:vertical" placeholder="e.g. fragile skin, handle with extra care">'+(exp.notes||'')+'</textarea>'
@@ -3514,13 +3510,12 @@ async function saveEditExp(eid){
   var notesLevel=(document.getElementById('ee-notes-level')&&document.getElementById('ee-notes-level').value)||'standard';
   var status=(document.getElementById('ee-status')&&document.getElementById('ee-status').value)||'active';
   var isMx2=!!(document.getElementById('ee-mx')&&document.getElementById('ee-mx').checked);
-  var twiceDailyWeight2=!!(document.getElementById('ee-2xw')&&document.getElementById('ee-2xw').checked);
   var discPerGroup2=!!(document.getElementById('ee-dis-pg')&&document.getElementById('ee-dis-pg').checked);
   var discomfort2=(document.getElementById('ee-dis')&&document.getElementById('ee-dis').value)||'';
   var kepPrereqs=(document.getElementById('ee-kep-prereqs')&&document.getElementById('ee-kep-prereqs').value)||'';
   var oldExp=S.experiments.find(function(e){return e.id===eid});
   var harChanged=oldExp&&har.trim()&&har.trim()!==(oldExp.harvest||'').trim()&&oldExp.harvest;
-  var upd={researcher:resNameE,researcher_id:resIdE,model:mod,endpoint_criterion:ep,harvest:har,notes:notes,notes_level:notesLevel,status:status,is_mastectomy:isMx2,twice_daily_weight:twiceDailyWeight2,discomfort:discPerGroup2?'':discomfort2,discomfort_per_group:discPerGroup2,kep_prereqs:kepPrereqs};
+  var upd={researcher:resNameE,researcher_id:resIdE,model:mod,endpoint_criterion:ep,harvest:har,notes:notes,notes_level:notesLevel,status:status,is_mastectomy:isMx2,discomfort:discPerGroup2?'':discomfort2,discomfort_per_group:discPerGroup2,kep_prereqs:kepPrereqs};
   if(harChanged)upd.harvest_updated_at=TISO;
   await sb.from('experiments').update(upd).eq('id',eid);
   if(harChanged)await sb.from('deviation_log').insert({experiment_id:eid,mouse_id:null,event_type:'harvest_change',original_date:TISO,actual_date:TISO,reason:'Harvest changed by '+uname()+' on '+TISO+'\nOLD: '+(oldExp.harvest||'')+'\nNEW: '+har});
@@ -3653,6 +3648,7 @@ function showEditGroup(gid,eid){
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="eg-n" type="number" value="'+(g.target_n||8)+'"></div>'
     +'<div class="fg"><label class="fl">EGP</label><input class="fi" id="eg-egp" value="'+(g.egp||'')+'" placeholder="EGP number"></div>'
     +(exp&&exp.discomfort_per_group?'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="eg-dis">'+['Mild','Moderate','Severe'].map(function(o){return'<option'+(g.discomfort===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>':'')
+    +'<div class="fg"><label class="fl">&nbsp;</label><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="eg-2xw"'+(g.twice_daily_weight?' checked':'')+' style="width:14px;height:14px">Twice-daily weighing</label></div>'
     +'<div class="fg full"><label class="fl">Note (this will be shown for every mouse in this group in the daily tasks)</label><textarea class="fi" id="eg-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group">'+(g.note||'')+'</textarea>'
     +'<select class="fs" id="eg-note-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML(g.note_level)+'</select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Grey = standard note · Orange = unusual procedure · Red = unusual procedure needing active monitoring</div>'
@@ -3667,9 +3663,10 @@ async function saveEditGroup(){
   var n=parseInt((document.getElementById('eg-n')&&document.getElementById('eg-n').value)||'8')||8;
   var egp=(document.getElementById('eg-egp')&&document.getElementById('eg-egp').value)||'';
   var disEl=document.getElementById('eg-dis');
+  var twiceDailyWeight=!!(document.getElementById('eg-2xw')&&document.getElementById('eg-2xw').checked);
   var note=(document.getElementById('eg-note')&&document.getElementById('eg-note').value)||'';
   var noteLevel=(document.getElementById('eg-note-level')&&document.getElementById('eg-note-level').value)||'standard';
-  var upd={name:name,target_n:n,egp:egp,note:note,note_level:noteLevel};
+  var upd={name:name,target_n:n,egp:egp,twice_daily_weight:twiceDailyWeight,note:note,note_level:noteLevel};
   if(disEl)upd.discomfort=disEl.value;
   await sb.from('experiment_groups').update(upd).eq('id',d.gid);
   // Also update group_name on mice in this group
@@ -3687,7 +3684,7 @@ async function duplicateGroupLive(gid,eid){
   var sortOrder=(S.groups[eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
   var color=colors[sortOrder%colors.length];
-  var gResult=await sb.from('experiment_groups').insert({experiment_id:eid,name:newName,color:color,target_n:g.target_n,sort_order:sortOrder,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||''}).select().single();
+  var gResult=await sb.from('experiment_groups').insert({experiment_id:eid,name:newName,color:color,target_n:g.target_n,sort_order:sortOrder,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',twice_daily_weight:!!g.twice_daily_weight}).select().single();
   if(gResult.error||!gResult.data){alert('Could not duplicate group.');return;}
   var newGid=gResult.data.id;
   var evts=S.events[gid]||[];
@@ -3723,7 +3720,7 @@ async function submitBulkGenerateLive(){
     var c=combos[i];
     var name=c.label.join(' / ');
     var color=colors[(sortOrder+i)%colors.length];
-    var gResult=await sb.from('experiment_groups').insert({experiment_id:d.eid,name:name,color:color,target_n:g.target_n,sort_order:sortOrder+i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',tag1:c.tags[0]||'',tag2:c.tags[1]||'',tag3:c.tags[2]||''}).select().single();
+    var gResult=await sb.from('experiment_groups').insert({experiment_id:d.eid,name:name,color:color,target_n:g.target_n,sort_order:sortOrder+i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',twice_daily_weight:!!g.twice_daily_weight,tag1:c.tags[0]||'',tag2:c.tags[1]||'',tag3:c.tags[2]||''}).select().single();
     if(gResult.error||!gResult.data)continue;
     var newGid=gResult.data.id;
     if(evts.length){
@@ -3752,6 +3749,7 @@ function showAddGroup(eid){
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="ag-n" type="number" value="8"></div>'
     +'<div class="fg"><label class="fl">EGP</label><input class="fi" id="ag-egp" placeholder="EGP number"></div>'
     +(exp&&exp.discomfort_per_group?'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="ag-dis">'+['Mild','Moderate','Severe'].map(function(o){return'<option>'+o+'</option>';}).join('')+'</select></div>':'')
+    +'<div class="fg"><label class="fl">&nbsp;</label><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ag-2xw" style="width:14px;height:14px">Twice-daily weighing</label></div>'
     +'<div class="fg full"><label class="fl">Note (this will be shown for every mouse in this group in the daily tasks)</label><textarea class="fi" id="ag-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group"></textarea>'
     +'<select class="fs" id="ag-note-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Grey = standard note · Orange = unusual procedure · Red = unusual procedure needing active monitoring</div>'
@@ -3766,13 +3764,14 @@ async function saveAddGroup(){
   var n=parseInt((document.getElementById('ag-n')&&document.getElementById('ag-n').value)||'8')||8;
   var egp=(document.getElementById('ag-egp')&&document.getElementById('ag-egp').value)||'';
   var disEl=document.getElementById('ag-dis');
+  var twiceDailyWeight=!!(document.getElementById('ag-2xw')&&document.getElementById('ag-2xw').checked);
   var note=(document.getElementById('ag-note')&&document.getElementById('ag-note').value)||'';
   var noteLevel=(document.getElementById('ag-note-level')&&document.getElementById('ag-note-level').value)||'standard';
   if(!name){alert('Enter group name');return;}
   var sortOrder=(S.groups[eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
   var color=colors[sortOrder%colors.length];
-  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder,egp:egp,discomfort:disEl?disEl.value:'',note:note,note_level:noteLevel});
+  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder,egp:egp,discomfort:disEl?disEl.value:'',twice_daily_weight:twiceDailyWeight,note:note,note_level:noteLevel});
   closeModal();await loadAll(eid);renderExp(eid);
 }
 
