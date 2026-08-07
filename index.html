@@ -261,7 +261,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v115</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v116</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2730,6 +2730,7 @@ async function renderExp(eid){
         +'<div style="display:flex;gap:4px">'
         +'<button class="btn btn-xs" onclick="showAddEvent(\''+g.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> Add event</button>'
         +'<button class="btn btn-xs btn-icon" onclick="duplicateGroupLive(\''+g.id+'\',\''+eid+'\')" title="Duplicate group"><i class="ti ti-copy"></i></button>'
+        +'<button class="btn btn-xs btn-icon" onclick="showBulkGenerateLive(\''+g.id+'\',\''+eid+'\')" title="Bulk generate groups from this one"><i class="ti ti-grid-dots"></i></button>'
         +'<button class="btn btn-xs btn-icon" onclick="showEditGroup(\''+g.id+'\',\''+eid+'\')" title="Edit group"><i class="ti ti-pencil"></i></button>'
         +'</div></div>'
         +(g.note?(function(){var lv=noteLevelStyle(g.note_level);return'<div style="font-size:10px;color:'+lv.fg+';margin-bottom:.5rem;padding:4px 6px;background:'+lv.bg+';border:.5px solid '+lv.border+';border-radius:var(--r)"><i class="ti ti-alert-triangle" style="font-size:10px"></i> <span style="font-weight:500">'+lv.label+':</span> '+g.note+'</div>';})():'');
@@ -3102,9 +3103,11 @@ async function saveWtThreshold(eid){
 
 // NEW EXPERIMENT
 var NG=[];
+var NG_AXES={name1:'',name2:'',name3:''};
 function renderNew(){
   document.getElementById('pg-title').textContent='New experiment';
   document.getElementById('tb-acts').innerHTML='';document.getElementById('pg-acts').innerHTML='';
+  NG_AXES={name1:'',name2:'',name3:''};
   NG=[
     {name:'Group 1 (Control)',n:8,color:COLS[0],note:'',note_level:'standard',events:[
       {type:'measure-tumor',label:'Tumor measurement',schedule:'fixed-days',days:[1,4],trigger:'enrollment',triggerVal:'',dayOffset:0,maxDoses:null,drug:'',dose:'',route:'IP',intervalDays:7},
@@ -3201,6 +3204,7 @@ function renderNGGroups(){
       +'<div style="display:flex;gap:5px;margin-top:3px">'
       +'<button class="btn btn-xs" onclick="addNGEvent('+gi+')"><i class="ti ti-plus"></i> Add event</button>'
       +'<button class="btn btn-xs" onclick="duplicateNG('+gi+')"><i class="ti ti-copy"></i> Duplicate group</button>'
+      +'<button class="btn btn-xs" onclick="showBulkGenerateNG('+gi+')"><i class="ti ti-grid-dots"></i> Bulk generate from this group</button>'
       +'</div>'
       +'</div>';
   }).join('');
@@ -3288,6 +3292,62 @@ function duplicateNG(gi){
   document.getElementById('ng-cont').innerHTML=renderNGGroups();
 }
 function addNGEvent(gi){NG[gi].events.push({type:'treatment',label:'',drug:'',dose:'',route:'IP',schedule:'fixed-days',days:[1,4],trigger:'size',triggerVal:'3x3',dayOffset:0,maxDoses:null,intervalDays:7});document.getElementById('ng-cont').innerHTML=renderNGGroups();}
+
+// BULK GENERATE GROUPS — cross-product of up to 3 axes, using one existing group as the
+// shared template (N, note, discomfort, events all copied per generated group).
+function bulkGenAxesModalBody(){
+  return '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Define up to 3 axes (e.g. Inhibitor, Model, Timepoint). Leave an axis blank to skip it. One group is generated per combination, using this group\'s current N, note, discomfort and events as the template.</div>'
+    +[1,2,3].map(function(i){
+      return '<div class="fg full" style="margin-bottom:6px"><label class="fl">Axis '+i+' name</label><input class="fi" id="bg-ax'+i+'-name" placeholder="e.g. '+(i===1?'Inhibitor':i===2?'Model':'Timepoint')+'">'
+        +'<textarea class="fi" id="bg-ax'+i+'-vals" rows="2" placeholder="One value per line" style="resize:vertical;margin-top:4px"></textarea></div>';
+    }).join('');
+}
+function readBulkGenAxes(){
+  var axes=[];
+  for(var i=1;i<=3;i++){
+    var name=((document.getElementById('bg-ax'+i+'-name')&&document.getElementById('bg-ax'+i+'-name').value)||'').trim();
+    var valsRaw=(document.getElementById('bg-ax'+i+'-vals')&&document.getElementById('bg-ax'+i+'-vals').value)||'';
+    var vals=valsRaw.split('\n').map(function(s){return s.trim();}).filter(function(s){return s.length>0;});
+    if(name&&vals.length)axes.push({name:name,vals:vals});
+  }
+  return axes;
+}
+function crossProductAxes(axes){
+  var combos=[{tags:[],label:[]}];
+  axes.forEach(function(ax){
+    var next=[];
+    combos.forEach(function(c){
+      ax.vals.forEach(function(v){next.push({tags:c.tags.concat([v]),label:c.label.concat([v])});});
+    });
+    combos=next;
+  });
+  return combos;
+}
+function showBulkGenerateNG(gi){
+  S._bulkGenCtx={gi:gi};
+  showModal('Bulk generate groups from "'+NG[gi].name+'"',
+    bulkGenAxesModalBody(),
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitBulkGenerateNG()"><i class="ti ti-check"></i> Generate</button>');
+}
+function submitBulkGenerateNG(){
+  var d=S._bulkGenCtx;if(!d)return;
+  var axes=readBulkGenAxes();
+  if(!axes.length){alert('Enter at least one axis with values');return;}
+  var combos=crossProductAxes(axes);
+  var template=NG[d.gi];
+  var generated=combos.map(function(c,idx){
+    var copy=JSON.parse(JSON.stringify(template));
+    copy.name=c.label.join(' / ');
+    copy.tag1=c.tags[0]||'';copy.tag2=c.tags[1]||'';copy.tag3=c.tags[2]||'';
+    copy.color=COLS[(NG.length+idx)%COLS.length];
+    return copy;
+  });
+  NG.splice.apply(NG,[d.gi,1].concat(generated));
+  NG_AXES={name1:axes[0]?axes[0].name:'',name2:axes[1]?axes[1].name:'',name3:axes[2]?axes[2].name:''};
+  closeModal();
+  document.getElementById('ng-cont').innerHTML=renderNGGroups();
+}
 async function createExp(){
   var wp=((document.getElementById('nwp')&&document.getElementById('nwp').value)||'').trim();
   var resRaw=(document.getElementById('nres')&&document.getElementById('nres').value)||'';
@@ -3304,11 +3364,11 @@ async function createExp(){
   var discomfort=(document.getElementById('n-dis')&&document.getElementById('n-dis').value)||'';
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
   try{
-    var result=await sb.from('experiments').insert({id:wp,name:tit,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',is_mastectomy:isMx,twice_daily_weight:twiceDailyWeight,discomfort:discPerGroup?'':discomfort,discomfort_per_group:discPerGroup,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
+    var result=await sb.from('experiments').insert({id:wp,name:tit,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',is_mastectomy:isMx,twice_daily_weight:twiceDailyWeight,discomfort:discPerGroup?'':discomfort,discomfort_per_group:discPerGroup,axis1_name:NG_AXES.name1||null,axis2_name:NG_AXES.name2||null,axis3_name:NG_AXES.name3||null,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
     if(result.error)throw new Error(result.error.message);
     for(var i=0;i<NG.length;i++){
       var g=NG[i];
-      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:discPerGroup?(g.discomfort||'Mild'):''}).select().single();
+      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:discPerGroup?(g.discomfort||'Mild'):'',tag1:g.tag1||'',tag2:g.tag2||'',tag3:g.tag3||''}).select().single();
       if(gResult.error||!gResult.data)continue;
       var gD=gResult.data;
       for(var j=0;j<g.events.length;j++){
@@ -3547,6 +3607,47 @@ async function duplicateGroupLive(gid,eid){
     await sb.from('scheduled_events').insert(rows);
   }
   await loadAll(eid);renderExp(eid);
+}
+function showBulkGenerateLive(gid,eid){
+  var g=(S.groups[eid]||[]).find(function(x){return x.id===gid});if(!g)return;
+  S._bulkGenCtx={gid:gid,eid:eid};
+  showModal('Bulk generate groups from "'+g.name+'"',
+    bulkGenAxesModalBody(),
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitBulkGenerateLive()"><i class="ti ti-check"></i> Generate</button>');
+}
+async function submitBulkGenerateLive(){
+  var d=S._bulkGenCtx;if(!d||!d.eid)return;
+  var axes=readBulkGenAxes();
+  if(!axes.length){alert('Enter at least one axis with values');return;}
+  var combos=crossProductAxes(axes);
+  var g=(S.groups[d.eid]||[]).find(function(x){return x.id===d.gid});if(!g)return;
+  var evts=S.events[d.gid]||[];
+  var sortOrder=(S.groups[d.eid]||[]).length;
+  var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
+  for(var i=0;i<combos.length;i++){
+    var c=combos[i];
+    var name=c.label.join(' / ');
+    var color=colors[(sortOrder+i)%colors.length];
+    var gResult=await sb.from('experiment_groups').insert({experiment_id:d.eid,name:name,color:color,target_n:g.target_n,sort_order:sortOrder+i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',tag1:c.tags[0]||'',tag2:c.tags[1]||'',tag3:c.tags[2]||''}).select().single();
+    if(gResult.error||!gResult.data)continue;
+    var newGid=gResult.data.id;
+    if(evts.length){
+      var rows=evts.map(function(ev,j){return{
+        group_id:newGid,experiment_id:d.eid,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',
+        route:ev.route||'',schedule_type:ev.schedule_type,schedule_days:ev.schedule_days||[],
+        interval_days:ev.interval_days||null,trigger_type:ev.trigger_type,trigger_value:ev.trigger_value||'',
+        day_offset:ev.day_offset||0,max_doses:ev.max_doses||null,sort_order:j
+      };});
+      await sb.from('scheduled_events').insert(rows);
+    }
+  }
+  var axUpd={};
+  if(axes[0])axUpd.axis1_name=axes[0].name;
+  if(axes[1])axUpd.axis2_name=axes[1].name;
+  if(axes[2])axUpd.axis3_name=axes[2].name;
+  await sb.from('experiments').update(axUpd).eq('id',d.eid);
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
 }
 function showAddGroup(eid){
   S._addGrpEid=eid;
