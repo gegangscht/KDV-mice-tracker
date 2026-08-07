@@ -262,7 +262,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v118</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v119</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -737,7 +737,7 @@ function logHTML(eid,mid,ei,viewDate){
   var defN=entry?entry.note||'':'';
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
   var mGroup=m&&(S.groups[eid]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});
-  var showPm=!!(mGroup&&mGroup.twice_daily_weight);
+  var showPm=!!(mGroup&&groupTwiceDailyWeight(mGroup.id));
   var defW=m&&m.weight?m.weight:'';
   var isEdit=ei>=0;
   var templateSites=entry&&entry.tumor_sites&&entry.tumor_sites.length
@@ -1519,6 +1519,13 @@ function toggleDiscomfortPerGroup(prefix){
   if(sel)sel.disabled=!!(chk&&chk.checked);
   if(prefix==='n'){var cont=document.getElementById('ng-cont');if(cont)cont.innerHTML=renderNGGroups();}
 }
+// True when a group has a Weight scheduled event flagged twice-daily — drives the PM weight
+// box in Daily cards/spreadsheet. Lives on the event (not the group) since different weight
+// events could in principle differ, though in practice a group has at most one.
+function groupTwiceDailyWeight(gid){
+  var gevts=S.events[gid]||[];
+  return gevts.some(function(ev){return ev.type==='measure-weight'&&ev.twice_daily;});
+}
 function groupOptionsHTML(groups,exp,valueFn,includeEmpty){
   var vf=valueFn||function(g){return g.id;};
   var hasAxes=!!(exp&&exp.axis1_name);
@@ -1720,7 +1727,7 @@ function renderDailySpreadsheet(){
       +harvestTipHTML(exp)+'</div>'
       +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
     var multi=exp&&exp.multi_tumor?true:false;
-    var showPm=(S.groups[eid]||[]).some(function(g){return g.twice_daily_weight;});
+    var showPm=(S.groups[eid]||[]).some(function(g){return groupTwiceDailyWeight(g.id);});
     var cols=(multi?'70px 46px 70px 60px 64px':'70px 70px 64px')+(showPm?' 64px':'')+' 1fr 50px';
     var byCageSS={};var noCageSS=[];
     byExp[eid].forEach(function(mTasks){var cage=mTasks[0].m&&mTasks[0].m.cage_number;if(cage){if(!byCageSS[cage])byCageSS[cage]=[];byCageSS[cage].push(mTasks);}else{noCageSS.push(mTasks);}});
@@ -1761,7 +1768,7 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols,showPm){
   }
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
   var mGroup=m&&(S.groups[eid]||[]).find(function(g){return g.id===m.group_id||g.name===m.group_name});
-  var rowShowPm=!!(mGroup&&mGroup.twice_daily_weight);
+  var rowShowPm=!!(mGroup&&groupTwiceDailyWeight(mGroup.id));
   var weightVal=todays&&todays.weight!=null&&todays.weight!==''?todays.weight:'';
   var weightPmVal=todays&&todays.weight_pm!=null&&todays.weight_pm!==''?todays.weight_pm:'';
   var noteVal=todays&&todays.note?todays.note:'';
@@ -1866,7 +1873,7 @@ function sheetAddSite(eid,mid){
 function sheetRerenderRow(eid,mid){
   var exp=S.experiments.find(function(e){return e.id===eid});
   var multi=exp&&exp.multi_tumor?true:false;
-  var showPm=(S.groups[eid]||[]).some(function(g){return g.twice_daily_weight;});
+  var showPm=(S.groups[eid]||[]).some(function(g){return groupTwiceDailyWeight(g.id);});
   var cols=(multi?'70px 46px 70px 60px 64px':'70px 70px 64px')+(showPm?' 64px':'')+' 1fr 50px';
   var raw=getTasksForDate(S.dailyDate);
   var mTasks=raw.filter(function(t){return isMeasureType(t.type)&&t.mouseId===mid&&t.expId===eid;});
@@ -2794,7 +2801,7 @@ async function renderExp(eid){
         +'<span class="badge bgy">target: '+g.target_n+'</span>'
         +(g.egp?'<span class="badge bgy">EGP: '+g.egp+'</span>':'')
         +(g.discomfort?'<span class="badge bgy">'+g.discomfort+'</span>':'')
-        +(g.twice_daily_weight?'<span class="badge bgy">2x weight</span>':'')
+        +(groupTwiceDailyWeight(g.id)?'<span class="badge bgy">2x weight</span>':'')
         +'</div>'
         +'<div style="display:flex;gap:4px">'
         +'<button class="btn btn-xs" onclick="showAddEvent(\''+g.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> Add event</button>'
@@ -3283,7 +3290,6 @@ function renderNGGroups(){
       +'<input class="fi" type="number" value="'+g.n+'" style="width:48px;font-size:11px;padding:3px 5px" oninput="NG['+gi+'].n=parseInt(this.value)||0">'
       +'<span style="font-size:10px;color:var(--text2)">EGP:</span>'
       +'<input class="fi" value="'+(g.egp||'')+'" placeholder="EGP number" style="width:100px;font-size:11px;padding:3px 5px" oninput="NG['+gi+'].egp=this.value">'
-      +'<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);cursor:pointer"><input type="checkbox" style="width:13px;height:13px"'+(g.twice_daily_weight?' checked':'')+' onchange="NG['+gi+'].twice_daily_weight=this.checked">2x weight</label>'
       +'</div>'
       +(gi>0?'<button class="btn btn-xs" onclick="NG.splice('+gi+',1);document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()"><i class="ti ti-trash"></i></button>':'')
       +'</div>'
@@ -3312,6 +3318,7 @@ function renderNGEvent(gi,ei,ev){
   var HAS_MAXDOSE=ev.type==='treatment';
   var HAS_DAYOFFSET=ev.type==='blood'||ev.type==='ivis';
   var HAS_DAYS=ev.type!=='once';
+  var HAS_TWICE_DAILY=ev.type==='measure-weight';
   var TRIGGERS_FOR_TYPE={
     'measure-tumor':['enrollment','size'],
     'measure-weight':['enrollment','day-after-tx'],
@@ -3349,7 +3356,7 @@ function renderNGEvent(gi,ei,ev){
       +'<input class="fi" style="flex:2;font-size:10px;padding:3px 5px" value="'+(ev.drug||'')+'" placeholder="drug" oninput="NG['+gi+'].events['+ei+'].drug=this.value">'
       +'<input class="fi" style="flex:1;font-size:10px;padding:3px 4px" value="'+(ev.dose||'')+'" placeholder="dose" oninput="NG['+gi+'].events['+ei+'].dose=this.value">'
       +routeInputHTML('ng-route-'+gi+'-'+ei,ev.route,{style:'flex:1;font-size:10px;padding:3px 4px',oninput:'NG['+gi+'].events['+ei+'].route=this.value'})
-      +'</div></div>':'<div></div>')
+      +'</div></div>':(HAS_TWICE_DAILY?'<div class="fg"><label class="fl">&nbsp;</label><label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);cursor:pointer;padding:3px 0"><input type="checkbox" style="width:13px;height:13px"'+(ev.twiceDaily?' checked':'')+' onchange="NG['+gi+'].events['+ei+'].twiceDaily=this.checked">Twice-daily (AM+PM)</label></div>':'<div></div>'))
     +'</div>'
     // Schedule
     +'<div style="margin-bottom:5px"><div class="fl" style="margin-bottom:3px">Schedule</div>'
@@ -3459,12 +3466,12 @@ async function createExp(){
     if(result.error)throw new Error(result.error.message);
     for(var i=0;i<NG.length;i++){
       var g=NG[i];
-      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:discPerGroup?(g.discomfort||'Mild'):'',twice_daily_weight:!!g.twice_daily_weight,tag1:g.tag1||'',tag2:g.tag2||'',tag3:g.tag3||''}).select().single();
+      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:discPerGroup?(g.discomfort||'Mild'):'',tag1:g.tag1||'',tag2:g.tag2||'',tag3:g.tag3||''}).select().single();
       if(gResult.error||!gResult.data)continue;
       var gD=gResult.data;
       for(var j=0;j<g.events.length;j++){
         var ev=g.events[j];
-        await sb.from('scheduled_events').insert({group_id:gD.id,experiment_id:wp,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',schedule_type:ev.schedule,schedule_days:ev.days||[],interval_days:ev.schedule==='interval'?ev.intervalDays:null,trigger_type:ev.trigger,trigger_value:ev.triggerVal||'',day_offset:ev.dayOffset||0,max_doses:ev.maxDoses||null,sort_order:j});
+        await sb.from('scheduled_events').insert({group_id:gD.id,experiment_id:wp,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',schedule_type:ev.schedule,schedule_days:ev.days||[],interval_days:ev.schedule==='interval'?ev.intervalDays:null,trigger_type:ev.trigger,trigger_value:ev.triggerVal||'',day_offset:ev.dayOffset||0,max_doses:ev.maxDoses||null,twice_daily:!!ev.twiceDaily,sort_order:j});
       }
     }
     await assignCageSlot(wp);await assignCageSlot(wp);await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
@@ -3648,7 +3655,6 @@ function showEditGroup(gid,eid){
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="eg-n" type="number" value="'+(g.target_n||8)+'"></div>'
     +'<div class="fg"><label class="fl">EGP</label><input class="fi" id="eg-egp" value="'+(g.egp||'')+'" placeholder="EGP number"></div>'
     +(exp&&exp.discomfort_per_group?'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="eg-dis">'+['Mild','Moderate','Severe'].map(function(o){return'<option'+(g.discomfort===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>':'')
-    +'<div class="fg"><label class="fl">&nbsp;</label><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="eg-2xw"'+(g.twice_daily_weight?' checked':'')+' style="width:14px;height:14px">Twice-daily weighing</label></div>'
     +'<div class="fg full"><label class="fl">Note (this will be shown for every mouse in this group in the daily tasks)</label><textarea class="fi" id="eg-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group">'+(g.note||'')+'</textarea>'
     +'<select class="fs" id="eg-note-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML(g.note_level)+'</select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Grey = standard note · Orange = unusual procedure · Red = unusual procedure needing active monitoring</div>'
@@ -3663,10 +3669,9 @@ async function saveEditGroup(){
   var n=parseInt((document.getElementById('eg-n')&&document.getElementById('eg-n').value)||'8')||8;
   var egp=(document.getElementById('eg-egp')&&document.getElementById('eg-egp').value)||'';
   var disEl=document.getElementById('eg-dis');
-  var twiceDailyWeight=!!(document.getElementById('eg-2xw')&&document.getElementById('eg-2xw').checked);
   var note=(document.getElementById('eg-note')&&document.getElementById('eg-note').value)||'';
   var noteLevel=(document.getElementById('eg-note-level')&&document.getElementById('eg-note-level').value)||'standard';
-  var upd={name:name,target_n:n,egp:egp,twice_daily_weight:twiceDailyWeight,note:note,note_level:noteLevel};
+  var upd={name:name,target_n:n,egp:egp,note:note,note_level:noteLevel};
   if(disEl)upd.discomfort=disEl.value;
   await sb.from('experiment_groups').update(upd).eq('id',d.gid);
   // Also update group_name on mice in this group
@@ -3684,7 +3689,7 @@ async function duplicateGroupLive(gid,eid){
   var sortOrder=(S.groups[eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
   var color=colors[sortOrder%colors.length];
-  var gResult=await sb.from('experiment_groups').insert({experiment_id:eid,name:newName,color:color,target_n:g.target_n,sort_order:sortOrder,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',twice_daily_weight:!!g.twice_daily_weight}).select().single();
+  var gResult=await sb.from('experiment_groups').insert({experiment_id:eid,name:newName,color:color,target_n:g.target_n,sort_order:sortOrder,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||''}).select().single();
   if(gResult.error||!gResult.data){alert('Could not duplicate group.');return;}
   var newGid=gResult.data.id;
   var evts=S.events[gid]||[];
@@ -3693,7 +3698,7 @@ async function duplicateGroupLive(gid,eid){
       group_id:newGid,experiment_id:eid,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',
       route:ev.route||'',schedule_type:ev.schedule_type,schedule_days:ev.schedule_days||[],
       interval_days:ev.interval_days||null,trigger_type:ev.trigger_type,trigger_value:ev.trigger_value||'',
-      day_offset:ev.day_offset||0,max_doses:ev.max_doses||null,sort_order:i
+      day_offset:ev.day_offset||0,max_doses:ev.max_doses||null,twice_daily:!!ev.twice_daily,sort_order:i
     };});
     await sb.from('scheduled_events').insert(rows);
   }
@@ -3720,7 +3725,7 @@ async function submitBulkGenerateLive(){
     var c=combos[i];
     var name=c.label.join(' / ');
     var color=colors[(sortOrder+i)%colors.length];
-    var gResult=await sb.from('experiment_groups').insert({experiment_id:d.eid,name:name,color:color,target_n:g.target_n,sort_order:sortOrder+i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',twice_daily_weight:!!g.twice_daily_weight,tag1:c.tags[0]||'',tag2:c.tags[1]||'',tag3:c.tags[2]||''}).select().single();
+    var gResult=await sb.from('experiment_groups').insert({experiment_id:d.eid,name:name,color:color,target_n:g.target_n,sort_order:sortOrder+i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||'',tag1:c.tags[0]||'',tag2:c.tags[1]||'',tag3:c.tags[2]||''}).select().single();
     if(gResult.error||!gResult.data)continue;
     var newGid=gResult.data.id;
     if(evts.length){
@@ -3728,7 +3733,7 @@ async function submitBulkGenerateLive(){
         group_id:newGid,experiment_id:d.eid,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',
         route:ev.route||'',schedule_type:ev.schedule_type,schedule_days:ev.schedule_days||[],
         interval_days:ev.interval_days||null,trigger_type:ev.trigger_type,trigger_value:ev.trigger_value||'',
-        day_offset:ev.day_offset||0,max_doses:ev.max_doses||null,sort_order:j
+        day_offset:ev.day_offset||0,max_doses:ev.max_doses||null,twice_daily:!!ev.twice_daily,sort_order:j
       };});
       await sb.from('scheduled_events').insert(rows);
     }
@@ -3749,7 +3754,6 @@ function showAddGroup(eid){
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="ag-n" type="number" value="8"></div>'
     +'<div class="fg"><label class="fl">EGP</label><input class="fi" id="ag-egp" placeholder="EGP number"></div>'
     +(exp&&exp.discomfort_per_group?'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="ag-dis">'+['Mild','Moderate','Severe'].map(function(o){return'<option>'+o+'</option>';}).join('')+'</select></div>':'')
-    +'<div class="fg"><label class="fl">&nbsp;</label><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ag-2xw" style="width:14px;height:14px">Twice-daily weighing</label></div>'
     +'<div class="fg full"><label class="fl">Note (this will be shown for every mouse in this group in the daily tasks)</label><textarea class="fi" id="ag-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group"></textarea>'
     +'<select class="fs" id="ag-note-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Grey = standard note · Orange = unusual procedure · Red = unusual procedure needing active monitoring</div>'
@@ -3764,14 +3768,13 @@ async function saveAddGroup(){
   var n=parseInt((document.getElementById('ag-n')&&document.getElementById('ag-n').value)||'8')||8;
   var egp=(document.getElementById('ag-egp')&&document.getElementById('ag-egp').value)||'';
   var disEl=document.getElementById('ag-dis');
-  var twiceDailyWeight=!!(document.getElementById('ag-2xw')&&document.getElementById('ag-2xw').checked);
   var note=(document.getElementById('ag-note')&&document.getElementById('ag-note').value)||'';
   var noteLevel=(document.getElementById('ag-note-level')&&document.getElementById('ag-note-level').value)||'standard';
   if(!name){alert('Enter group name');return;}
   var sortOrder=(S.groups[eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
   var color=colors[sortOrder%colors.length];
-  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder,egp:egp,discomfort:disEl?disEl.value:'',twice_daily_weight:twiceDailyWeight,note:note,note_level:noteLevel});
+  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder,egp:egp,discomfort:disEl?disEl.value:'',note:note,note_level:noteLevel});
   closeModal();await loadAll(eid);renderExp(eid);
 }
 
@@ -3804,6 +3807,7 @@ function showEditEvent(evid,eid){
     +'<div class="fg"><label class="fl">Trigger value</label><input class="fi" id="ee-trigval" value="'+(ev.trigger_value||'')+'" placeholder="e.g. 5x5"></div>'
     +'<div class="fg"><label class="fl">Day offset</label><input class="fi" id="ee-dayoff" type="number" value="'+(ev.day_offset||0)+'"></div>'
     +'<div class="fg"><label class="fl">Max doses</label><input class="fi" id="ee-maxdose" type="number" value="'+(ev.max_doses||'')+'" placeholder="unlimited"></div>'
+    +'<div class="fg full"><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ee-2xd"'+(ev.twice_daily?' checked':'')+' style="width:14px;height:14px">Twice-daily (AM+PM) — applies to Weight events</label></div>'
     +'</div>',
     '<button class="btn btn-xs btn-r" onclick="deleteEvent()"><i class="ti ti-trash"></i> Delete</button>'
     +'<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
@@ -3826,7 +3830,8 @@ async function saveEditEvent(){
     trigger_type:(document.getElementById('ee-trigger')&&document.getElementById('ee-trigger').value)||'enrollment',
     trigger_value:(document.getElementById('ee-trigval')&&document.getElementById('ee-trigval').value)||'',
     day_offset:parseInt((document.getElementById('ee-dayoff')&&document.getElementById('ee-dayoff').value)||'0')||0,
-    max_doses:maxDoseVal&&maxDoseVal.trim()?parseInt(maxDoseVal):null
+    max_doses:maxDoseVal&&maxDoseVal.trim()?parseInt(maxDoseVal):null,
+    twice_daily:!!(document.getElementById('ee-2xd')&&document.getElementById('ee-2xd').checked)
   }).eq('id',d.evid);
   closeModal();await loadAll(d.eid);renderExp(d.eid);
 }
@@ -3857,6 +3862,7 @@ function showAddEvent(gid,eid){
     +'<div class="fg"><label class="fl">Trigger value</label><input class="fi" id="ae-trigval" placeholder="e.g. 5x5"></div>'
     +'<div class="fg"><label class="fl">Day offset</label><input class="fi" id="ae-dayoff" type="number" value="0"></div>'
     +'<div class="fg"><label class="fl">Max doses</label><input class="fi" id="ae-maxdose" type="number" placeholder="unlimited"></div>'
+    +'<div class="fg full"><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ae-2xd" style="width:14px;height:14px">Twice-daily (AM+PM) — applies to Weight events</label></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="saveAddEvent()"><i class="ti ti-check"></i> Add event</button>');
@@ -3881,6 +3887,7 @@ async function saveAddEvent(){
     trigger_value:(document.getElementById('ae-trigval')&&document.getElementById('ae-trigval').value)||'',
     day_offset:parseInt((document.getElementById('ae-dayoff')&&document.getElementById('ae-dayoff').value)||'0')||0,
     max_doses:maxDoseVal&&maxDoseVal.trim()?parseInt(maxDoseVal):null,
+    twice_daily:!!(document.getElementById('ae-2xd')&&document.getElementById('ae-2xd').checked),
     sort_order:sortOrder
   });
   closeModal();await loadAll(d.eid);renderExp(d.eid);
