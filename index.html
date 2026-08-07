@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v122</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v123</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2689,17 +2689,20 @@ async function renderExp(eid){
   if(S.expTab==='mice'){
     var showAllHist=S.showHist[eid]||false;
     var sortLabel={default:'Default order','id-asc':'ID ↑','id-desc':'ID ↓','cage-asc':'Cage ↑','cage-desc':'Cage ↓'}[S.mouseSort]||'Default order';
-    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">'
-      +'<button class="btn btn-xs" onclick="cycleSortMice(\''+eid+'\')"><i class="ti ti-sort-ascending"></i> Sort: '+sortLabel+'</button>'
+    var miceHasAxes=!!(exp&&exp.axis1_name);
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:6px">'
+      +'<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-xs" onclick="cycleSortMice(\''+eid+'\')"><i class="ti ti-sort-ascending"></i> Sort: '+sortLabel+'</button>'
+      +(miceHasAxes?groupByAxisSelectHTML(exp,eid):'')+'</div>'
       +'<button class="btn btn-xs" onclick="S.showHist[\''+eid+'\']=!S.showHist[\''+eid+'\'];renderExp(\''+eid+'\')"><i class="ti ti-history"></i> '+(showAllHist?'Collapse all history':'Show full history for all mice')+'</button>'
       +'</div>';
     if(showAllHist){
       S.mice[eid]&&S.mice[eid].forEach(function(m){S.showAllMs[m.id]=true;});
     }
-    groups.forEach(function(g){
+    function miceGroupBlockHTML(g){
+      var mh='';
       var gM=sortMiceForDisplay(mice.filter(function(m){return m.group_id===g.id||m.group_name===g.name}));
       var actN=gM.filter(function(m){return m.status==='active'}).length;
-      html+='<div class="card" style="padding:.5rem 0;margin-bottom:.625rem">'
+      mh+='<div class="card" style="padding:.5rem 0;margin-bottom:.625rem">'
         +'<div style="display:flex;align-items:center;justify-content:space-between;padding:0 .75rem .4rem">'
         +'<div style="display:flex;align-items:center;gap:6px"><div class="edot" style="background:'+g.color+'"></div>'
         +'<span style="font-size:11px;font-weight:500">'+g.name+'</span>'
@@ -2726,7 +2729,7 @@ async function renderExp(eid){
         var bc=last?'<span title="'+bFull(last.tumor_sites)+'" style="'+(near?'color:var(--amber);font-weight:500':'')+'">'+(bShort(last.tumor_sites,S.inclSkin))+'</span>':'--';
         var kdvC=m.kdv?'<span class="mono" style="cursor:pointer" onclick="editKDV(\''+m.id+'\',\''+eid+'\')" title="Click to edit">'+m.kdv+'</span>':(m.status==='sacrificed'?'<button class="btn btn-xs btn-a" onclick="editKDV(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> KDV</button>':'--');
         var cageC='<span class="cage-tag" onclick="editCage(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-cage" style="font-size:10px"></i>'+(m.cage_number||'--')+'</span>';
-        html+='<tr id="mrow-'+m.id+'" style="'+(near?'background:#FAEEDA22':'')+'">'
+        mh+='<tr id="mrow-'+m.id+'" style="'+(near?'background:#FAEEDA22':'')+'">'
           +'<td style="padding:2px 4px"><input type="checkbox" class="mouse-chk row-chk" data-mid="'+m.id+'" data-eid="'+eid+'" onchange="onRowCheck(this)"></td>'
           +'<td class="mono">'+m.id+'</td><td>'+cageC+'</td><td style="font-size:10px">'+(m.tx_start||'--')+'</td>'
           +'<td style="font-size:10px">'+(days!=null?'d'+days:'--')+'</td><td>'+bc+'</td>'
@@ -2757,8 +2760,27 @@ async function renderExp(eid){
           +'</div></td></tr>'
           +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="12" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
       });
-      html+='</tbody></table></div>';
-    });
+      mh+='</tbody></table></div>';
+      return mh;
+    }
+    var miceGroupBy=miceHasAxes?(S.schedGroupBy&&S.schedGroupBy[eid])||'':'';
+    if(miceGroupBy){
+      var miceTagField=miceGroupBy==='axis1'?'tag1':miceGroupBy==='axis2'?'tag2':'tag3';
+      var miceBuckets={};var miceOrder=[];
+      groups.forEach(function(g){
+        var k=g[miceTagField]||'(none)';
+        if(!miceBuckets[k]){miceBuckets[k]=[];miceOrder.push(k);}
+        miceBuckets[k].push(g);
+      });
+      miceOrder.sort();
+      miceOrder.forEach(function(k){
+        html+='<details style="margin-bottom:6px"><summary style="cursor:pointer;font-size:11px;font-weight:500;padding:6px 4px;color:var(--text2)">'+k+' <span style="font-weight:400;color:var(--text3)">('+miceBuckets[k].length+')</span></summary>'
+          +miceBuckets[k].map(miceGroupBlockHTML).join('')
+          +'</details>';
+      });
+    } else {
+      groups.forEach(function(g){html+=miceGroupBlockHTML(g);});
+    }
   } else if(S.expTab==='timeline'){
     html+=renderTimelineTab(exp,groups,eid);
   } else if(S.expTab==='growth'){
