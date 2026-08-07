@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v121</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v122</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2843,6 +2843,7 @@ async function renderExp(eid){
       +'<div style="display:flex;align-items:center;gap:8px">'
       +(hasAxes?groupByAxisSelectHTML(exp,eid):'')
       +((S._lastBulkGenUndo&&S._lastBulkGenUndo.mode==='live'&&S._lastBulkGenUndo.eid===eid)?'<button class="btn btn-xs btn-a" onclick="undoLastBulkGenerateLive()"><i class="ti ti-arrow-back-up"></i> Undo last bulk generate</button>':'')
+      +'<button class="btn btn-xs" onclick="showBulkEditEgp(\''+eid+'\')"><i class="ti ti-clipboard-list"></i> Bulk edit EGP</button>'
       +'<button class="btn btn-xs btn-p" onclick="showAddGroup(\''+eid+'\')"><i class="ti ti-plus"></i> Add group</button>'
       +'</div></div>';
     var groupBy=hasAxes?(S.schedGroupBy&&S.schedGroupBy[eid])||'':'';
@@ -3889,6 +3890,51 @@ async function bulkDeleteGroups(){
   await sb.from('experiment_groups').delete().in('id',delIds);
   clearGroupSelection();
   await loadAll(eid);renderExp(eid);
+}
+
+// BULK EDIT EGP — a group-name/EGP-input table with spreadsheet-style cascade paste: pasting
+// a column copied from Excel into any row fills that row and every one below it in order.
+function showBulkEditEgp(eid){
+  var groups=S.groups[eid]||[];
+  if(!groups.length)return;
+  S._bulkEgpGids=groups.map(function(g){return g.id;});
+  var rows=groups.map(function(g,i){
+    return '<tr><td style="padding:3px 6px;font-size:11px">'+g.name+'</td>'
+      +'<td style="padding:3px 6px"><input class="fi" id="beg-egp-'+g.id+'" value="'+(g.egp||'')+'" placeholder="EGP number" style="width:100%;font-size:11px;padding:3px 6px" onpaste="handleEgpPaste(event,'+i+')"></td></tr>';
+  }).join('');
+  showModal('Bulk edit EGP',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste a column of EGP numbers copied from Excel into any row — it fills that row and every one below it, in the order shown.</div>'
+    +'<div style="max-height:420px;overflow-y:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;font-size:9px;color:var(--text3);padding:3px 6px">Group</th><th style="text-align:left;font-size:9px;color:var(--text3);padding:3px 6px">EGP</th></tr></thead><tbody>'
+    +rows+'</tbody></table></div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitBulkEditEgp(\''+eid+'\')"><i class="ti ti-check"></i> Save all</button>',true);
+}
+function handleEgpPaste(e,rowIdx){
+  e.preventDefault();
+  var text=(e.clipboardData||window.clipboardData).getData('text');
+  var lines=text.split(/\r?\n/).map(function(s){return s.trim();}).filter(function(s,i,arr){return!(s===''&&i===arr.length-1);});
+  for(var i=0;i<lines.length;i++){
+    var gid=S._bulkEgpGids[rowIdx+i];
+    if(!gid)break;
+    var input=document.getElementById('beg-egp-'+gid);
+    if(input)input.value=lines[i];
+  }
+}
+async function submitBulkEditEgp(eid){
+  var groups=S.groups[eid]||[];
+  var changed=0;
+  for(var i=0;i<S._bulkEgpGids.length;i++){
+    var gid=S._bulkEgpGids[i];
+    var g=groups.find(function(x){return x.id===gid;});
+    var input=document.getElementById('beg-egp-'+gid);
+    if(!g||!input)continue;
+    var val=input.value.trim();
+    if(val===(g.egp||''))continue;
+    await sb.from('experiment_groups').update({egp:val}).eq('id',gid);
+    changed++;
+  }
+  closeModal();await loadAll(eid);renderExp(eid);
+  if(changed)alert('Updated EGP on '+changed+' group(s)');
 }
 function showAddGroup(eid){
   S._addGrpEid=eid;
