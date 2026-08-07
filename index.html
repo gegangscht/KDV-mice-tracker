@@ -231,6 +231,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
   </div>
 </div>
 <div id="app" style="display:none">
+  <datalist id="route-opts"></datalist>
   <div id="float-bar" style="display:none" class="float-bar">
     <span id="float-count" style="font-size:11px;opacity:.8">0 selected</span>
     <div style="width:1px;height:20px;background:rgba(255,255,255,.2)"></div>
@@ -260,7 +261,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v113</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v114</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -303,6 +304,11 @@ const TLBL=TODAY.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const COLS=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED','#D97706','#DC2626','#059669','#DB2777','#0369A1','#65A30D','#92400E','#4B5563'];
 const LOCS=['1R','2R','3R','4R','5R','1L','2L','3L','4L','5L','skin'];
+const ROUTES=['IP','IV','SC','PO','Oral gavage'];
+document.getElementById('route-opts').innerHTML=ROUTES.map(function(r){return'<option value="'+r+'">'}).join('');
+function routeInputHTML(id,val,extraAttrs){
+  return '<input class="fi" list="route-opts" id="'+id+'" value="'+(val||'')+'" placeholder="route" style="'+(extraAttrs&&extraAttrs.style||'')+'"'+(extraAttrs&&extraAttrs.oninput?' oninput="'+extraAttrs.oninput+'"':'')+'>';
+}
 const TLBL2={measure:'Tumor measurements','measure-tumor':'Tumor measurements','measure-combined':'Tumor + weight','measure-weight':'Weight checks',treatment:'Treatments',blood:'Blood draws',ivis:'IVIS / imaging',custom:'Ad hoc',distress:'Distress checks','note-only':'Notes (no scheduled task)'};
 const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined':'ti-ruler-2','measure-weight':'ti-weight',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list',distress:'ti-stethoscope','note-only':'ti-pin'};
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
@@ -1491,6 +1497,19 @@ var NOTE_LEVELS={
   critical:{label:'Needs active monitoring',bg:'#FDE8E8',fg:'#C0392B',border:'#F8B4B4'}
 };
 function noteLevelStyle(level){return NOTE_LEVELS[level]||NOTE_LEVELS.standard;}
+function discomfortFieldsHTML(prefix,curVal,perGroup){
+  return '<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="'+prefix+'-dis"'+(perGroup?' disabled':'')+'>'
+    +['Mild','Moderate','Severe'].map(function(o){return'<option'+(curVal===o?' selected':'')+'>'+o+'</option>';}).join('')
+    +'</select>'
+    +'<label style="display:flex;align-items:center;gap:5px;margin-top:4px;font-size:10px;color:var(--text2);cursor:pointer"><input type="checkbox" id="'+prefix+'-dis-pg" onchange="toggleDiscomfortPerGroup(\''+prefix+'\')"'+(perGroup?' checked':'')+'> Set discomfort per group instead</label>'
+    +'</div>';
+}
+function toggleDiscomfortPerGroup(prefix){
+  var chk=document.getElementById(prefix+'-dis-pg');
+  var sel=document.getElementById(prefix+'-dis');
+  if(sel)sel.disabled=!!(chk&&chk.checked);
+  if(prefix==='n'){var cont=document.getElementById('ng-cont');if(cont)cont.innerHTML=renderNGGroups();}
+}
 function noteLevelOptionsHTML(selectedLevel){
   var sel=selectedLevel||'standard';
   return Object.keys(NOTE_LEVELS).map(function(k){
@@ -2690,7 +2709,10 @@ async function renderExp(eid){
         +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">'
         +'<div style="display:flex;align-items:center;gap:6px"><div class="edot" style="background:'+g.color+'"></div>'
         +'<span style="font-size:11px;font-weight:500">'+g.name+'</span>'
-        +'<span class="badge bgy">target: '+g.target_n+'</span></div>'
+        +'<span class="badge bgy">target: '+g.target_n+'</span>'
+        +(g.egp?'<span class="badge bgy">EGP: '+g.egp+'</span>':'')
+        +(g.discomfort?'<span class="badge bgy">'+g.discomfort+'</span>':'')
+        +'</div>'
         +'<div style="display:flex;gap:4px">'
         +'<button class="btn btn-xs" onclick="showAddEvent(\''+g.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> Add event</button>'
         +'<button class="btn btn-xs btn-icon" onclick="duplicateGroupLive(\''+g.id+'\',\''+eid+'\')" title="Duplicate group"><i class="ti ti-copy"></i></button>'
@@ -3081,6 +3103,11 @@ function renderNew(){
   ];
   document.getElementById('content').innerHTML=newFormHTML();
 }
+function checkModelForKep(){
+  var mod=(document.getElementById('nmod')&&document.getElementById('nmod').value)||'';
+  var wrap=document.getElementById('nkep-prereqs-wrap');
+  if(wrap)wrap.style.display=/kep/i.test(mod)?'block':'none';
+}
 function newFormHTML(){
   return '<div class="card">'
     +'<div style="font-size:12px;font-weight:500;margin-bottom:.625rem">Experiment details</div>'
@@ -3092,16 +3119,15 @@ function newFormHTML(){
     +S.users.map(function(u){return'<option value="'+u.id+'|'+(u.code||'??')+'|'+u.name+'">'+(u.code?u.code+' — ':'')+u.name+'</option>';}).join('')
     +'</select></div>'
     +'<div class="fg full"><label class="fl">Title</label><input class="fi" id="ntit" placeholder="e.g. PIK3CA aCD25+ICB"></div>'
-    +'<div class="fg"><label class="fl">Model</label>'
+    +'<div class="fg full"><label class="fl">Model</label>'
     +'<div style="display:flex;gap:3px;margin-bottom:4px;flex-wrap:wrap">'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP transplant\'">KEP transplant</button>'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'Intraductal KEP\'">Intraductal KEP</button>'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP spontaneous\'">KEP spontaneous</button>'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'MMTV-Neu\'">MMTV-Neu</button>'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP transplant\';checkModelForKep()">KEP transplant</button>'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'Intraductal KEP\';checkModelForKep()">Intraductal KEP</button>'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP spontaneous\';checkModelForKep()">KEP spontaneous</button>'
+    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'MMTV-Neu\';checkModelForKep()">MMTV-Neu</button>'
     +'</div>'
-    +'<input class="fi" id="nmod" placeholder="or type custom model name"></div>'
-    +'<div class="fg"><label class="fl">Strain</label><input class="fi" id="nstr" placeholder="Kcre;EcdF;P53F"></div>'
-    +'<div class="fg full"><label class="fl">KEP prerequisites <span style="font-weight:400;color:var(--text3)">(location, size, or anything else needed before allocating a KEP here)</span></label><textarea class="fi" id="nkep-prereqs" rows="2" placeholder="e.g. include at 5x5, include 3 at the same time" style="resize:vertical"></textarea></div>'
+    +'<input class="fi" id="nmod" placeholder="or type custom model name" oninput="checkModelForKep()"></div>'
+    +'<div class="fg full" id="nkep-prereqs-wrap" style="display:none"><label class="fl">KEP prerequisites <span style="font-weight:400;color:var(--text3)">(location, size, or anything else needed before allocating a KEP here)</span></label><textarea class="fi" id="nkep-prereqs" rows="2" placeholder="e.g. include at 5x5, include 3 at the same time" style="resize:vertical"></textarea></div>'
     +'</div>'
     +'<div style="padding:.4rem .75rem;background:var(--blue-bg);border-radius:var(--r);font-size:10px;color:var(--blue);margin-bottom:8px">'
     +'<i class="ti ti-info-circle"></i> All experiments support multiple tumor sites. Use the <strong>+ Add tumor site</strong> button when logging measurements.'
@@ -3111,11 +3137,16 @@ function newFormHTML(){
     +'<div><label for="nmx" style="font-size:11px;font-weight:500;cursor:pointer">Mastectomy experiment</label>'
     +'<div style="font-size:10px;color:var(--text2)">Primary tumor removed at threshold. Post-Mx mice monitored for respiratory distress. KM survival uses mastectomy date as day 0.</div></div>'
     +'</div>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:.5rem .75rem;background:var(--amber-bg);border-radius:var(--r)">'
+    +'<input type="checkbox" id="n2xw" style="width:14px;height:14px">'
+    +'<div><label for="n2xw" style="font-size:11px;font-weight:500;cursor:pointer">Twice-daily weighing</label>'
+    +'<div style="font-size:10px;color:var(--text2)">Adds a second (PM) weight box to daily logging, for dosing that depends on same-day afternoon weight.</div></div>'
+    +'</div>'
     +'<hr class="div">'
     +'<div style="font-size:12px;font-weight:500;margin-bottom:.5rem">Endpoint & harvest</div>'
     +'<div class="f2">'
     +'<div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="nep" placeholder="e.g. 15x15 mm"></div>'
-    +'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="ndis"><option>Mild</option><option>Moderate</option><option>Severe</option></select></div>'
+    +discomfortFieldsHTML('n','Mild',false)
     +'<div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="nhar" rows="2" placeholder="Blood 50/50 FACS+serum. Tumor 1/3 FACS, 1/3 N2, 1/3 formalin." style="resize:vertical"></textarea></div>'
     +'<div class="fg full"><label class="fl">Notes (special things to pay attention to)</label><textarea class="fi" id="nnotes" rows="2" placeholder="e.g. fragile skin, handle with extra care" style="resize:vertical"></textarea>'
     +'<select class="fs" id="nnotes-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
@@ -3133,6 +3164,7 @@ function newFormHTML(){
     +'</div></div>';
 }
 function renderNGGroups(){
+  var discPerGroup=!!(document.getElementById('n-dis-pg')&&document.getElementById('n-dis-pg').checked);
   return NG.map(function(g,gi){
     return '<div class="grp-blk">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">'
@@ -3141,12 +3173,15 @@ function renderNGGroups(){
       +'<input class="fi" value="'+g.name+'" style="width:185px;font-size:11px;padding:3px 6px" oninput="NG['+gi+'].name=this.value">'
       +'<span style="font-size:10px;color:var(--text2)">N:</span>'
       +'<input class="fi" type="number" value="'+g.n+'" style="width:48px;font-size:11px;padding:3px 5px" oninput="NG['+gi+'].n=parseInt(this.value)||0">'
+      +'<span style="font-size:10px;color:var(--text2)">EGP:</span>'
+      +'<input class="fi" value="'+(g.egp||'')+'" placeholder="EGP number" style="width:100px;font-size:11px;padding:3px 5px" oninput="NG['+gi+'].egp=this.value">'
       +'</div>'
       +(gi>0?'<button class="btn btn-xs" onclick="NG.splice('+gi+',1);document.getElementById(\'ng-cont\').innerHTML=renderNGGroups()"><i class="ti ti-trash"></i></button>':'')
       +'</div>'
       +'<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:.5rem">'
       +'<input class="fi" value="'+(g.note||'')+'" placeholder="Group note (optional) — shown for every mouse in this group in daily tasks" style="flex:1;font-size:10px;padding:4px 6px" oninput="NG['+gi+'].note=this.value">'
       +'<select class="fs" style="font-size:10px;padding:4px 6px;max-width:170px" onchange="NG['+gi+'].note_level=this.value">'+noteLevelOptionsHTML(g.note_level)+'</select>'
+      +(discPerGroup?'<select class="fs" style="font-size:10px;padding:4px 6px;max-width:120px" onchange="NG['+gi+'].discomfort=this.value">'+['Mild','Moderate','Severe'].map(function(o){return'<option'+(g.discomfort===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select>':'')
       +'</div>'
       +g.events.map(function(ev,ei){return renderNGEvent(gi,ei,ev)}).join('')
       +'<div style="display:flex;gap:5px;margin-top:3px">'
@@ -3203,7 +3238,7 @@ function renderNGEvent(gi,ei,ev){
     +(HAS_DRUG?'<div class="fg"><label class="fl">Drug / dose / route</label><div style="display:flex;gap:3px">'
       +'<input class="fi" style="flex:2;font-size:10px;padding:3px 5px" value="'+(ev.drug||'')+'" placeholder="drug" oninput="NG['+gi+'].events['+ei+'].drug=this.value">'
       +'<input class="fi" style="flex:1;font-size:10px;padding:3px 4px" value="'+(ev.dose||'')+'" placeholder="dose" oninput="NG['+gi+'].events['+ei+'].dose=this.value">'
-      +'<select class="fs" style="flex:1;font-size:10px;padding:3px 3px" onchange="NG['+gi+'].events['+ei+'].route=this.value"><option'+(ev.route==='IP'?' selected':'')+'>IP</option><option'+(ev.route==='IV'?' selected':'')+'>IV</option><option'+(ev.route==='SC'?' selected':'')+'>SC</option><option'+(ev.route==='PO'?' selected':'')+'>PO</option></select>'
+      +routeInputHTML('ng-route-'+gi+'-'+ei,ev.route,{style:'flex:1;font-size:10px;padding:3px 4px',oninput:'NG['+gi+'].events['+ei+'].route=this.value'})
       +'</div></div>':'<div></div>')
     +'</div>'
     // Schedule
@@ -3250,13 +3285,16 @@ async function createExp(){
   if(!wp||!resId||!tit){alert('Fill WP number, researcher, and title');return;}
   var multi=true; // all experiments support multi-site
   var isMx=!!(document.getElementById('nmx')&&document.getElementById('nmx').checked);
+  var twiceDailyWeight=!!(document.getElementById('n2xw')&&document.getElementById('n2xw').checked);
+  var discPerGroup=!!(document.getElementById('n-dis-pg')&&document.getElementById('n-dis-pg').checked);
+  var discomfort=(document.getElementById('n-dis')&&document.getElementById('n-dis').value)||'';
   var btn=document.querySelector('button[onclick="createExp()"]');if(btn)btn.disabled=true;
   try{
-    var result=await sb.from('experiments').insert({id:wp,name:tit,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',strain:(document.getElementById('nstr')&&document.getElementById('nstr').value)||'',is_mastectomy:isMx,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
+    var result=await sb.from('experiments').insert({id:wp,name:tit,color:COLS[S.experiments.length%COLS.length],model:(document.getElementById('nmod')&&document.getElementById('nmod').value)||'',is_mastectomy:isMx,twice_daily_weight:twiceDailyWeight,discomfort:discPerGroup?'':discomfort,discomfort_per_group:discPerGroup,researcher_id:resId,researcher:resName,started:TISO,status:'active',multi_tumor:multi,endpoint_criterion:(document.getElementById('nep')&&document.getElementById('nep').value)||'',harvest:(document.getElementById('nhar')&&document.getElementById('nhar').value)||'',notes:(document.getElementById('nnotes')&&document.getElementById('nnotes').value)||'',notes_level:(document.getElementById('nnotes-level')&&document.getElementById('nnotes-level').value)||'standard',kep_prereqs:(document.getElementById('nkep-prereqs')&&document.getElementById('nkep-prereqs').value)||''});
     if(result.error)throw new Error(result.error.message);
     for(var i=0;i<NG.length;i++){
       var g=NG[i];
-      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard'}).select().single();
+      var gResult=await sb.from('experiment_groups').insert({experiment_id:wp,name:g.name,color:g.color,target_n:g.n,sort_order:i,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:discPerGroup?(g.discomfort||'Mild'):''}).select().single();
       if(gResult.error||!gResult.data)continue;
       var gD=gResult.data;
       for(var j=0;j<g.events.length;j++){
@@ -3284,12 +3322,13 @@ function showEditExp(eid){
     +'<div class="fg"><label class="fl">Endpoint criterion</label><input class="fi" id="ee-ep" value="'+(exp.endpoint_criterion||'')+'"></div>'
     +'<div class="fg"><label class="fl">Status</label><select class="fs" id="ee-status"><option value="active"'+(exp.status==='active'?' selected':'')+'>Active</option><option value="completed"'+(exp.status==='completed'?' selected':'')+'>Completed</option><option value="archived"'+(exp.status==='archived'?' selected':'')+'>Archived</option></select></div>'
     +'<div class="fg"><label class="fl">Type</label><div style="display:flex;align-items:center;gap:6px;padding:6px 0"><input type="checkbox" id="ee-mx"'+(exp.is_mastectomy?' checked':'')+' style="width:14px;height:14px"><label for="ee-mx" style="font-size:11px;cursor:pointer">Mastectomy experiment</label></div></div>'
+    +'<div class="fg"><label class="fl">&nbsp;</label><div style="display:flex;align-items:center;gap:6px;padding:6px 0"><input type="checkbox" id="ee-2xw"'+(exp.twice_daily_weight?' checked':'')+' style="width:14px;height:14px"><label for="ee-2xw" style="font-size:11px;cursor:pointer">Twice-daily weighing</label></div></div>'
+    +discomfortFieldsHTML('ee',exp.discomfort||'Mild',!!exp.discomfort_per_group)
     +'<div class="fg full"><label class="fl">Harvest protocol</label><textarea class="fi" id="ee-har" rows="3" style="resize:vertical">'+( exp.harvest||'')+'</textarea></div>'
     +'<div class="fg full"><label class="fl">Notes (special things to pay attention to)</label><textarea class="fi" id="ee-notes" rows="2" style="resize:vertical" placeholder="e.g. fragile skin, handle with extra care">'+(exp.notes||'')+'</textarea>'
     +'<select class="fs" id="ee-notes-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML(exp.notes_level)+'</select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Grey = standard note · Orange = unusual procedure · Red = unusual procedure needing active monitoring</div>'
     +'</div>'
-    +'<div class="fg full"><label class="fl">Strain</label><input class="fi" id="ee-str" value="'+(exp.strain||'')+'"></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="saveEditExp()"><i class="ti ti-check"></i> Save</button>');
@@ -3305,13 +3344,15 @@ async function saveEditExp(eid){
   var har=(document.getElementById('ee-har')&&document.getElementById('ee-har').value)||'';
   var notes=(document.getElementById('ee-notes')&&document.getElementById('ee-notes').value)||'';
   var notesLevel=(document.getElementById('ee-notes-level')&&document.getElementById('ee-notes-level').value)||'standard';
-  var str=(document.getElementById('ee-str')&&document.getElementById('ee-str').value)||'';
   var status=(document.getElementById('ee-status')&&document.getElementById('ee-status').value)||'active';
   var isMx2=!!(document.getElementById('ee-mx')&&document.getElementById('ee-mx').checked);
+  var twiceDailyWeight2=!!(document.getElementById('ee-2xw')&&document.getElementById('ee-2xw').checked);
+  var discPerGroup2=!!(document.getElementById('ee-dis-pg')&&document.getElementById('ee-dis-pg').checked);
+  var discomfort2=(document.getElementById('ee-dis')&&document.getElementById('ee-dis').value)||'';
   var kepPrereqs=(document.getElementById('ee-kep-prereqs')&&document.getElementById('ee-kep-prereqs').value)||'';
   var oldExp=S.experiments.find(function(e){return e.id===eid});
   var harChanged=oldExp&&har.trim()&&har.trim()!==(oldExp.harvest||'').trim()&&oldExp.harvest;
-  var upd={researcher:resNameE,researcher_id:resIdE,model:mod,endpoint_criterion:ep,harvest:har,notes:notes,notes_level:notesLevel,strain:str,status:status,is_mastectomy:isMx2,kep_prereqs:kepPrereqs};
+  var upd={researcher:resNameE,researcher_id:resIdE,model:mod,endpoint_criterion:ep,harvest:har,notes:notes,notes_level:notesLevel,status:status,is_mastectomy:isMx2,twice_daily_weight:twiceDailyWeight2,discomfort:discPerGroup2?'':discomfort2,discomfort_per_group:discPerGroup2,kep_prereqs:kepPrereqs};
   if(harChanged)upd.harvest_updated_at=TISO;
   await sb.from('experiments').update(upd).eq('id',eid);
   if(harChanged)await sb.from('deviation_log').insert({experiment_id:eid,mouse_id:null,event_type:'harvest_change',original_date:TISO,actual_date:TISO,reason:'Harvest changed by '+uname()+' on '+TISO+'\nOLD: '+(oldExp.harvest||'')+'\nNEW: '+har});
@@ -3436,11 +3477,14 @@ async function toggleExclude(mid,eid){
 // EDIT GROUP
 function showEditGroup(gid,eid){
   var g=(S.groups[eid]||[]).find(function(x){return x.id===gid});if(!g)return;
+  var exp=S.experiments.find(function(e){return e.id===eid});
   S._editGrp={gid:gid,eid:eid};
   showModal('Edit group',
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Group name</label><input class="fi" id="eg-name" value="'+g.name+'"></div>'
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="eg-n" type="number" value="'+(g.target_n||8)+'"></div>'
+    +'<div class="fg"><label class="fl">EGP</label><input class="fi" id="eg-egp" value="'+(g.egp||'')+'" placeholder="EGP number"></div>'
+    +(exp&&exp.discomfort_per_group?'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="eg-dis">'+['Mild','Moderate','Severe'].map(function(o){return'<option'+(g.discomfort===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></div>':'')
     +'<div class="fg full"><label class="fl">Note (this will be shown for every mouse in this group in the daily tasks)</label><textarea class="fi" id="eg-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group">'+(g.note||'')+'</textarea>'
     +'<select class="fs" id="eg-note-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML(g.note_level)+'</select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Grey = standard note · Orange = unusual procedure · Red = unusual procedure needing active monitoring</div>'
@@ -3453,9 +3497,13 @@ async function saveEditGroup(){
   var d=S._editGrp;if(!d)return;
   var name=(document.getElementById('eg-name')&&document.getElementById('eg-name').value)||'';
   var n=parseInt((document.getElementById('eg-n')&&document.getElementById('eg-n').value)||'8')||8;
+  var egp=(document.getElementById('eg-egp')&&document.getElementById('eg-egp').value)||'';
+  var disEl=document.getElementById('eg-dis');
   var note=(document.getElementById('eg-note')&&document.getElementById('eg-note').value)||'';
   var noteLevel=(document.getElementById('eg-note-level')&&document.getElementById('eg-note-level').value)||'standard';
-  await sb.from('experiment_groups').update({name:name,target_n:n,note:note,note_level:noteLevel}).eq('id',d.gid);
+  var upd={name:name,target_n:n,egp:egp,note:note,note_level:noteLevel};
+  if(disEl)upd.discomfort=disEl.value;
+  await sb.from('experiment_groups').update(upd).eq('id',d.gid);
   // Also update group_name on mice in this group
   if(name)await sb.from('mice').update({group_name:name}).eq('group_id',d.gid);
   closeModal();await loadAll(d.eid);renderExp(d.eid);
@@ -3471,7 +3519,7 @@ async function duplicateGroupLive(gid,eid){
   var sortOrder=(S.groups[eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
   var color=colors[sortOrder%colors.length];
-  var gResult=await sb.from('experiment_groups').insert({experiment_id:eid,name:newName,color:color,target_n:g.target_n,sort_order:sortOrder,note:g.note||'',note_level:g.note_level||'standard'}).select().single();
+  var gResult=await sb.from('experiment_groups').insert({experiment_id:eid,name:newName,color:color,target_n:g.target_n,sort_order:sortOrder,note:g.note||'',note_level:g.note_level||'standard',egp:g.egp||'',discomfort:g.discomfort||''}).select().single();
   if(gResult.error||!gResult.data){alert('Could not duplicate group.');return;}
   var newGid=gResult.data.id;
   var evts=S.events[gid]||[];
@@ -3488,10 +3536,13 @@ async function duplicateGroupLive(gid,eid){
 }
 function showAddGroup(eid){
   S._addGrpEid=eid;
+  var exp=S.experiments.find(function(e){return e.id===eid});
   showModal('Add group to experiment',
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Group name</label><input class="fi" id="ag-name" placeholder="e.g. anti-PD1+aCTLA4" autofocus></div>'
     +'<div class="fg"><label class="fl">Target N</label><input class="fi" id="ag-n" type="number" value="8"></div>'
+    +'<div class="fg"><label class="fl">EGP</label><input class="fi" id="ag-egp" placeholder="EGP number"></div>'
+    +(exp&&exp.discomfort_per_group?'<div class="fg"><label class="fl">Discomfort</label><select class="fs" id="ag-dis">'+['Mild','Moderate','Severe'].map(function(o){return'<option>'+o+'</option>';}).join('')+'</select></div>':'')
     +'<div class="fg full"><label class="fl">Note (this will be shown for every mouse in this group in the daily tasks)</label><textarea class="fi" id="ag-note" rows="2" style="resize:vertical" placeholder="e.g. watch for early ulceration in this group"></textarea>'
     +'<select class="fs" id="ag-note-level" style="margin-top:4px;max-width:240px">'+noteLevelOptionsHTML('standard')+'</select>'
     +'<div style="font-size:9px;color:var(--text3);margin-top:2px">Grey = standard note · Orange = unusual procedure · Red = unusual procedure needing active monitoring</div>'
@@ -3504,13 +3555,15 @@ async function saveAddGroup(){
   var eid=S._addGrpEid;if(!eid)return;
   var name=(document.getElementById('ag-name')&&document.getElementById('ag-name').value)||'';
   var n=parseInt((document.getElementById('ag-n')&&document.getElementById('ag-n').value)||'8')||8;
+  var egp=(document.getElementById('ag-egp')&&document.getElementById('ag-egp').value)||'';
+  var disEl=document.getElementById('ag-dis');
   var note=(document.getElementById('ag-note')&&document.getElementById('ag-note').value)||'';
   var noteLevel=(document.getElementById('ag-note-level')&&document.getElementById('ag-note-level').value)||'standard';
   if(!name){alert('Enter group name');return;}
   var sortOrder=(S.groups[eid]||[]).length;
   var colors=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED'];
   var color=colors[sortOrder%colors.length];
-  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder,note:note,note_level:noteLevel});
+  await sb.from('experiment_groups').insert({experiment_id:eid,name:name,color:color,target_n:n,sort_order:sortOrder,egp:egp,discomfort:disEl?disEl.value:'',note:note,note_level:noteLevel});
   closeModal();await loadAll(eid);renderExp(eid);
 }
 
@@ -3531,9 +3584,7 @@ function showEditEvent(evid,eid){
     +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ee-label" value="'+(ev.label||'')+'"></div>'
     +'<div class="fg"><label class="fl">Drug</label><input class="fi" id="ee-drug" value="'+(ev.drug||'')+'"></div>'
     +'<div class="fg"><label class="fl">Dose</label><input class="fi" id="ee-dose" value="'+(ev.dose||'')+'"></div>'
-    +'<div class="fg"><label class="fl">Route</label>'
-    +'<select class="fs" id="ee-route"><option'+(ev.route==='IP'?' selected':'')+'>IP</option><option'+(ev.route==='IV'?' selected':'')+'>IV</option><option'+(ev.route==='SC'?' selected':'')+'>SC</option><option'+(ev.route==='PO'?' selected':'')+'>PO</option></select>'
-    +'</div>'
+    +'<div class="fg"><label class="fl">Route</label>'+routeInputHTML('ee-route',ev.route)+'</div>'
     +'<div class="fg"><label class="fl">Schedule</label>'
     +'<select class="fs" id="ee-sched"><option value="fixed-days"'+(ev.schedule_type==='fixed-days'?' selected':'')+'>Fixed days</option><option value="interval"'+(ev.schedule_type==='interval'?' selected':'')+'>Every N days</option><option value="once"'+(ev.schedule_type==='once'?' selected':'')+'>Once only</option></select>'
     +'</div>'
@@ -3590,7 +3641,7 @@ function showAddEvent(gid,eid){
     +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ae-label" placeholder="e.g. anti-PD1 IP" autofocus></div>'
     +'<div class="fg"><label class="fl">Drug</label><input class="fi" id="ae-drug"></div>'
     +'<div class="fg"><label class="fl">Dose</label><input class="fi" id="ae-dose" placeholder="200ug"></div>'
-    +'<div class="fg"><label class="fl">Route</label><select class="fs" id="ae-route"><option>IP</option><option>IV</option><option>SC</option><option>PO</option></select></div>'
+    +'<div class="fg"><label class="fl">Route</label>'+routeInputHTML('ae-route','')+'</div>'
     +'<div class="fg"><label class="fl">Schedule</label><select class="fs" id="ae-sched"><option value="fixed-days">Fixed days</option><option value="interval">Every N days</option><option value="once">Once only</option></select></div>'
     +'<div class="fg"><label class="fl">Interval days</label><input class="fi" id="ae-interval" type="number" value="7"></div>'
     +'<div class="fg full"><label class="fl">Days of week</label><div style="display:flex;gap:4px;flex-wrap:wrap;padding:4px 0">'+dowOpts+'</div></div>'
