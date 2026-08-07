@@ -261,7 +261,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v114</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v115</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -729,6 +729,7 @@ function sortTasks(tasks){
 // LOG FORM
 var logOrder=[];
 function logHTML(eid,mid,ei,viewDate){
+  var exp=S.experiments.find(function(e){return e.id===eid});
   var msl=(S.measurements[eid]||{})[mid]||[];
   var entry=ei>=0?msl[ei]:null;
   var lastMeas=msl.length>0?msl[msl.length-1]:null;
@@ -769,6 +770,7 @@ function logHTML(eid,mid,ei,viewDate){
     +siteCols
     +'<button class="btn btn-xs btn-icon" id="il-addsite-'+mid+'" title="Add tumor site" style="margin-top:14px;align-self:flex-start"><i class="ti ti-plus"></i></button>'
     +'<div class="il-g"><div class="il-l">Weight (g)</div><input class="il-in" id="il-w-'+mid+'" value="'+(isEdit&&entry&&entry.weight!=null?entry.weight:'')+'" style="width:58px" placeholder="'+(defW||'g')+'" tabindex="50" data-lastw="'+(defW||'')+'"></div>'
+    +(exp&&exp.twice_daily_weight?'<div class="il-g"><div class="il-l">PM weight (g)</div><input class="il-in" id="il-wpm-'+mid+'" value="'+(isEdit&&entry&&entry.weight_pm!=null?entry.weight_pm:'')+'" style="width:58px" placeholder="g" tabindex="50"></div>':'')
     +'<div class="il-g"><div class="il-l">Cage</div><input class="il-in" id="il-cage-'+mid+'" value="'+(m&&m.cage_number?m.cage_number:'')+'" style="width:52px" placeholder="C01" tabindex="51"></div>'
     +'<div class="il-g" style="flex:1;min-width:100px"><div class="il-l">Note</div><input class="il-in" id="il-n-'+mid+'" value="'+defN+'" style="width:100%" placeholder="ulceration, open wound..." tabindex="52"></div>'
     +'<div class="il-g"><div class="il-l">&nbsp;</div>'
@@ -935,6 +937,7 @@ async function submitLog(eid,mid,ei){
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
   var dv=(document.getElementById('il-d-'+mid)&&document.getElementById('il-d-'+mid).value)||TISO;
   var wStr=((document.getElementById('il-w-'+mid)&&document.getElementById('il-w-'+mid).value)||'').trim();
+  var wPmStr=((document.getElementById('il-wpm-'+mid)&&document.getElementById('il-wpm-'+mid).value)||'').trim();
   var note=((document.getElementById('il-n-'+mid)&&document.getElementById('il-n-'+mid).value)||'').trim();
   var sacChk=document.getElementById('il-sac-chk-'+mid);
   var status=sacChk&&sacChk.checked?(document.getElementById('il-st-'+mid)&&document.getElementById('il-st-'+mid).value)||'endpoint':'';
@@ -944,19 +947,20 @@ async function submitLog(eid,mid,ei){
   var hasWeight=wStr&&wStr.length>0;
   var hasCage=cageVal&&cageVal.trim().length>0;
   var hasSac=status&&status.length>0;
-  if(!sites.length&&!note&&!hasWeight&&!hasCage&&!hasSac){alert('Nothing to save — enter a measurement, weight, note, or select a status.');return;}
+  if(!sites.length&&!note&&!hasWeight&&!wPmStr&&!hasCage&&!hasSac){alert('Nothing to save — enter a measurement, weight, note, or select a status.');return;}
   var btn=document.querySelector('#il-'+mid+' .btn-g');
   if(btn){btn.disabled=true;btn.innerHTML='<div class="spin"></div>';}
   try{
     if(ei>=0){
       var ms=(S.measurements[eid]||{})[mid]&&(S.measurements[eid]||{})[mid][ei];
-      if(ms){var msWeight2=wStr?parseFloat(wStr):null;
-      var{error:upErr}=await sb.from('measurements').update({measured_at:dv,note:note,edited_at:TISO,weight:msWeight2!==null?msWeight2:ms.weight}).eq('id',ms.id);
+      if(ms){var msWeight2=wStr?parseFloat(wStr):null;var msWeightPm2=wPmStr?parseFloat(wPmStr):null;
+      var{error:upErr}=await sb.from('measurements').update({measured_at:dv,note:note,edited_at:TISO,weight:msWeight2!==null?msWeight2:ms.weight,weight_pm:msWeightPm2!==null?msWeightPm2:ms.weight_pm}).eq('id',ms.id);
       if(upErr)throw new Error(upErr.message);
       await sb.from('tumor_sites').delete().eq('measurement_id',ms.id);if(sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:ms.id})}));}
     } else {
       var msWeight=wStr?parseFloat(wStr):null;
-      var{data:msD,error:insErr}=await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dv,note:note,logged_by:uname(),weight:msWeight}).select().single();
+      var msWeightPm=wPmStr?parseFloat(wPmStr):null;
+      var{data:msD,error:insErr}=await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dv,note:note,logged_by:uname(),weight:msWeight,weight_pm:msWeightPm}).select().single();
 if(insErr)throw new Error(insErr.message);
       if(msD&&sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id})}));
     }
@@ -1630,10 +1634,10 @@ function renderDailySpreadsheet(){
   var byExp={};
   Object.keys(byMouseKey).forEach(function(k){var t0=byMouseKey[k][0];if(t0.m&&t0.m.cage_number&&mixedCagesSS.has(t0.m.cage_number))return;if(!byExp[t0.expId])byExp[t0.expId]=[];byExp[t0.expId].push(byMouseKey[k]);});
 
-  function ssColHdr(multi,cols){return'<div style="display:grid;grid-template-columns:'+cols+';gap:6px;background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:5px 7px">'+(multi?'<div>Mouse</div><div>Site</div><div>Size (mm)</div><div style="text-align:right">Burden</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>':'<div>Mouse</div><div>Size (mm)</div><div style="text-align:right">Weight (g)</div><div>Note</div><div></div>')+'</div>';}
-  function renderSSCage(label,mList,ceid,multi,cols){
+  function ssColHdr(multi,cols,showPm){return'<div style="display:grid;grid-template-columns:'+cols+';gap:6px;background:var(--surface2);font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:5px 7px">'+(multi?'<div>Mouse</div><div>Site</div><div>Size (mm)</div><div style="text-align:right">Burden</div><div style="text-align:right">Weight (g)</div>':'<div>Mouse</div><div>Size (mm)</div><div style="text-align:right">Weight (g)</div>')+(showPm?'<div style="text-align:right">PM Weight (g)</div>':'')+'<div>Note</div><div></div></div>';}
+  function renderSSCage(label,mList,ceid,multi,cols,showPm){
     html+='<div style="font-size:9px;font-weight:600;color:var(--text3);margin:6px 0 2px 4px">'+label+'</div>';
-    html+='<div style="border:.5px solid var(--border);border-radius:var(--r);overflow:hidden">'+ssColHdr(multi,cols);
+    html+='<div style="border:.5px solid var(--border);border-radius:var(--r);overflow:hidden">'+ssColHdr(multi,cols,showPm);
     mList.slice().sort(function(a,b){return a[0].mouseId.localeCompare(b[0].mouseId,undefined,{numeric:true})}).forEach(function(mTasks){html+=sheetRowHTML(mTasks,ceid||mTasks[0].expId,multi,cols);});
     html+='</div>';
   }
@@ -1646,11 +1650,12 @@ function renderDailySpreadsheet(){
       +harvestTipHTML(exp)+'</div>'
       +wpBannerHTML((S._wpBanners[S.dailyDate]||{})[eid]);
     var multi=exp&&exp.multi_tumor?true:false;
-    var cols=multi?'70px 46px 70px 60px 64px 1fr 50px':'70px 70px 64px 1fr 50px';
+    var showPm=!!(exp&&exp.twice_daily_weight);
+    var cols=(multi?'70px 46px 70px 60px 64px':'70px 70px 64px')+(showPm?' 64px':'')+' 1fr 50px';
     var byCageSS={};var noCageSS=[];
     byExp[eid].forEach(function(mTasks){var cage=mTasks[0].m&&mTasks[0].m.cage_number;if(cage){if(!byCageSS[cage])byCageSS[cage]=[];byCageSS[cage].push(mTasks);}else{noCageSS.push(mTasks);}});
-    Object.keys(byCageSS).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){renderSSCage('Cage '+cage,byCageSS[cage],eid,multi,cols);});
-    if(noCageSS.length)renderSSCage('(no cage)',noCageSS,eid,multi,cols);
+    Object.keys(byCageSS).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).forEach(function(cage){renderSSCage('Cage '+cage,byCageSS[cage],eid,multi,cols,showPm);});
+    if(noCageSS.length)renderSSCage('(no cage)',noCageSS,eid,multi,cols,showPm);
   });
 
   // Mixed cages — shown together at the bottom, same as cards and print views.
@@ -1670,6 +1675,8 @@ function renderDailySpreadsheet(){
 }
 function sheetRowHTML(mTasks,eid,multi,sheetCols){
   var t0=mTasks[0];var mid=t0.mouseId;
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  var showPm=!!(exp&&exp.twice_daily_weight);
   var needsTumor=mTasks.some(function(t){return t.type==='measure'||t.type==='measure-tumor'||t.type==='measure-combined';});
   var msl=(S.measurements[eid]||{})[mid]||[];
   var todayIdx=findTodaysMeasureIdx(eid,mid,t0.date);
@@ -1686,6 +1693,7 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
   }
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
   var weightVal=todays&&todays.weight!=null&&todays.weight!==''?todays.weight:'';
+  var weightPmVal=todays&&todays.weight_pm!=null&&todays.weight_pm!==''?todays.weight_pm:'';
   var noteVal=todays&&todays.note?todays.note:'';
   var checkIcon='<i class="ti ti-circle-check" style="font-size:14px;color:var(--green)" title="Logged today"></i>';
   var placeholderIcon='<i class="ti ti-circle" style="font-size:14px;color:var(--border2)" title="Not logged today"></i>';
@@ -1746,6 +1754,7 @@ function sheetRowHTML(mTasks,eid,multi,sheetCols){
     out+='<div></div>';
   }
   out+='<div style="padding-top:4px;text-align:right"><input class="sheet-in" id="sheet-w-'+eid+'-'+mid+'" value="'+weightVal+'" placeholder="'+(m&&m.weight?m.weight:'g')+'" style="height:26px;font-size:12px;width:100%;text-align:right" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="w"></div>';
+  if(showPm)out+='<div style="padding-top:4px;text-align:right"><input class="sheet-in" id="sheet-wpm-'+eid+'-'+mid+'" value="'+weightPmVal+'" placeholder="g" style="height:26px;font-size:12px;width:100%;text-align:right" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="wpm"></div>';
   out+='<div style="padding-top:4px"><input class="sheet-in" id="sheet-n-'+eid+'-'+mid+'" value="'+noteVal+'" placeholder="—" style="height:26px;font-size:12px;width:100%" data-sheet-mid="'+mid+'" data-sheet-eid="'+eid+'" data-sheet-field="n"></div>';
   out+='<div style="padding-top:2px;display:flex;gap:3px;justify-content:flex-end;align-items:center">'
     +'<span id="sheet-status-icon-'+eid+'-'+mid+'">'+(todays?checkIcon:placeholderIcon)+'</span>'
@@ -1787,7 +1796,8 @@ function sheetAddSite(eid,mid){
 function sheetRerenderRow(eid,mid){
   var exp=S.experiments.find(function(e){return e.id===eid});
   var multi=exp&&exp.multi_tumor?true:false;
-  var cols=multi?'70px 46px 70px 60px 64px 1fr 50px':'70px 70px 64px 1fr 50px';
+  var showPm=!!(exp&&exp.twice_daily_weight);
+  var cols=(multi?'70px 46px 70px 60px 64px':'70px 70px 64px')+(showPm?' 64px':'')+' 1fr 50px';
   var raw=getTasksForDate(S.dailyDate);
   var mTasks=raw.filter(function(t){return isMeasureType(t.type)&&t.mouseId===mid&&t.expId===eid;});
   if(!mTasks.length)return;
@@ -1833,8 +1843,10 @@ async function sheetSaveRow(eid,mid){
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});if(!m)return;
   var dateIso=S.dailyDate;
   var wEl=document.getElementById('sheet-w-'+eid+'-'+mid);
+  var wPmEl=document.getElementById('sheet-wpm-'+eid+'-'+mid);
   var nEl=document.getElementById('sheet-n-'+eid+'-'+mid);
   var wStr=(wEl?wEl.value:'').trim();
+  var wPmStr=(wPmEl?wPmEl.value:'').trim();
   var note=(nEl?nEl.value:'').trim();
   var sites=[];
   var si=0;
@@ -1853,19 +1865,21 @@ async function sheetSaveRow(eid,mid){
     si++;
   }
   var hasWeight=wStr.length>0;
-  if(!sites.length&&!note&&!hasWeight)return; // nothing entered for this row, nothing to save
+  if(!sites.length&&!note&&!hasWeight&&!wPmStr)return; // nothing entered for this row, nothing to save
   var idx=findTodaysMeasureIdx(eid,mid,dateIso);
   try{
     if(idx>=0){
       var ms=(S.measurements[eid]||{})[mid][idx];
       var msWeight=wStr?parseFloat(wStr):null;
-      var{error:ssUpErr}=await sb.from('measurements').update({note:note,edited_at:TISO,weight:msWeight!==null?msWeight:ms.weight}).eq('id',ms.id);
+      var msWeightPm=wPmStr?parseFloat(wPmStr):null;
+      var{error:ssUpErr}=await sb.from('measurements').update({note:note,edited_at:TISO,weight:msWeight!==null?msWeight:ms.weight,weight_pm:msWeightPm!==null?msWeightPm:ms.weight_pm}).eq('id',ms.id);
       if(ssUpErr)throw new Error(ssUpErr.message);
       await sb.from('tumor_sites').delete().eq('measurement_id',ms.id);
       if(sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:ms.id});}));
     } else {
       var msWeight2=wStr?parseFloat(wStr):null;
-      var{data:msD,error:ssInsErr}=await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dateIso,note:note,logged_by:uname(),weight:msWeight2}).select().single();
+      var msWeightPm2=wPmStr?parseFloat(wPmStr):null;
+      var{data:msD,error:ssInsErr}=await sb.from('measurements').insert({mouse_id:mid,experiment_id:eid,measured_at:dateIso,note:note,logged_by:uname(),weight:msWeight2,weight_pm:msWeightPm2}).select().single();
       if(ssInsErr)throw new Error(ssInsErr.message);
       if(msD&&sites.length)await sb.from('tumor_sites').insert(sites.map(function(s){return Object.assign({},s,{measurement_id:msD.id});}));
     }
