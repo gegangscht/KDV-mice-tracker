@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v123</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v124</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2448,6 +2448,7 @@ function renderExps(){
       +'<span class="badge '+(exp.status==='active'?'bg':exp.status==='archived'?'bgy':'bb')+'">'+exp.status+'</span>'
       // Action menu: archive/unarchive + delete
       +'<div style="display:flex;gap:3px;margin-left:4px">'
+      +'<button class="btn btn-xs btn-icon" title="Duplicate — groups only, no mice" onclick="duplicateExp(\''+exp.id+'\')" style="color:var(--text3)"><i class="ti ti-copy"></i></button>'
       +(exp.status==='active'
         ?'<button class="btn btn-xs btn-icon" title="Archive experiment" onclick="archiveExp(\''+exp.id+'\')" style="color:var(--text3)"><i class="ti ti-archive"></i></button>'
         :'<button class="btn btn-xs btn-icon" title="Restore to active" onclick="unarchiveExp(\''+exp.id+'\')" style="color:var(--text3)"><i class="ti ti-archive-off"></i></button>')
@@ -2471,6 +2472,43 @@ async function archiveExp(eid){
 async function unarchiveExp(eid){
   await sb.from('experiments').update({status:'active'}).eq('id',eid);
   await dbLoad();renderExps();buildExpNav();
+}
+// Duplicates an experiment's groups/events (never its mice/measurements) into the New
+// Experiment screen — nothing is written to the database until Create is submitted there,
+// so the source experiment can't be affected by this action.
+function duplicateExp(eid){
+  var src=S.experiments.find(function(e){return e.id===eid});if(!src)return;
+  var srcGroups=S.groups[eid]||[];
+  go('new');
+  NG=srcGroups.map(function(g,gi){
+    return {
+      name:g.name+' (copy)',n:g.target_n||8,color:COLS[gi%COLS.length],
+      note:g.note||'',note_level:g.note_level||'standard',discomfort:g.discomfort||'',
+      events:(S.events[g.id]||[]).map(function(ev){
+        return {type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',
+          schedule:ev.schedule_type,days:(ev.schedule_days||[]).slice(),trigger:ev.trigger_type,
+          triggerVal:ev.trigger_value||'',dayOffset:ev.day_offset||0,maxDoses:ev.max_doses||null,
+          intervalDays:ev.interval_days||7,twiceDaily:!!ev.twice_daily};
+      })
+    };
+  });
+  if(!NG.length)NG=[{name:'Group 1',n:8,color:COLS[0],note:'',note_level:'standard',events:[]}];
+  NG_AXES={name1:src.axis1_name||'',name2:src.axis2_name||'',name3:src.axis3_name||''};
+  document.getElementById('ntit').value=src.name?src.name+' (copy)':'';
+  document.getElementById('nmod').value=src.model||'';
+  checkModelForKep();
+  document.getElementById('nep').value=src.endpoint_criterion||'';
+  document.getElementById('nhar').value=src.harvest||'';
+  document.getElementById('nnotes').value=src.notes||'';
+  document.getElementById('nnotes-level').value=src.notes_level||'standard';
+  document.getElementById('nmx').checked=!!src.is_mastectomy;
+  if(src.discomfort_per_group){
+    document.getElementById('n-dis-pg').checked=true;
+    toggleDiscomfortPerGroup('n');
+  } else {
+    document.getElementById('n-dis').value=src.discomfort||'Mild';
+  }
+  document.getElementById('ng-cont').innerHTML=renderNGGroups();
 }
 async function deleteMs(msId,eid){
   if(!confirm('Delete this log entry? This cannot be undone.'))return;
