@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v125</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v126</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -285,6 +285,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="nav-sec">Experiments</div>
       <div class="nav-i" id="nav-exps" onclick="go('exps')"><i class="ti ti-flask"></i> All experiments</div>
       <div class="nav-i" id="nav-new" onclick="go('new')"><i class="ti ti-plus"></i> New experiment</div>
+      <div class="nav-i" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Enroll mice (paste)</div>
       <div class="ndiv"></div>
       <div class="nav-sec">KEP watch</div>
       <div class="nav-i" id="nav-kepdaily" onclick="go('kepdaily')"><i class="ti ti-clipboard-list"></i> Palpations</div>
@@ -1197,6 +1198,161 @@ async function enrollMice(){
 }
 // Keep old single-mouse function as alias for backward compat
 async function enrollMouse(eid,gid,gname){S._enrollCtx={eid:eid,gid:gid,gname:gname};await enrollMice();}
+
+// GLOBAL PASTE-ENROLL — pastes straight from the institute's export tool, matches each row to
+// a group by EGP (searched across every experiment, since this isn't tied to one WP), and
+// enrolls it. Columns: EGP, Mouse ID, Strain (ignored), Age wks (ignored), Genotype (ignored),
+// DOB, Start treatment date.
+function parseGlobalEnrollPaste(raw){
+  return raw.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length;}).map(function(line){
+    var parts=line.indexOf('\t')>=0?line.split('\t'):line.split(',');
+    parts=parts.map(function(p){return p.trim();});
+    var dobRaw=parts[5]||'';
+    var txRaw=parts[6]||'';
+    return{egp:parts[0]||'',id:parts[1]||'',dobRaw:dobRaw,dob:parseKepDob(dobRaw),txRaw:txRaw,tx:parseKepDob(txRaw)};
+  });
+}
+function buildEgpMap(){
+  var map={};
+  S.experiments.forEach(function(exp){
+    (S.groups[exp.id]||[]).forEach(function(g){
+      if(!g.egp)return;
+      if(!map[g.egp])map[g.egp]=[];
+      map[g.egp].push({eid:exp.id,expName:exp.name,gid:g.id,gname:g.name});
+    });
+  });
+  return map;
+}
+function renderGlobalEnrollPreview(raw){
+  var prev=document.getElementById('gen-preview');if(!prev)return;
+  var rows=parseGlobalEnrollPaste(raw);
+  if(!rows.length){prev.innerHTML='';return;}
+  var egpMap=buildEgpMap();
+  var html='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--text3)">'
+    +'<th style="padding:2px 6px">EGP</th><th style="padding:2px 6px">Mouse ID</th><th style="padding:2px 6px">Matched group</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Tx start</th></tr></thead><tbody>';
+  var nBad=0;
+  rows.forEach(function(r){
+    var matches=r.egp?(egpMap[r.egp]||[]):[];
+    var bad=!r.id||!matches.length||matches.length>1||(r.dobRaw&&!r.dob)||(r.txRaw&&!r.tx);
+    if(bad)nBad++;
+    var matchLabel=!r.egp?'--':!matches.length?'no EGP match':matches.length>1?'EGP matches '+matches.length+' groups':matches[0].eid+' — '+matches[0].gname;
+    var txLabel;
+    if(r.tx)txLabel=r.tx;
+    else if(r.txRaw)txLabel='? '+r.txRaw;
+    else if(matches.length===1){
+      var destHasTx=(S.events[matches[0].gid]||[]).some(function(ev){return ev.type==='treatment';});
+      txLabel=destHasTx?'(today, on enroll)':'(none — no treatment scheduled)';
+    } else txLabel='--';
+    html+='<tr style="'+(bad?'color:var(--red)':'')+'">'
+      +'<td style="padding:2px 6px" class="mono">'+(r.egp||'--')+'</td>'
+      +'<td style="padding:2px 6px" class="mono">'+(r.id||'--')+'</td>'
+      +'<td style="padding:2px 6px">'+matchLabel+'</td>'
+      +'<td style="padding:2px 6px">'+(r.dob||(r.dobRaw?'? '+r.dobRaw:'--'))+'</td>'
+      +'<td style="padding:2px 6px">'+txLabel+'</td>'
+      +'</tr>';
+  });
+  html+='</tbody></table><div style="margin-top:4px;color:var(--text3)">'+rows.length+' row'+(rows.length>1?'s':'')
+    +(nBad?' — <span style="color:var(--red)">'+nBad+' row'+(nBad>1?'s':'')+' will be skipped (no mouse ID, no/ambiguous EGP match, or unparseable date)</span>':'')
+    +'</div>';
+  prev.innerHTML=html;
+}
+function showGlobalEnroll(){
+  showModal('Enroll mice (paste)',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>EGP, Mouse ID, Strain, Age wks, Genotype, DOB, Start treatment date</strong> (tab- or comma-separated). Strain/Age/Genotype are read but ignored. Each mouse is matched to its group by EGP, across every experiment. Leave the last column blank to default it to today (only when the matched group has treatment scheduled).</div>'
+    +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
+    +'<textarea class="fi" id="gen-paste" rows="8" placeholder="EGP0123\t2591266\tKcre;EcdF;P53F\t8\thet\t31/10/2025\t" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
+    +'<div id="gen-preview" style="font-size:10px;overflow-x:auto"></div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitGlobalEnroll()"><i class="ti ti-check"></i> Enroll</button>',true);
+  setTimeout(function(){
+    var ta=document.getElementById('gen-paste');
+    if(ta){ta.focus();ta.addEventListener('input',function(){renderGlobalEnrollPreview(ta.value);});}
+  },50);
+}
+async function submitGlobalEnroll(){
+  var raw=(document.getElementById('gen-paste')&&document.getElementById('gen-paste').value)||'';
+  var rows=parseGlobalEnrollPaste(raw);
+  var egpMap=buildEgpMap();
+  var errors=[];
+  S._cageSortPool=S._cageSortPool||[];
+  var added=0;
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    if(!r.id){continue;}
+    var matches=r.egp?(egpMap[r.egp]||[]):[];
+    if(matches.length!==1){errors.push(r.id+': '+(matches.length?'EGP matches '+matches.length+' groups':'no EGP match'));continue;}
+    if(r.dobRaw&&!r.dob){errors.push(r.id+': unparseable DOB "'+r.dobRaw+'"');continue;}
+    if(r.txRaw&&!r.tx){errors.push(r.id+': unparseable start treatment date "'+r.txRaw+'"');continue;}
+    var dest=matches[0];
+    var destHasTreatment=(S.events[dest.gid]||[]).some(function(ev){return ev.type==='treatment';});
+    var tx=r.tx||(destHasTreatment?TISO:null);
+    var result=await sb.from('mice').insert({
+      id:r.id,experiment_id:dest.eid,group_id:dest.gid,group_name:dest.gname,
+      enrolled:TISO,tx_start:tx,cage_number:'',genotype:'',
+      dob:r.dob||null,status:'active',weight:null,notes:'',completed_events:[],post_mx_status:'active'
+    });
+    if(result.error){errors.push(r.id+': '+result.error.message);continue;}
+    await sb.from('mouse_events').insert({mouse_id:r.id,experiment_id:dest.eid,event_date:TISO,event_type:'enrolled',label:'Enrolled via bulk paste into '+dest.gname,logged_by:uname()});
+    if(tx)await sb.from('mouse_events').insert({mouse_id:r.id,experiment_id:dest.eid,event_date:tx,event_type:'tx_start',label:'Treatment started',logged_by:uname()});
+    S._cageSortPool.push({mid:r.id,eid:dest.eid,gname:dest.gname});
+    added++;
+  }
+  if(errors.length)alert('Some rows were skipped:\n'+errors.join('\n'));
+  closeModal();
+  await dbLoad();
+  if(added)showCageSort();
+}
+
+// CAGE SORT — after a paste-enroll, iteratively split the newly-added mice across new/existing
+// physical cages: check some, move them to a cage, repeat until the pool is empty.
+S._cageSortPool=[];
+S._cageSortShowAll=false;
+function showCageSort(){
+  var pool=S._cageSortPool||[];
+  if(!pool.length){closeModal();return;}
+  var eids=Array.from(new Set(pool.map(function(p){return p.eid;})));
+  var cageSet=new Set();
+  (S._cageSortShowAll?S.experiments.map(function(e){return e.id;}):eids).forEach(function(eid){
+    (S.mice[eid]||[]).forEach(function(m){if(m.cage_number)cageSet.add(m.cage_number);});
+  });
+  var cages=Array.from(cageSet).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true});});
+  var rows=pool.map(function(p){
+    return '<label style="display:flex;align-items:center;gap:8px;padding:3px 6px;font-size:11px;cursor:pointer">'
+      +'<input type="checkbox" class="cs-chk" value="'+p.mid+'">'
+      +'<span class="mono">'+p.mid+'</span><span style="color:var(--text3);font-size:10px">'+p.gname+'</span>'
+      +'</label>';
+  }).join('');
+  showModal('Sort '+pool.length+' mouse'+(pool.length>1?'ice':'')+' into cages',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Check the mice you want to move together, then move them to a new or existing cage. Moved mice drop off this list — repeat until everyone has a cage, or close this and cage the rest later.</div>'
+    +'<div style="max-height:220px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+rows+'</div>'
+    +'<div class="f2">'
+    +'<div class="fg"><label class="fl">New cage</label><div style="display:flex;gap:4px"><input class="fi" id="cs-newcage" placeholder="e.g. C42" style="flex:1"><button class="btn btn-p btn-xs" onclick="submitCageSortMove(document.getElementById(\'cs-newcage\').value)">Move</button></div></div>'
+    +'<div class="fg"><label class="fl">Existing cage</label><div style="display:flex;gap:4px"><select class="fs" id="cs-existcage" style="flex:1"><option value="">Select...</option>'+cages.map(function(c){return'<option value="'+c+'">'+c+'</option>';}).join('')+'</select><button class="btn btn-p btn-xs" onclick="submitCageSortMove(document.getElementById(\'cs-existcage\').value)">Move</button></div></div>'
+    +'</div>'
+    +'<button class="btn btn-xs" style="margin-top:6px" onclick="S._cageSortShowAll=!S._cageSortShowAll;showCageSort()">'+(S._cageSortShowAll?'Showing cages from all experiments':'Show cages from all experiments')+'</button>',
+    '<button class="btn btn-xs" onclick="closeModal()">Close — sort the rest later</button>');
+}
+async function submitCageSortMove(cageVal){
+  cageVal=(cageVal||'').trim();
+  if(!cageVal){alert('Enter or select a cage');return;}
+  var selected=Array.from(document.querySelectorAll('.cs-chk:checked')).map(function(c){return c.value;});
+  if(!selected.length){alert('Check at least one mouse');return;}
+  var pool=S._cageSortPool||[];
+  var moving=pool.filter(function(p){return selected.includes(p.mid);});
+  await sb.from('mice').update({cage_number:cageVal}).in('id',selected);
+  await sb.from('mouse_events').insert(moving.map(function(p){
+    return{mouse_id:p.mid,experiment_id:p.eid,event_date:TISO,event_type:'cage_change',label:'Cage: -- to '+cageVal,details:{old_cage:null,new_cage:cageVal},logged_by:uname()};
+  }));
+  S._cageSortPool=pool.filter(function(p){return!selected.includes(p.mid);});
+  await dbLoad();
+  if(S._cageSortPool.length)showCageSort();
+  else{
+    closeModal();
+    if(S.view==='daily')renderDaily();
+    else if(S.view==='week')renderWeek();
+    else if(S.curExp)renderExp(S.curExp);
+  }
+}
 
 // ADD TASK
 // Quick way to flag a note on a mouse that's already on the schedule for the day, without
