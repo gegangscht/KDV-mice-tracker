@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v126</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v127</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -285,7 +285,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="nav-sec">Experiments</div>
       <div class="nav-i" id="nav-exps" onclick="go('exps')"><i class="ti ti-flask"></i> All experiments</div>
       <div class="nav-i" id="nav-new" onclick="go('new')"><i class="ti ti-plus"></i> New experiment</div>
-      <div class="nav-i" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Enroll mice (paste)</div>
+      <div class="nav-i" onclick="showDuplicateExpPicker()"><i class="ti ti-copy"></i> Duplicate experiment</div>
       <div class="ndiv"></div>
       <div class="nav-sec">KEP watch</div>
       <div class="nav-i" id="nav-kepdaily" onclick="go('kepdaily')"><i class="ti ti-clipboard-list"></i> Palpations</div>
@@ -1260,7 +1260,7 @@ function showGlobalEnroll(){
   showModal('Enroll mice (paste)',
     '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>EGP, Mouse ID, Strain, Age wks, Genotype, DOB, Start treatment date</strong> (tab- or comma-separated). Strain/Age/Genotype are read but ignored. Each mouse is matched to its group by EGP, across every experiment. Leave the last column blank to default it to today (only when the matched group has treatment scheduled).</div>'
     +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
-    +'<textarea class="fi" id="gen-paste" rows="8" placeholder="EGP0123\t2591266\tKcre;EcdF;P53F\t8\thet\t31/10/2025\t" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
+    +'<textarea class="fi" id="gen-paste" rows="8" placeholder="EGP, Mouse ID, Strain, Age wks, Genotype, DOB, Start treatment date" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
     +'<div id="gen-preview" style="font-size:10px;overflow-x:auto"></div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitGlobalEnroll()"><i class="ti ti-check"></i> Enroll</button>',true);
@@ -2629,6 +2629,15 @@ async function unarchiveExp(eid){
   await sb.from('experiments').update({status:'active'}).eq('id',eid);
   await dbLoad();renderExps();buildExpNav();
 }
+function showDuplicateExpPicker(){
+  if(!S.experiments.length){alert('No experiments to duplicate yet.');return;}
+  showModal('Duplicate experiment',
+    '<div class="fg full"><label class="fl">Duplicate which experiment?</label><select class="fs" id="dep-src" style="width:100%">'
+    +S.experiments.map(function(e){return'<option value="'+e.id+'">'+e.id+' — '+e.name+'</option>';}).join('')
+    +'</select></div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="var v=document.getElementById(\'dep-src\').value;closeModal();duplicateExp(v)"><i class="ti ti-copy"></i> Duplicate</button>');
+}
 // Duplicates an experiment's groups/events (never its mice/measurements) into the New
 // Experiment screen — nothing is written to the database until Create is submitted there,
 // so the source experiment can't be affected by this action.
@@ -2846,7 +2855,8 @@ async function renderExp(eid){
   var exp=S.experiments.find(function(e){return e.id===eid});if(!exp)return;
   document.getElementById('pg-title').textContent=exp.id+' - '+exp.name;
   document.getElementById('tb-acts').innerHTML='';
-  document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="exportExcel(\''+eid+'\')" ><i class="ti ti-download"></i> Export Excel</button>';
+  document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Enroll mice (paste)</button>'
+    +'<button class="btn btn-xs" onclick="exportExcel(\''+eid+'\')" ><i class="ti ti-download"></i> Export Excel</button>';
   if(!S.measurements[eid]){document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';await loadAll(eid);}
   var mice=S.mice[eid]||[];var groups=S.groups[eid]||[];var act=mice.filter(function(m){return m.status==='active'}).length;
   var qualGrowthGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis;});});
@@ -5296,16 +5306,20 @@ document.addEventListener('change',function(e){
 function renderKep(){
   document.getElementById('tb-acts').innerHTML='';
   document.getElementById('pg-title').textContent='KEP tumor watch';
-  document.getElementById('pg-acts').innerHTML=S.kep.tab==='watch'
+  document.getElementById('pg-acts').innerHTML=(S.kep.tab==='watch'
     ?'<button class="btn btn-p btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add KEP mice</button>'
-    :'';
+    :'')
+    +'<button class="btn btn-xs" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Enroll mice (paste)</button>';
   var html='<div class="tabs">'
     +'<div class="tab '+(S.kep.tab==='watch'?'act':'')+'" onclick="STKep(\'watch\')">Watch list</div>'
     +'<div class="tab '+(S.kep.tab==='allocated'?'act':'')+'" onclick="STKep(\'allocated\')">Allocated</div>'
     +'<div class="tab '+(S.kep.tab==='needs'?'act':'')+'" onclick="STKep(\'needs\')">Needs KEPs</div>'
+    +'<div class="tab '+(S.kep.tab==='deceased'?'act':'')+'" onclick="STKep(\'deceased\')">Deceased</div>'
     +'</div>';
   if(S.kep.tab==='needs'){
     html+=renderKepNeedsKepsPanel();
+  } else if(S.kep.tab==='deceased'){
+    html+=renderKepDeceasedView();
   } else {
     var mainHtml=S.kep.tab==='watch'?renderKepWatchList():renderKepAllocatedView();
     html+='<div style="display:flex;gap:.75rem;align-items:flex-start">'
@@ -5314,6 +5328,24 @@ function renderKep(){
       +'</div>';
   }
   document.getElementById('content').innerHTML=html;
+}
+function renderKepDeceasedView(){
+  var mice=S.kep.mice.filter(function(m){return m.status==='sacrificed';}).sort(function(a,b){return(b.sac_date||'').localeCompare(a.sac_date||'');});
+  if(!mice.length)return'<div class="empty">No deceased KEP mice.</div>';
+  var html='<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+  html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border)">'
+    +'<th style="padding:6px 8px">Mouse</th><th style="padding:6px 8px">Cause</th><th style="padding:6px 8px">Date</th><th style="padding:6px 8px">KDV</th><th style="padding:6px 8px"></th></tr></thead><tbody>';
+  mice.forEach(function(m){
+    html+='<tr style="border-bottom:.5px solid var(--border)">'
+      +'<td style="padding:6px 8px" class="mono">'+m.id+'</td>'
+      +'<td style="padding:6px 8px">'+(m.cause||'--')+'</td>'
+      +'<td style="padding:6px 8px">'+(m.sac_date||'--')+'</td>'
+      +'<td style="padding:6px 8px">'+(m.kdv||'--')+'</td>'
+      +'<td style="padding:6px 8px;text-align:right"><button class="btn btn-xs btn-icon" onclick="kepActionMenu(event,\''+m.id+'\')"><i class="ti ti-dots"></i></button></td>'
+      +'</tr>';
+  });
+  html+='</tbody></table></div>';
+  return html;
 }
 function STKep(t){clearKepSelection();S.kep.tab=t;renderKep();}
 
