@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v124</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v125</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5451,6 +5451,16 @@ function doKepPrint(){
   doc.close();
   frame.onload=function(){frame.contentWindow.focus();frame.contentWindow.print();};
 }
+// Filters the "Not yet found" rows in place by mouse ID, without a full re-render — a
+// full renderKepDailyTop() on every keystroke would recreate this input and drop focus.
+function filterKepNotFound(q){
+  S.kep.notFoundSearch=q;
+  var ql=q.trim().toLowerCase();
+  document.querySelectorAll('.nf-row').forEach(function(el){
+    var mid=(el.dataset.mid||'').toLowerCase();
+    el.style.display=(!ql||mid.indexOf(ql)>=0)?'':'none';
+  });
+}
 function kepSection2Order(mice,trackedIds){
   var order=[];
   S.kep.cages.forEach(function(c){
@@ -5493,7 +5503,10 @@ function renderKepDaily(){
   }
   html+='</div>';
   html+='<div class="card" style="padding:.5rem 0">';
-  html+='<div style="font-size:11px;font-weight:600;padding:0 .75rem;margin-bottom:4px">Not yet found ('+untrackedCount+') <span style="font-weight:400;color:var(--text3)">— grouped by cage; already-tracked cage-mates shown greyed for reference</span></div>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:0 .75rem;margin-bottom:4px">'
+    +'<div style="font-size:11px;font-weight:600">Not yet found ('+untrackedCount+') <span style="font-weight:400;color:var(--text3)">— grouped by cage; already-tracked cage-mates shown greyed for reference</span></div>'
+    +'<input class="fi" value="'+(S.kep.notFoundSearch||'')+'" placeholder="Search mouse ID..." style="width:140px;font-size:10px;padding:3px 6px" oninput="filterKepNotFound(this.value)">'
+    +'</div>';
   var section2=kepSection2Order(mice,trackedIds);
   if(!section2.length)html+='<div class="empty" style="padding:1rem">Nothing here.</div>';
   else section2.forEach(function(m){
@@ -5504,7 +5517,7 @@ function renderKepDaily(){
   return html;
 }
 function kepDailyRow2RefHTML(m){
-  return '<div style="padding:5px .75rem;border-bottom:.5px solid var(--border);opacity:.4;display:flex;align-items:center;gap:8px">'
+  return '<div class="nf-row" data-mid="'+m.id+'" style="padding:5px .75rem;border-bottom:.5px solid var(--border);opacity:.4;display:flex;align-items:center;gap:8px">'
     +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
     +'<span style="font-size:9px;color:var(--text3)">already being measured — see "Being measured" above</span>'
     +'</div>';
@@ -5551,7 +5564,7 @@ function kepDailyRow2HTML(m){
   var due=age!=null&&age>=5;
   var lastNote=kepLastNote(m.id);
   var color=kepGroupColor(m.kep_cage_id);
-  return '<div id="kqrow2-'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+(color?';background:'+color+'14':'')+'">'
+  return '<div id="kqrow2-'+m.id+'" class="nf-row" data-mid="'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+(color?';background:'+color+'14':'')+'">'
     +'<div style="display:flex;align-items:center;gap:8px">'
     +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
     +'<span style="font-size:9px;color:var(--text3);width:60px">'+(age!=null?age.toFixed(1)+'mo':'?')+'</span>'
@@ -5950,6 +5963,12 @@ async function submitKepDeceased(kmid){
   await sb.from('kep_mouse_events').insert({kep_mouse_id:kmid,event_date:d,event_type:'sacrifice',label:'Marked deceased — '+cause+(kdv?' ('+kdv+')':''),logged_by:uname()});
   closeModal();clearKepSelection();await loadKep();renderKep();
 }
+async function reactivateKepMouse(kmid){
+  if(!confirm('Reactivate '+kmid+'? This will undo the deceased status.'))return;
+  await sb.from('kep_mice').update({status:'active',cause:null,sac_date:null,kdv:null}).eq('id',kmid);
+  await sb.from('kep_mouse_events').insert({kep_mouse_id:kmid,event_date:TISO,event_type:'note',label:'Mouse reactivated (deceased status reversed)',logged_by:uname()});
+  await loadKep();renderKep();
+}
 
 // --- Row action menu ---
 function kepActionMenu(event,kmid){
@@ -5957,12 +5976,15 @@ function kepActionMenu(event,kmid){
   var id='kam-'+kmid;
   var existing=document.getElementById(id);if(existing){existing.remove();return;}
   var btn=event.currentTarget;
+  var km=S.kep.mice.find(function(x){return x.id===kmid;});
   var menu=document.createElement('div');
   menu.id=id;
   menu.style.cssText='position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:1000;padding:3px;display:flex;flex-direction:column;gap:2px;min-width:190px';
   menu.innerHTML='<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepEditMouse(\''+kmid+'\')"><i class="ti ti-pencil"></i> Edit mouse</button>'
     +'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepMoveToExperiment(\''+kmid+'\')"><i class="ti ti-arrows-exchange"></i> Move to experiment (real)</button>'
-    +'<button class="btn btn-xs btn-r" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepDeceased(\''+kmid+'\')"><i class="ti ti-heart-broken"></i> Mark deceased</button>';
+    +(km&&km.status==='sacrificed'
+      ?'<button class="btn btn-xs" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();reactivateKepMouse(\''+kmid+'\')"><i class="ti ti-refresh"></i> Reactivate (undo deceased)</button>'
+      :'<button class="btn btn-xs btn-r" style="justify-content:flex-start" onclick="document.getElementById(\''+id+'\').remove();showKepDeceased(\''+kmid+'\')"><i class="ti ti-heart-broken"></i> Mark deceased</button>');
   document.body.appendChild(menu);
   var r=btn.getBoundingClientRect();
   var menuW=200;
