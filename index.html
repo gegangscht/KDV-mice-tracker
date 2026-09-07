@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v129</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v130</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1206,13 +1206,21 @@ async function enrollMouse(eid,gid,gname){S._enrollCtx={eid:eid,gid:gid,gname:gn
 // a group by EGP (searched across every experiment, since this isn't tied to one WP), and
 // enrolls it. Columns: EGP, Mouse ID, Strain (ignored), Age wks (ignored), Genotype (ignored),
 // DOB, Start treatment date.
+// destHasTxTrigger: true only when the destination group's treatment is anchored to tx_start
+// itself (day-after-tx/age) — a size- or enrollment-triggered treatment doesn't depend on
+// tx_start at all, so defaulting it to a date there would just be misleading, not helpful.
+function destHasTxTrigger(gid){
+  return (S.events[gid]||[]).some(function(ev){return ev.type==='treatment'&&(ev.trigger_type==='day-after-tx'||ev.trigger_type==='age');});
+}
 function parseGlobalEnrollPaste(raw){
   return raw.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length;}).map(function(line){
     var parts=line.indexOf('\t')>=0?line.split('\t'):line.split(',');
     parts=parts.map(function(p){return p.trim();});
     var dobRaw=parts[5]||'';
-    var txRaw=parts[6]||'';
-    return{egp:parts[0]||'',id:parts[1]||'',dobRaw:dobRaw,dob:parseKepDob(dobRaw),txRaw:txRaw,tx:parseKepDob(txRaw)};
+    var enrolledRaw=parts[6]||'';
+    var txRaw=parts[7]||'';
+    return{egp:parts[0]||'',id:parts[1]||'',dobRaw:dobRaw,dob:parseKepDob(dobRaw),
+      enrolledRaw:enrolledRaw,enrolled:parseKepDob(enrolledRaw),txRaw:txRaw,tx:parseKepDob(txRaw)};
   });
 }
 function buildEgpMap(){
@@ -1232,25 +1240,26 @@ function renderGlobalEnrollPreview(raw){
   if(!rows.length){prev.innerHTML='';return;}
   var egpMap=buildEgpMap();
   var html='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--text3)">'
-    +'<th style="padding:2px 6px">EGP</th><th style="padding:2px 6px">Mouse ID</th><th style="padding:2px 6px">Matched group</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Tx start</th></tr></thead><tbody>';
+    +'<th style="padding:2px 6px">EGP</th><th style="padding:2px 6px">Mouse ID</th><th style="padding:2px 6px">Matched group</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Enrolled</th><th style="padding:2px 6px">Tx start</th></tr></thead><tbody>';
   var nBad=0;
   rows.forEach(function(r){
     var matches=r.egp?(egpMap[r.egp]||[]):[];
-    var bad=!r.id||!matches.length||matches.length>1||(r.dobRaw&&!r.dob)||(r.txRaw&&!r.tx);
+    var bad=!r.id||!matches.length||matches.length>1||(r.dobRaw&&!r.dob)||(r.enrolledRaw&&!r.enrolled)||(r.txRaw&&!r.tx);
     if(bad)nBad++;
     var matchLabel=!r.egp?'--':!matches.length?'no EGP match':matches.length>1?'EGP matches '+matches.length+' groups':matches[0].eid+' — '+matches[0].gname;
+    var enrolledLabel=r.enrolled?r.enrolled:(r.enrolledRaw?'? '+r.enrolledRaw:'(today)');
     var txLabel;
     if(r.tx)txLabel=r.tx;
     else if(r.txRaw)txLabel='? '+r.txRaw;
     else if(matches.length===1){
-      var destHasTx=(S.events[matches[0].gid]||[]).some(function(ev){return ev.type==='treatment';});
-      txLabel=destHasTx?'(today, on enroll)':'(none — no treatment scheduled)';
+      txLabel=destHasTxTrigger(matches[0].gid)?'('+(r.enrolled||'today')+', on enroll)':'(none — treatment not date-triggered)';
     } else txLabel='--';
     html+='<tr style="'+(bad?'color:var(--red)':'')+'">'
       +'<td style="padding:2px 6px" class="mono">'+(r.egp||'--')+'</td>'
       +'<td style="padding:2px 6px" class="mono">'+(r.id||'--')+'</td>'
       +'<td style="padding:2px 6px">'+matchLabel+'</td>'
       +'<td style="padding:2px 6px">'+(r.dob||(r.dobRaw?'? '+r.dobRaw:'--'))+'</td>'
+      +'<td style="padding:2px 6px">'+enrolledLabel+'</td>'
       +'<td style="padding:2px 6px">'+txLabel+'</td>'
       +'</tr>';
   });
@@ -1261,9 +1270,9 @@ function renderGlobalEnrollPreview(raw){
 }
 function showGlobalEnroll(){
   showModal('Enroll mice (paste)',
-    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>EGP, Mouse ID, Strain, Age wks, Genotype, DOB, Start treatment date</strong> (tab- or comma-separated). Strain/Age/Genotype are read but ignored. Each mouse is matched to its group by EGP, across every experiment. Leave the last column blank to default it to today (only when the matched group has treatment scheduled).</div>'
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>EGP, Mouse ID, Strain, Age wks, Genotype, DOB, Enrollment date, Start treatment date</strong> (tab- or comma-separated). Strain/Age/Genotype are read but ignored. Each mouse is matched to its group by EGP, across every experiment. Leave Enrollment date blank to default it to today. Leave Start treatment date blank to default it to the enrollment date, but only when the matched group\'s treatment is actually triggered by a date (day-after-tx/age) — a size- or enrollment-triggered treatment is left with no tx_start, since a date wouldn\'t mean anything there.</div>'
     +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
-    +'<textarea class="fi" id="gen-paste" rows="8" placeholder="EGP, Mouse ID, Strain, Age wks, Genotype, DOB, Start treatment date" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
+    +'<textarea class="fi" id="gen-paste" rows="8" placeholder="EGP, Mouse ID, Strain, Age wks, Genotype, DOB, Enrollment date, Start treatment date" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
     +'<div id="gen-preview" style="font-size:10px;overflow-x:auto"></div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="submitGlobalEnroll()"><i class="ti ti-check"></i> Enroll</button>',true);
@@ -1285,17 +1294,18 @@ async function submitGlobalEnroll(){
     var matches=r.egp?(egpMap[r.egp]||[]):[];
     if(matches.length!==1){errors.push(r.id+': '+(matches.length?'EGP matches '+matches.length+' groups':'no EGP match'));continue;}
     if(r.dobRaw&&!r.dob){errors.push(r.id+': unparseable DOB "'+r.dobRaw+'"');continue;}
+    if(r.enrolledRaw&&!r.enrolled){errors.push(r.id+': unparseable enrollment date "'+r.enrolledRaw+'"');continue;}
     if(r.txRaw&&!r.tx){errors.push(r.id+': unparseable start treatment date "'+r.txRaw+'"');continue;}
     var dest=matches[0];
-    var destHasTreatment=(S.events[dest.gid]||[]).some(function(ev){return ev.type==='treatment';});
-    var tx=r.tx||(destHasTreatment?TISO:null);
+    var enrolled=r.enrolled||TISO;
+    var tx=r.tx||(destHasTxTrigger(dest.gid)?enrolled:null);
     var result=await sb.from('mice').insert({
       id:r.id,experiment_id:dest.eid,group_id:dest.gid,group_name:dest.gname,
-      enrolled:TISO,tx_start:tx,cage_number:'',genotype:'',
+      enrolled:enrolled,tx_start:tx,cage_number:'',genotype:'',
       dob:r.dob||null,status:'active',weight:null,notes:'',completed_events:[],post_mx_status:'active'
     });
     if(result.error){errors.push(r.id+': '+result.error.message);continue;}
-    await sb.from('mouse_events').insert({mouse_id:r.id,experiment_id:dest.eid,event_date:TISO,event_type:'enrolled',label:'Enrolled via bulk paste into '+dest.gname,logged_by:uname()});
+    await sb.from('mouse_events').insert({mouse_id:r.id,experiment_id:dest.eid,event_date:enrolled,event_type:'enrolled',label:'Enrolled via bulk paste into '+dest.gname,logged_by:uname()});
     if(tx)await sb.from('mouse_events').insert({mouse_id:r.id,experiment_id:dest.eid,event_date:tx,event_type:'tx_start',label:'Treatment started',logged_by:uname()});
     S._cageSortPool.push({mid:r.id,eid:dest.eid,gname:dest.gname});
     added++;
@@ -4044,6 +4054,7 @@ function showBulkEditGroups(){
     +bulkEditFieldRow('be-drug','Drug','<input class="fi" id="be-drug-val" disabled style="flex:1;font-size:11px;padding:3px 6px">')
     +bulkEditFieldRow('be-dose','Dose','<input class="fi" id="be-dose-val" disabled style="flex:1;font-size:11px;padding:3px 6px">')
     +bulkEditFieldRow('be-route','Route','<input class="fi" id="be-route-val" list="route-opts" disabled style="flex:1;font-size:11px;padding:3px 6px">')
+    +bulkEditFieldRow('be-trigtype','Trigger','<select class="fs" id="be-trigtype-val" disabled style="flex:1;font-size:11px;padding:3px 6px">'+['enrollment','size','age','day-after-tx','endpoint'].map(function(t){return'<option value="'+t+'">'+t+'</option>';}).join('')+'</select>')
     +bulkEditFieldRow('be-trigval','Trigger value','<input class="fi" id="be-trigval-val" disabled placeholder="e.g. 4x4" style="flex:1;font-size:11px;padding:3px 6px">')
     +bulkEditFieldRow('be-dayoff','Day offset','<input class="fi" id="be-dayoff-val" type="number" disabled style="width:80px;font-size:11px;padding:3px 6px">')
     +bulkEditFieldRow('be-maxdose','Max doses','<input class="fi" id="be-maxdose-val" type="number" disabled placeholder="unlimited" style="width:80px;font-size:11px;padding:3px 6px">')
@@ -4060,8 +4071,8 @@ async function submitBulkEditGroups(){
   if(!gids.length)return;
   var eid=S._selectedGroups[gids[0]];
   var targetType=(document.getElementById('be-type')&&document.getElementById('be-type').value)||'measure-tumor';
-  var fields=['label','drug','dose','route','trigval','dayoff','maxdose'];
-  var fieldMap={label:'label',drug:'drug',dose:'dose',route:'route',trigval:'trigger_value',dayoff:'day_offset',maxdose:'max_doses'};
+  var fields=['label','drug','dose','route','trigtype','trigval','dayoff','maxdose'];
+  var fieldMap={label:'label',drug:'drug',dose:'dose',route:'route',trigtype:'trigger_type',trigval:'trigger_value',dayoff:'day_offset',maxdose:'max_doses'};
   var apply={};
   fields.forEach(function(f){
     var chk=document.getElementById('be-'+f+'-chk');
