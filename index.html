@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v130</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v131</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -2868,8 +2868,7 @@ async function renderExp(eid){
   var exp=S.experiments.find(function(e){return e.id===eid});if(!exp)return;
   document.getElementById('pg-title').textContent=exp.id+' - '+exp.name;
   document.getElementById('tb-acts').innerHTML='';
-  document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Enroll mice (paste)</button>'
-    +'<button class="btn btn-xs" onclick="exportExcel(\''+eid+'\')" ><i class="ti ti-download"></i> Export Excel</button>';
+  document.getElementById('pg-acts').innerHTML='<button class="btn btn-xs" onclick="exportExcel(\''+eid+'\')" ><i class="ti ti-download"></i> Export Excel</button>';
   if(!S.measurements[eid]){document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';await loadAll(eid);}
   var mice=S.mice[eid]||[];var groups=S.groups[eid]||[];var act=mice.filter(function(m){return m.status==='active'}).length;
   var qualGrowthGroups=groups.filter(function(g){return mice.some(function(m){return(m.group_id===g.id||m.group_name===g.name)&&m.day0_date&&!m.excluded_from_analysis;});});
@@ -2910,8 +2909,10 @@ async function renderExp(eid){
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:6px">'
       +'<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-xs" onclick="cycleSortMice(\''+eid+'\')"><i class="ti ti-sort-ascending"></i> Sort: '+sortLabel+'</button>'
       +(miceHasAxes?groupByAxisSelectHTML(exp,eid):'')+'</div>'
+      +'<div style="display:flex;align-items:center;gap:6px">'
+      +'<button class="btn btn-g btn-xs" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Bulk enroll mice</button>'
       +'<button class="btn btn-xs" onclick="S.showHist[\''+eid+'\']=!S.showHist[\''+eid+'\'];renderExp(\''+eid+'\')"><i class="ti ti-history"></i> '+(showAllHist?'Collapse all history':'Show full history for all mice')+'</button>'
-      +'</div>';
+      +'</div></div>';
     if(showAllHist){
       S.mice[eid]&&S.mice[eid].forEach(function(m){S.showAllMs[m.id]=true;});
     }
