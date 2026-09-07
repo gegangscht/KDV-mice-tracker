@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v127</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v128</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -588,9 +588,12 @@ function getTasksForDate(iso){
       var enD=m.enrolled?new Date(m.enrolled):null;
       var tgtD=new Date(iso);
       gevts.forEach(function(ev){
-        if((ev.type==='measure'||ev.type==='measure-tumor'||ev.type==='measure-weight')&&ev.schedule_type==='fixed-days'&&(ev.schedule_days||[]).includes(dow)&&enD&&tgtD>=enD){
-          var taskType=ev.type==='measure-weight'?'measure-weight':(ev.type==='measure-tumor'?'measure-tumor':'measure');
-          tasks.push({type:taskType,mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,lastBurden:last?bShort(last.tumor_sites,S.inclSkin):'--',lastNote:last&&last.note?last.note:'',dayInTx:txD?Math.round((tgtD-txD)/86400000):null,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'meas-'+m.id+'-'+iso});
+        if((ev.type==='measure'||ev.type==='measure-tumor'||ev.type==='measure-weight')&&ev.schedule_type==='fixed-days'&&(ev.schedule_days||[]).includes(dow)){
+          var measOk=ev.trigger_type==='day-after-tx'?!!(txD&&tgtD>=txD):!!(enD&&tgtD>=enD);
+          if(measOk){
+            var taskType=ev.type==='measure-weight'?'measure-weight':(ev.type==='measure-tumor'?'measure-tumor':'measure');
+            tasks.push({type:taskType,mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,lastBurden:last?bShort(last.tumor_sites,S.inclSkin):'--',lastNote:last&&last.note?last.note:'',dayInTx:txD?Math.round((tgtD-txD)/86400000):null,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'meas-'+m.id+'-'+iso});
+          }
         }
         if(ev.type==='treatment'&&ev.schedule_type==='fixed-days'){
           var ok=false;
