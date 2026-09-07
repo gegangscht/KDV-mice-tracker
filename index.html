@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v128</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v129</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3057,7 +3057,7 @@ async function renderExp(eid){
           +'</div>'
           +'<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;font-size:10px;color:var(--text2)">'
           +'<div><div style="color:var(--text3)">Schedule</div>'+(ev.schedule_type==='fixed-days'?(ev.schedule_days||[]).map(function(d){return DOW[d]}).join('+'):ev.schedule_type==='interval'?'every '+ev.interval_days+'d':ev.schedule_type)+'</div>'
-          +'<div><div style="color:var(--text3)">Trigger</div>'+ev.trigger_type+(ev.trigger_value?' @ '+ev.trigger_value:ev.day_offset?' +'+ev.day_offset+'d':'')+'</div>'
+          +'<div><div style="color:var(--text3)">Trigger</div>'+ev.trigger_type+(ev.trigger_type==='size'&&ev.trigger_value?' @ '+ev.trigger_value:(ev.trigger_type==='day-after-tx'||ev.trigger_type==='age')&&ev.day_offset?' +'+ev.day_offset+'d':'')+'</div>'
           +'<div><div style="color:var(--text3)">Dose</div>'+(ev.dose?ev.dose+' '+(ev.route||''):'--')+'</div>'
           +'<div><div style="color:var(--text3)">Max doses</div>'+(ev.max_doses!=null?ev.max_doses+'x':'unlimited')+'</div>'
           +'</div></div>';
