@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v137</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v138</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -567,6 +567,7 @@ async function loadKep(){
 }
 async function init(){
   await dbLoad();
+  await backfillCageSlots();
   await Promise.all(S.experiments.filter(function(e){return e.status==='active'}).map(function(e){return Promise.all([loadMs(e.id),loadMev(e.id)])}));
   buildExpNav();go('daily');
 }
@@ -3772,7 +3773,7 @@ async function createExp(){
         await sb.from('scheduled_events').insert({group_id:gD.id,experiment_id:wp,type:ev.type,label:ev.label||'',drug:ev.drug||'',dose:ev.dose||'',route:ev.route||'',schedule_type:ev.schedule,schedule_days:ev.days||[],interval_days:ev.schedule==='interval'?ev.intervalDays:null,trigger_type:ev.trigger,trigger_value:ev.triggerVal||'',day_offset:ev.dayOffset||0,max_doses:ev.maxDoses||null,twice_daily:!!ev.twiceDaily,sort_order:j});
       }
     }
-    await assignCageSlot(wp);await assignCageSlot(wp);await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
+    await assignCageSlot(wp);await dbLoad();buildExpNav();S.expTab='mice';go('exp-'+wp);
   }catch(err){alert('Error: '+err.message);if(btn)btn.disabled=false;}
 }
 
@@ -4638,6 +4639,31 @@ async function assignCageSlot(eid){
   await sb.from('experiments').update({researcher_cage_slot:slot}).eq('id',eid);
   exp.researcher_cage_slot=slot;
   return slot;
+}
+// Self-healing backfill: any active experiment missing researcher_cage_slot (created before
+// this field existed, or that fell through some other gap) silently fell back to slot 1 in
+// getCageSlot(), colliding with any sibling experiment of the same researcher that already had
+// slot 1 — same cage prefix shown for two different experiments. Run once at startup so every
+// researcher's active experiments end up with distinct, permanently-assigned slots.
+async function backfillCageSlots(){
+  var active=S.experiments.filter(function(e){return e.status==='active'&&e.researcher_id;});
+  var byRes={};
+  active.forEach(function(e){
+    if(!byRes[e.researcher_id])byRes[e.researcher_id]=[];
+    byRes[e.researcher_id].push(e);
+  });
+  for(var resId in byRes){
+    var exps=byRes[resId];
+    var used=exps.filter(function(e){return e.researcher_cage_slot;}).map(function(e){return e.researcher_cage_slot;});
+    var missing=exps.filter(function(e){return!e.researcher_cage_slot;}).sort(function(a,b){return(a.started||'').localeCompare(b.started||'')||a.id.localeCompare(b.id);});
+    for(var i=0;i<missing.length;i++){
+      var slot=1;
+      while(used.indexOf(slot)>=0&&slot<10)slot++;
+      used.push(slot);
+      await sb.from('experiments').update({researcher_cage_slot:slot}).eq('id',missing[i].id);
+      missing[i].researcher_cage_slot=slot;
+    }
+  }
 }
 
 // UNIFIED CAGE + GROUP TRANSFER MODAL
