@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v139</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v140</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5143,13 +5143,14 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
 
 function doPrint(){
   var html=buildPrintHTML();
-  var frame=document.getElementById('print-frame');
-  if(!frame){
-    frame=document.createElement('iframe');
-    frame.id='print-frame';
-    frame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
-    document.body.appendChild(frame);
-  }
+  // Always a fresh iframe — reusing an already-loaded one and calling document.write again
+  // doesn't reliably re-fire the load event in every browser, which silently no-ops print()
+  // the second time a print is triggered in the same session.
+  var old=document.getElementById('print-frame');if(old)old.remove();
+  var frame=document.createElement('iframe');
+  frame.id='print-frame';
+  frame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+  document.body.appendChild(frame);
   var doc=frame.contentDocument||frame.contentWindow.document;
   doc.open();
   doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
@@ -5790,15 +5791,21 @@ function buildKepPrintHTML(){
   var phtml='<div style="font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1.5px solid #000;padding-bottom:3px">KEP palpation sheet — '+today+'</div>';
   phtml+='<table style="width:100%;border-collapse:collapse;font-size:10px">';
   phtml+='<thead><tr style="border-bottom:1px solid #000;text-align:left">'
-    +'<th style="padding:3px">Barcode</th><th style="padding:3px">Location</th><th style="padding:3px">Size (mm)</th><th style="padding:3px">Notes</th>'
+    +'<th style="padding:3px">Barcode</th><th style="padding:3px">Location</th><th style="padding:3px">Previous size</th><th style="padding:3px">Size (mm)</th><th style="padding:3px">Notes</th>'
     +'</tr></thead><tbody>';
   ordered.forEach(function(m){
-    if(!m){phtml+='<tr><td colspan="4" style="height:8px;border:none"></td></tr>';return;}
+    if(!m){phtml+='<tr><td colspan="5" style="height:8px;border:none"></td></tr>';return;}
+    var msl=kepQualifyingMs(m.id);
+    var last=msl.length?msl[msl.length-1]:null;
+    var prevDate=last?fmtD(last.measured_at):'';
+    var prevSize=last?bShort(last.kep_tumor_sites,true):'';
+    var prevNote=last&&last.note?last.note:'';
     phtml+='<tr style="border-bottom:.5px solid #ccc">'
       +'<td style="padding:4px 3px;font-family:monospace">'+m.id+'</td>'
       +'<td style="padding:4px 3px;border-bottom:1px solid #000">&nbsp;</td>'
+      +'<td style="padding:4px 3px;color:#555">'+(last?prevSize+' <span style="font-size:8px">('+prevDate+')</span>':'--')+'</td>'
       +'<td style="padding:4px 3px;border-bottom:1px solid #000">&nbsp;</td>'
-      +'<td style="padding:4px 3px;border-bottom:1px solid #000">&nbsp;</td>'
+      +'<td style="padding:4px 3px;border-bottom:1px solid #000">'+(prevNote?'<div style="font-size:8px;color:#555;margin-bottom:2px">Last ('+prevDate+'): '+prevNote+'</div>':'')+'&nbsp;</td>'
       +'</tr>';
   });
   phtml+='</tbody></table>';
@@ -5806,13 +5813,11 @@ function buildKepPrintHTML(){
 }
 function doKepPrint(){
   var html=buildKepPrintHTML();
-  var frame=document.getElementById('print-frame');
-  if(!frame){
-    frame=document.createElement('iframe');
-    frame.id='print-frame';
-    frame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
-    document.body.appendChild(frame);
-  }
+  var old=document.getElementById('print-frame');if(old)old.remove();
+  var frame=document.createElement('iframe');
+  frame.id='print-frame';
+  frame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
+  document.body.appendChild(frame);
   var doc=frame.contentDocument||frame.contentWindow.document;
   doc.open();
   doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
