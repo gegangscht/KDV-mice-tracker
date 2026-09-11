@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v134</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v135</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -620,9 +620,15 @@ function getTasksForDate(iso){
           if(rs)tgt=rs.task_date;
           if(tgt===iso&&!(m.completed_events||[]).includes(ev.label))tasks.push({type:ev.type,mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,dayInTx:txD?Math.round((tgtD-txD)/86400000):null,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:ev.type+'-'+m.id+'-'+ev.label+'-'+iso});
         }
-        if(ev.schedule_type==='interval'&&ev.interval_days&&txD&&tgtD>=txD){
-          var ds=Math.round((tgtD-txD)/86400000);
-          if(ds>0&&ds%ev.interval_days===0){var nd2=((m.completed_events||[])).filter(function(e){return e===ev.label}).length;if(!ev.max_doses||nd2<ev.max_doses)tasks.push({type:ev.type||'treatment',mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,drug:ev.drug||'',dose:ev.dose||'',dayInTx:ds,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'int-'+m.id+'-'+ev.label+'-'+iso});}
+        if(ev.schedule_type==='interval'&&ev.interval_days){
+          var intAnchor=ev.trigger_type==='enrollment'?enD:txD;
+          if(intAnchor){
+            var intStart=new Date(intAnchor.getTime()+(ev.day_offset||0)*86400000);
+            if(tgtD>=intStart){
+              var ds=Math.round((tgtD-intStart)/86400000);
+              if(ds>0&&ds%ev.interval_days===0){var nd2=((m.completed_events||[])).filter(function(e){return e===ev.label}).length;if(!ev.max_doses||nd2<ev.max_doses)tasks.push({type:ev.type||'treatment',mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,drug:ev.drug||'',dose:ev.dose||'',dayInTx:txD?Math.round((tgtD-txD)/86400000):ds,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'int-'+m.id+'-'+ev.label+'-'+iso});}
+            }
+          }
         }
       });
     });
