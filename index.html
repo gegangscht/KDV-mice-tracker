@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v140</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v141</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5141,20 +5141,17 @@ var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',mo
   return phtml;
 }
 
-function doPrint(){
-  var html=buildPrintHTML();
-  // Always a fresh iframe — reusing an already-loaded one and calling document.write again
-  // doesn't reliably re-fire the load event in every browser, which silently no-ops print()
-  // the second time a print is triggered in the same session.
-  var old=document.getElementById('print-frame');if(old)old.remove();
-  var frame=document.createElement('iframe');
-  frame.id='print-frame';
-  frame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
-  document.body.appendChild(frame);
-  var doc=frame.contentDocument||frame.contentWindow.document;
-  doc.open();
-  doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
-    +'<title>Daily sheet</title>'
+// Opens generated HTML in a real new tab and prints that, instead of a hidden offscreen
+// iframe — some browsers (Safari especially) can silently refuse to print from an iframe
+// pinned at 1x1px far off-screen, with no error, which is indistinguishable from the print
+// button doing nothing at all. window.open here is called synchronously from the triggering
+// click, so it's a genuine user gesture and won't get popup-blocked.
+function printHTML(title,html){
+  var w=window.open('','_blank');
+  if(!w){alert('Could not open the print window — check this site isn\'t blocked as a popup in your browser.');return;}
+  w.document.open();
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
+    +'<title>'+title+'</title>'
     +'<style>'
     +'@page{size:A4 portrait;margin:8mm}'
     +'body{font-family:Arial,Helvetica,sans-serif;font-size:9px;margin:0;padding:0}'
@@ -5165,8 +5162,12 @@ function doPrint(){
     +'</head><body>'
     +html
     +'</body></html>');
-  doc.close();
-  frame.onload=function(){frame.contentWindow.focus();frame.contentWindow.print();};
+  w.document.close();
+  w.focus();
+  setTimeout(function(){w.print();},300);
+}
+function doPrint(){
+  printHTML('Daily sheet',buildPrintHTML());
 }
 
 function buildExpNav(){
@@ -5812,28 +5813,7 @@ function buildKepPrintHTML(){
   return phtml;
 }
 function doKepPrint(){
-  var html=buildKepPrintHTML();
-  var old=document.getElementById('print-frame');if(old)old.remove();
-  var frame=document.createElement('iframe');
-  frame.id='print-frame';
-  frame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none';
-  document.body.appendChild(frame);
-  var doc=frame.contentDocument||frame.contentWindow.document;
-  doc.open();
-  doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
-    +'<title>KEP palpation sheet</title>'
-    +'<style>'
-    +'@page{size:A4 portrait;margin:8mm}'
-    +'body{font-family:Arial,Helvetica,sans-serif;font-size:9px;margin:0;padding:0}'
-    +'table{width:100%;border-collapse:collapse}'
-    +'th,td{padding:2px 3px}'
-    +'tr{page-break-inside:avoid}'
-    +'</style>'
-    +'</head><body>'
-    +html
-    +'</body></html>');
-  doc.close();
-  frame.onload=function(){frame.contentWindow.focus();frame.contentWindow.print();};
+  printHTML('KEP palpation sheet',buildKepPrintHTML());
 }
 // Filters the "Not yet found" rows in place by mouse ID, without a full re-render — a
 // full renderKepDailyTop() on every keystroke would recreate this input and drop focus.
