@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v132</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v133</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5090,15 +5090,25 @@ function doPrint(){
 }
 
 function buildExpNav(){
-  document.getElementById('exp-nav').innerHTML=S.experiments.filter(function(e){return e.status==='active'}).map(function(e){
-    return'<div class="nav-exp" onclick="go(\'exp-'+e.id+'\')" style="flex-direction:column;align-items:flex-start;padding:4px 1rem 4px 1.5rem">'
-      +'<div style="display:flex;align-items:center;gap:5px;width:100%">'
-      +'<div class="edot" style="background:'+e.color+'"></div>'
-      +'<span style="font-size:11px;font-weight:500">'+e.id+'</span>'
-      +'</div>'
-      +'<div style="font-size:9px;color:var(--text3);padding-left:12px;line-height:1.3">'+(e.name.length>22?e.name.slice(0,22)+'…':e.name)+'</div>'
-      +'<div style="font-size:9px;color:var(--text3);padding-left:12px">'+e.researcher+'</div>'
-      +'</div>';
+  var active=S.experiments.filter(function(e){return e.status==='active'});
+  var byRes={};var order=[];
+  active.forEach(function(e){
+    var key=e.researcher||'(no researcher)';
+    if(!byRes[key]){byRes[key]=[];order.push(key);}
+    byRes[key].push(e);
+  });
+  order.sort(function(a,b){return a.localeCompare(b);});
+  document.getElementById('exp-nav').innerHTML=order.map(function(res,ri){
+    return '<div style="font-size:9px;color:var(--text3);padding:'+(ri>0?'8px':'4px')+' 1rem 3px 1.5rem;'+(ri>0?'border-top:.5px solid var(--border);margin-top:4px':'')+'">'+res+'</div>'
+      +byRes[res].map(function(e){
+        return'<div class="nav-exp" onclick="go(\'exp-'+e.id+'\')" style="flex-direction:column;align-items:flex-start;padding:4px 1rem 4px 1.5rem">'
+          +'<div style="display:flex;align-items:center;gap:5px;width:100%">'
+          +'<div class="edot" style="background:'+e.color+'"></div>'
+          +'<span style="font-size:11px;font-weight:500">'+e.id+'</span>'
+          +'</div>'
+          +'<div style="font-size:9px;color:var(--text3);padding-left:12px;line-height:1.3">'+(e.name.length>22?e.name.slice(0,22)+'…':e.name)+'</div>'
+          +'</div>';
+      }).join('');
   }).join('');
 }
 function go(view){
