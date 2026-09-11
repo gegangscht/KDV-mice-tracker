@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v145</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v146</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -315,9 +315,11 @@ const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const COLS=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED','#D97706','#DC2626','#059669','#DB2777','#0369A1','#65A30D','#92400E','#4B5563'];
 const LOCS=['1R','2R','3R','4R','5R','1L','2L','3L','4L','5L','skin'];
 const ROUTES=['IP','IV','SC','PO','Oral gavage'];
-// The only Model values that make an experiment an actual KEP-model protocol — must match
-// exactly (not just contain "KEP", e.g. a cell line named "KEP celline" isn't one of these).
-const KEP_MODELS=['KEP transplant','Intraductal KEP','KEP spontaneous'];
+// The only Model value that makes an experiment an actual KEP-tumor-watch protocol — must
+// match exactly. "KEP transplant"/"Intraductal KEP" mice are implanted directly, never drawn
+// from the watched/palpated pool, so they don't belong in Needs KEPs/allocation either — only
+// spontaneous-tumor protocols actually draw from Tumor Watch.
+const KEP_MODELS=['KEP spontaneous'];
 document.getElementById('route-opts').innerHTML=ROUTES.map(function(r){return'<option value="'+r+'">'}).join('');
 function routeInputHTML(id,val,extraAttrs){
   return '<input class="fi" list="route-opts" id="'+id+'" value="'+(val||'')+'" placeholder="route" style="'+(extraAttrs&&extraAttrs.style||'')+'"'+(extraAttrs&&extraAttrs.oninput?' oninput="'+extraAttrs.oninput+'"':'')+'>';
