@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v138</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v139</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1048,13 +1048,50 @@ async function editTxGroup(mid,eid){
   // Alias for editing tx without transferring group
   return editTxStart(mid,eid);
 }
-async function editCage(mid,eid){
+// Cage-only quick edit — same suggested-new-cage / existing-cage-pill logic as the full
+// "Move mouse" flow (showCageTransfer), just without the group-change section, for the common
+// case of clicking a mouse's cage badge to fix or reassign just the cage.
+function showCageEdit(mid,eid){
+  var exp=S.experiments.find(function(e){return e.id===eid});
   var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
-  var cur=m&&m.cage_number?m.cage_number:'';
-  var val=prompt('Cage number:',cur);if(val===null)return;
-  await sb.from('mice').update({cage_number:val}).eq('id',mid);
-  if(val!==cur)await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:TISO,event_type:'cage_change',label:'Cage: '+(cur||'?')+' to '+val,details:{old_cage:cur,new_cage:val},logged_by:uname()});
-  await loadAll(eid);renderExp(eid);
+  if(!exp||!m)return;
+  S._cageEditCtx={eid:eid,mid:mid};
+  var occupiedCages=getOccupiedCagesInExp(eid);
+  var nextCage=suggestNextCage(eid);
+  var cagePillsHtml=occupiedCages.map(function(c){
+    var isCurrent=c.cage===m.cage_number;
+    return '<button class="btn btn-xs cage-pill" data-cage="'+c.cage+'" onclick="selectCagePill(this)" style="margin:2px'+(isCurrent?';outline:1.5px solid var(--primary);outline-offset:1px':'')+'">'
+      +c.cage+' <span style="font-size:9px;opacity:.7">'+c.mice.length+' mice · '+c.group+(isCurrent?' · current':'')+'</span>'
+      +'</button>';
+  }).join('');
+  showModal('Change cage — '+mid,
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Currently: '+(m.cage_number?'<strong>'+m.cage_number+'</strong>':'no cage')+'</div>'
+    +'<div style="margin-bottom:6px">'+(cagePillsHtml||'<span style="font-size:10px;color:var(--text3)">No cages in use yet</span>')+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<button class="btn btn-xs cage-pill" data-cage="'+nextCage+'" onclick="selectCagePill(this)"><i class="ti ti-plus"></i> New cage: '+nextCage+'</button>'
+    +'<button class="btn btn-xs" onclick="toggleOtherCages()" id="other-cages-btn">Other experiment...</button>'
+    +'</div>'
+    +'<div id="other-cages-panel" style="display:none;margin-bottom:8px;padding:6px 8px;background:var(--surface2);border-radius:var(--r)">'
+    +'<input class="fi" id="cage-search" placeholder="Search cages (e.g. AB1)" oninput="filterOtherCages(\''+eid+'\')" style="width:100%;margin-bottom:6px;font-size:11px">'
+    +'<div id="other-cages-list" style="max-height:120px;overflow-y:auto"></div>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:6px">'
+    +'<span style="font-size:10px;color:var(--text2)">Cage:</span>'
+    +'<input class="fi" id="tr-cage-val" value="'+(m.cage_number||'')+'" style="width:90px;font-size:11px" placeholder="cage number">'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitCageEdit()"><i class="ti ti-check"></i> Save</button>');
+  setTimeout(function(){filterOtherCages(eid);},50);
+}
+async function submitCageEdit(){
+  var d=S._cageEditCtx;if(!d)return;
+  var m=(S.mice[d.eid]||[]).find(function(x){return x.id===d.mid});if(!m)return;
+  var val=((document.getElementById('tr-cage-val')&&document.getElementById('tr-cage-val').value)||'').trim();
+  var cur=m.cage_number||'';
+  if(val===cur){closeModal();return;}
+  await sb.from('mice').update({cage_number:val}).eq('id',d.mid);
+  await sb.from('mouse_events').insert({mouse_id:d.mid,experiment_id:d.eid,event_date:TISO,event_type:'cage_change',label:'Cage: '+(cur||'?')+' to '+(val||'(cleared)'),details:{old_cage:cur,new_cage:val},logged_by:uname()});
+  closeModal();await loadAll(d.eid);renderExp(d.eid);
 }
 // Edits the text of a note-type mouse_events entry in place (these are otherwise immutable
 // once logged — same in-place refresh pattern as setDay0, no full page reload).
@@ -2968,7 +3005,7 @@ async function renderExp(eid){
         else sbb='<span class="badge bgy" style="cursor:pointer" title="Click to reactivate" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')">Sacrificed</span>'+excl;
         var bc=last?'<span title="'+bFull(last.tumor_sites)+'" style="'+(near?'color:var(--amber);font-weight:500':'')+'">'+(bShort(last.tumor_sites,S.inclSkin))+'</span>':'--';
         var kdvC=m.kdv?'<span class="mono" style="cursor:pointer" onclick="editKDV(\''+m.id+'\',\''+eid+'\')" title="Click to edit">'+m.kdv+'</span>':(m.status==='sacrificed'?'<button class="btn btn-xs btn-a" onclick="editKDV(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-plus"></i> KDV</button>':'--');
-        var cageC='<span class="cage-tag" onclick="editCage(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-cage" style="font-size:10px"></i>'+(m.cage_number||'--')+'</span>';
+        var cageC='<span class="cage-tag" onclick="showCageEdit(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-cage" style="font-size:10px"></i>'+(m.cage_number||'--')+'</span>';
         mh+='<tr id="mrow-'+m.id+'" style="'+(near?'background:#FAEEDA22':'')+'">'
           +'<td style="padding:2px 4px"><input type="checkbox" class="mouse-chk row-chk" data-mid="'+m.id+'" data-eid="'+eid+'" onchange="onRowCheck(this)"></td>'
           +'<td class="mono">'+m.id+'</td><td>'+cageC+'</td><td style="font-size:10px">'+(m.tx_start||'--')+'</td>'
