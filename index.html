@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v148</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v149</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -292,6 +292,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="nav-i" id="nav-kepdaily-ind" onclick="go('kepdaily-ind')"><i class="ti ti-clipboard-list"></i> Intraductal palpations</div>
       <div class="nav-i" id="nav-kep" onclick="go('kep')"><i class="ti ti-search"></i> KEP tumor watch</div>
       <div class="nav-i" id="nav-kep-ind" onclick="go('kep-ind')"><i class="ti ti-search"></i> Intraductal tumor watch</div>
+      <div class="nav-i" id="nav-kepmodels" onclick="go('kepmodels')"><i class="ti ti-dna"></i> Models</div>
       <div class="ndiv"></div>
       <div class="nav-sec">Active</div>
       <div id="exp-nav"></div>
@@ -5239,7 +5240,7 @@ function buildExpNav(){
       }).join('');
   }).join('');
 }
-var KEP_NAV_IDS=['daily','week','exps','new','kep','kepdaily','kep-ind','kepdaily-ind'];
+var KEP_NAV_IDS=['daily','week','exps','new','kep','kepdaily','kep-ind','kepdaily-ind','kepmodels'];
 function go(view){
   S.view=view;S.curExp=null;S.expTab='mice';
   if(typeof clearSelection==='function')clearSelection();
@@ -5258,6 +5259,10 @@ function go(view){
     S.kep.logDate=TISO;
     if(S.kep.loaded)renderKepDailyTop();
     else{document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';loadKep().then(renderKepDailyTop);}
+  }
+  else if(view==='kepmodels'){
+    if(S.kep.loaded)renderKepModelsTab();
+    else{document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';loadKep().then(renderKepModelsTab);}
   }
   else if(view.indexOf('exp-')===0){
     KEP_NAV_IDS.forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.remove('act');});
@@ -5553,7 +5558,7 @@ function renderKep(){
   document.getElementById('pg-acts').innerHTML=(S.kep.tab==='watch'
     ?'<button class="btn btn-p btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add '+(isInd?'intraductal':'KEP')+' mice</button>'
     :'')
-    +'<button class="btn btn-xs" onclick="showMouseModelsAdmin()"><i class="ti ti-settings"></i> Manage models</button>'
+    +'<button class="btn btn-xs" onclick="go(\'kepmodels\')"><i class="ti ti-settings"></i> Manage models</button>'
     +'<button class="btn btn-xs" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Enroll mice (paste)</button>';
   var html='<div class="tabs">'
     +'<div class="tab '+(S.kep.tab==='watch'?'act':'')+'" onclick="STKep(\'watch\')">Watch list</div>'
@@ -6276,14 +6281,16 @@ function renderKepInjectionPastePreview(raw){
   if(!rows.length){prev.innerHTML='';return;}
   var html='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--text3)">'
     +'<th style="padding:2px 6px">Barcode</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Model</th><th style="padding:2px 6px">Injected</th><th style="padding:2px 6px">Nipples</th><th style="padding:2px 6px">Virus</th><th style="padding:2px 6px">Notes</th></tr></thead><tbody>';
-  var nBad=0;
+  var nBad=0,nNewModel=0;
   rows.forEach(function(r){
-    var bad=!r.id||(r.dobRaw&&!r.dob)||!r.modelId||!r.inj||!r.nipples.length;
+    var bad=!r.id||(r.dobRaw&&!r.dob)||!r.modelName||!r.inj||!r.nipples.length;
     if(bad)nBad++;
+    else if(!r.modelId)nNewModel++;
+    var modelCell=r.modelId?r.modelName:(r.modelName?'<span style="color:var(--amber)">+ will create: '+r.modelName+'</span>':'--');
     html+='<tr style="'+(bad?'color:var(--red)':'')+'">'
       +'<td style="padding:2px 6px" class="mono">'+(r.id||'--')+'</td>'
       +'<td style="padding:2px 6px">'+(r.dob||(r.dobRaw?'? '+r.dobRaw:'--'))+'</td>'
-      +'<td style="padding:2px 6px">'+(r.modelId?r.modelName:(r.modelName?'? '+r.modelName:'--'))+'</td>'
+      +'<td style="padding:2px 6px">'+modelCell+'</td>'
       +'<td style="padding:2px 6px">'+(r.inj||(r.injRaw?'? '+r.injRaw:'--'))+'</td>'
       +'<td style="padding:2px 6px">'+(r.nipples.length?r.nipples.map(function(n){return n.nipple+(n.volume_ul?' '+n.volume_ul+'ul':'');}).join(' + '):'--')+'</td>'
       +'<td style="padding:2px 6px">'+(r.virus||'--')+'</td>'
@@ -6291,7 +6298,8 @@ function renderKepInjectionPastePreview(raw){
       +'</tr>';
   });
   html+='</tbody></table><div style="margin-top:4px;color:var(--text3)">'+rows.length+' row'+(rows.length>1?'s':'')
-    +(nBad?' — <span style="color:var(--red)">'+nBad+' row'+(nBad>1?'s':'')+' missing/invalid data (barcode, a model name matching one of the models above exactly, injected date, or nipples) and will be skipped</span>':'')
+    +(nBad?' — <span style="color:var(--red)">'+nBad+' row'+(nBad>1?'s':'')+' missing/invalid data (barcode, a model name, injected date, or nipples) and will be skipped</span>':'')
+    +(nNewModel?' — <span style="color:var(--amber)">'+nNewModel+' row'+(nNewModel>1?'s use':' uses')+' a new model name that will be auto-created, marked "needs review" on the Models tab</span>':'')
     +'</div>';
   prev.innerHTML=html;
 }
@@ -6300,7 +6308,7 @@ function showKepBulkAdd(){
   if(isInd){
     var modelNames=(S.kep.mouseModels||[]).filter(function(mo){return mo.track_type==='injection';}).map(function(mo){return mo.name;});
     showModal('Add intraductal mice',
-      '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, DOB, model, injected date, nipples, virus, notes (optional)</strong> (tab-separated). Model must match exactly: '+(modelNames.length?modelNames.join(', '):'<em>none defined yet — add one via "Manage models" first</em>')+'. Nipples e.g. "4R 20ul + 4L 19ul" (+ , or ; all work) — use "unk" if not recorded.</div>'
+      '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, DOB, model, injected date, nipples, virus, notes (optional)</strong> (tab-separated). Model name doesn\'t need to exist yet — matching one exactly ('+(modelNames.length?modelNames.join(', '):'none yet')+') uses it as-is; an unrecognized name is created automatically, flagged "needs review" on the Models tab so you can fill in its family/latency later. Nipples e.g. "4R 20ul + 4L 19ul" (+ , or ; all work) — use "unk" if not recorded.</div>'
       +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
       +'<textarea class="fi" id="ken-paste" rows="8" placeholder="2591266\t31/10/2025\tIntraductal KEP\t14/2/2020\t4R 20ul + 4L 19ul\tpLenti#737-Cre" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
       +'<div id="ken-preview" style="font-size:10px;overflow-x:auto"></div>',
@@ -6341,8 +6349,25 @@ async function submitKepBulkAdd(){
 }
 async function submitKepBulkAddInjection(){
   var raw=(document.getElementById('ken-paste')&&document.getElementById('ken-paste').value)||'';
-  var rows=parseKepInjectionPaste(raw).filter(function(r){return r.id&&r.modelId&&r.inj&&r.nipples.length;});
-  if(!rows.length){alert('Paste at least one row with a valid barcode, matching model, injected date, and nipple(s)');return;}
+  var rows=parseKepInjectionPaste(raw).filter(function(r){return r.id&&r.modelName&&r.inj&&r.nipples.length;});
+  if(!rows.length){alert('Paste at least one row with a valid barcode, model name, injected date, and nipple(s)');return;}
+  // Auto-create any model name that didn't match an existing one, once per distinct name —
+  // left with latency/family unset and needs_review so it surfaces on the Models tab instead of
+  // blocking the import just because the model wasn't defined ahead of time.
+  var newNames={};
+  rows.forEach(function(r){if(!r.modelId)newNames[r.modelName.trim()]=true;});
+  for(var newName in newNames){
+    var already=(S.kep.mouseModels||[]).some(function(mo){return mo.track_type==='injection'&&mo.name.toLowerCase()===newName.toLowerCase();});
+    if(already)continue;
+    var{data:newMo,error:newModErr}=await sb.from('mouse_models').insert({name:newName,family:newName,track_type:'injection',needs_review:true,notes:'Auto-created from bulk add on '+TISO+' — confirm family and latency.'}).select().single();
+    if(!newModErr&&newMo)S.kep.mouseModels.push(newMo);
+  }
+  rows.forEach(function(r){
+    if(!r.modelId){
+      var mo=(S.kep.mouseModels||[]).find(function(x){return x.track_type==='injection'&&x.name.toLowerCase()===r.modelName.trim().toLowerCase();});
+      if(mo)r.modelId=mo.id;
+    }
+  });
   var errors=[];
   for(var i=0;i<rows.length;i++){
     var r=rows[i];
@@ -6895,44 +6920,104 @@ function kepExtArmsHTML(){
 }
 function kepExtAddArm(){KEPARMS.push({name:'Arm '+String.fromCharCode(65+KEPARMS.length),target_n:6});document.getElementById('kx-arms').innerHTML=kepExtArmsHTML();}
 
-// --- Mouse models admin (Family = coarse match against an experiment's Model field for Needs
-// KEPs/allocation; Name = the specific submodel a watch mouse actually is; Latency only applies
-// to injection-tracked models, to flag mice overdue for a first palpable tumor) ---
+// --- Mouse models tab (Family = coarse match against an experiment's Model field for Needs
+// KEPs/allocation; Name = the specific submodel a watch mouse actually is; Latency (set) only
+// applies to injection-tracked models, to flag mice overdue for a first palpable tumor.
+// Observed latency below is computed from real data, not the set value. ---
+// Actual days from injection to the first real ("ok", not "gone"/"nm") tumor measurement, per
+// mouse of this model — a mouse whose tumor was later marked "gone" (regressed) is excluded,
+// since a resorbed lump isn't a real onset. Requires kep data (S.kep.mice/measurements) loaded.
+function kepModelLatencyStats(modelId){
+  var mice=S.kep.mice.filter(function(m){return m.model_id===modelId;});
+  var samples=[];
+  mice.forEach(function(m){
+    var inj=kepFirstInjection(m.id);
+    if(!inj)return;
+    var msl=(S.kep.measurements[m.id]||[]).slice().sort(function(a,b){return a.measured_at<b.measured_at?-1:a.measured_at>b.measured_at?1:0;});
+    var firstPositive=null;
+    for(var i=0;i<msl.length;i++){
+      var hasReal=(msl[i].kep_tumor_sites||[]).some(function(s){return s.status==='ok'&&s.dim1&&s.dim2;});
+      if(hasReal){firstPositive=msl[i];break;}
+    }
+    if(!firstPositive)return;
+    var wentGone=msl.some(function(ms){return ms.measured_at>firstPositive.measured_at&&(ms.kep_tumor_sites||[]).some(function(s){return s.status==='gone';});});
+    if(wentGone)return;
+    var days=Math.round((new Date(firstPositive.measured_at)-new Date(inj.injected_at))/86400000);
+    if(days<0)return;
+    samples.push({injectedAt:inj.injected_at,days:days});
+  });
+  if(!samples.length)return null;
+  samples.sort(function(a,b){return a.injectedAt<b.injectedAt?-1:a.injectedAt>b.injectedAt?1:0;});
+  var vals=samples.map(function(s){return s.days;});
+  var avg=vals.reduce(function(a,b){return a+b;},0)/vals.length;
+  var sorted=vals.slice().sort(function(a,b){return a-b;});
+  var median=sorted[Math.floor(sorted.length/2)];
+  var out={n:samples.length,avg:avg,median:median,min:sorted[0],max:sorted[sorted.length-1],olderAvg:null,newerAvg:null,drift:null};
+  if(samples.length>=4){
+    var half=Math.floor(samples.length/2);
+    var older=samples.slice(0,half),newer=samples.slice(half);
+    var oAvg=older.reduce(function(s,x){return s+x.days;},0)/older.length;
+    var nAvg=newer.reduce(function(s,x){return s+x.days;},0)/newer.length;
+    out.olderAvg=oAvg;out.newerAvg=nAvg;out.drift=nAvg-oAvg;
+  }
+  return out;
+}
+function mouseModelStatsHTML(mo){
+  if(mo.track_type!=='injection')return'<span style="color:var(--text3)">n/a (spontaneous)</span>';
+  var stats=kepModelLatencyStats(mo.id);
+  if(!stats)return'<span style="color:var(--text3)">no data yet</span>';
+  var html='avg <strong>'+Math.round(stats.avg)+'d</strong> (n='+stats.n+', median '+stats.median+'d, range '+stats.min+'–'+stats.max+'d)';
+  if(stats.drift!=null){
+    var pct=stats.olderAvg?Math.round((stats.drift/stats.olderAvg)*100):0;
+    if(Math.abs(stats.drift)>=5&&Math.abs(pct)>=15){
+      html+='<div style="color:var(--amber);margin-top:2px"><i class="ti ti-trending-'+(stats.drift>0?'up':'down')+'"></i> drifting: '+Math.round(stats.olderAvg)+'d → '+Math.round(stats.newerAvg)+'d ('+(pct>0?'+':'')+pct+'%, earlier vs recent half)</div>';
+    }
+  }
+  return html;
+}
 function mouseModelRowHTML(mo){
-  return '<tr style="border-bottom:.5px solid var(--border)">'
-    +'<td style="padding:4px 6px"><input class="fi" value="'+(mo.name||'')+'" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'name\',this.value)"></td>'
-    +'<td style="padding:4px 6px"><input class="fi" value="'+(mo.family||'')+'" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'family\',this.value)"></td>'
-    +'<td style="padding:4px 6px"><select class="fs" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'track_type\',this.value)">'
+  return '<tr style="border-bottom:.5px solid var(--border)'+(mo.needs_review?';background:var(--amber-bg)':'')+'">'
+    +'<td style="padding:6px 8px">'+(mo.needs_review?'<span class="badge ba" style="font-size:8px;margin-right:4px" title="Auto-created from a bulk add — confirm these details">needs review</span>':'')+'<input class="fi" value="'+(mo.name||'')+'" style="font-size:11px;padding:3px 5px;width:150px" onchange="updateMouseModelField(\''+mo.id+'\',\'name\',this.value)"></td>'
+    +'<td style="padding:6px 8px"><input class="fi" value="'+(mo.family||'')+'" style="font-size:11px;padding:3px 5px;width:120px" onchange="updateMouseModelField(\''+mo.id+'\',\'family\',this.value)"></td>'
+    +'<td style="padding:6px 8px"><select class="fs" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'track_type\',this.value)">'
     +'<option value="spontaneous"'+(mo.track_type==='spontaneous'?' selected':'')+'>Spontaneous</option>'
     +'<option value="injection"'+(mo.track_type==='injection'?' selected':'')+'>Injection</option>'
     +'</select></td>'
-    +'<td style="padding:4px 6px"><input class="fi" type="number" min="0" value="'+(mo.latency_days!=null?mo.latency_days:'')+'" style="width:70px;font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'latency_days\',this.value?parseInt(this.value):null)"></td>'
-    +'<td style="padding:4px 6px"><input class="fi" value="'+(mo.notes||'')+'" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'notes\',this.value)"></td>'
-    +'<td style="padding:4px 6px;text-align:right"><button class="btn btn-xs btn-icon" onclick="deleteMouseModel(\''+mo.id+'\')" title="Delete"><i class="ti ti-trash"></i></button></td>'
-    +'</tr>';
+    +'<td style="padding:6px 8px"><input class="fi" type="number" min="0" value="'+(mo.latency_days!=null?mo.latency_days:'')+'" style="width:70px;font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'latency_days\',this.value?parseInt(this.value):null)"></td>'
+    +'<td style="padding:6px 8px;font-size:10px">'+mouseModelStatsHTML(mo)+'</td>'
+    +'<td style="padding:6px 8px"><textarea class="fi" rows="1" style="font-size:11px;padding:3px 5px;resize:vertical;width:100%;min-width:140px" onchange="updateMouseModelField(\''+mo.id+'\',\'notes\',this.value)">'+(mo.notes||'')+'</textarea></td>'
+    +'<td style="padding:6px 8px;text-align:right;white-space:nowrap">'
+    +(mo.needs_review?'<button class="btn btn-xs" onclick="markMouseModelReviewed(\''+mo.id+'\')">Reviewed</button> ':'')
+    +'<button class="btn btn-xs btn-icon" onclick="deleteMouseModel(\''+mo.id+'\')" title="Delete"><i class="ti ti-trash"></i></button>'
+    +'</td></tr>';
 }
-function mouseModelsTableHTML(){
-  var rows=(S.kep.mouseModels||[]).slice().sort(function(a,b){return(a.family||'').localeCompare(b.family)||(a.name||'').localeCompare(b.name);});
-  if(!rows.length)return'<div class="empty">No models defined yet.</div>';
-  return '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3)">'
-    +'<th style="padding:4px 6px">Name</th><th style="padding:4px 6px">Family</th><th style="padding:4px 6px">Track type</th><th style="padding:4px 6px">Latency (days)</th><th style="padding:4px 6px">Notes</th><th></th>'
-    +'</tr></thead><tbody id="mm-tbody">'+rows.map(mouseModelRowHTML).join('')+'</tbody></table>';
-}
-function showMouseModelsAdmin(){
-  showModal('Manage mouse models',
-    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">These define the watch pools. <strong>Family</strong> is what an experiment\'s Model field is matched against for Needs KEPs / allocation (e.g. several PIK3CA submodels can share family "PIK3CA" so any of them satisfies that protocol). <strong>Track type</strong> decides which of the two watch/palpation sections a mouse using this model shows up in. <strong>Latency</strong> only applies to injection models, to flag mice overdue for a first palpable tumor.</div>'
-    +'<div style="overflow-x:auto">'+mouseModelsTableHTML()+'</div>'
-    +'<hr class="div">'
-    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Add a model</div>'
+function renderKepModelsTab(){
+  document.getElementById('tb-acts').innerHTML='';
+  document.getElementById('pg-title').textContent='Mouse models';
+  document.getElementById('pg-acts').innerHTML='';
+  var rows=(S.kep.mouseModels||[]).slice().sort(function(a,b){
+    if(!!a.needs_review!==!!b.needs_review)return a.needs_review?-1:1;
+    return(a.family||'').localeCompare(b.family)||(a.name||'').localeCompare(b.name);
+  });
+  var html='<div style="font-size:10px;color:var(--text2);margin-bottom:10px;max-width:900px">These define the watch pools. <strong>Family</strong> is what an experiment\'s Model field is matched against for Needs KEPs / allocation — several submodels can share one family (e.g. 4 PIK3CA variants) so a protocol asking for that family is satisfied by any of them. <strong>Track type</strong> decides which palpation/watch section a mouse using this model shows up in. <strong>Set latency</strong> only applies to injection models and drives the "due" flag. <strong>Observed latency</strong> is computed from real data — days from injection to the first real tumor measurement, excluding mice whose tumor later went away — so you can sanity-check the set value and see whether it\'s drifting between earlier and more recent mice.</div>';
+  html+='<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+  html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3)">'
+    +'<th style="padding:6px 8px">Name</th><th style="padding:6px 8px">Family</th><th style="padding:6px 8px">Track type</th><th style="padding:6px 8px">Set latency (days)</th><th style="padding:6px 8px">Observed latency</th><th style="padding:6px 8px">Notes</th><th></th>'
+    +'</tr></thead><tbody>';
+  html+=rows.length?rows.map(mouseModelRowHTML).join(''):'<tr><td colspan="7" style="padding:1rem;color:var(--text3)">No models yet — add one below.</td></tr>';
+  html+='</tbody></table></div>';
+  html+='<hr class="div"><div style="font-size:11px;font-weight:500;margin-bottom:6px">Add a model</div>'
+    +'<div class="card" style="padding:.75rem;max-width:700px">'
     +'<div class="f2">'
     +'<div class="fg"><label class="fl">Name</label><input class="fi" id="mm-name" placeholder="e.g. PIK3CA H1047R AvW"></div>'
     +'<div class="fg"><label class="fl">Family</label><input class="fi" id="mm-family" placeholder="e.g. PIK3CA"></div>'
     +'<div class="fg"><label class="fl">Track type</label><select class="fs" id="mm-track"><option value="spontaneous">Spontaneous</option><option value="injection" selected>Injection</option></select></div>'
     +'<div class="fg"><label class="fl">Latency (days)</label><input class="fi" type="number" min="0" id="mm-latency" placeholder="optional"></div>'
     +'<div class="fg full"><label class="fl">Notes</label><input class="fi" id="mm-notes" placeholder="optional"></div>'
-    +'</div>',
-    '<button class="btn btn-xs" onclick="closeModal()">Close</button>'
-    +'<button class="btn btn-p btn-xs" onclick="submitAddMouseModel()"><i class="ti ti-check"></i> Add model</button>',true);
+    +'</div>'
+    +'<button type="button" class="btn btn-p btn-xs" style="margin-top:6px" onclick="submitAddMouseModel()"><i class="ti ti-check"></i> Add model</button>'
+    +'</div>';
+  document.getElementById('content').innerHTML=html;
 }
 async function updateMouseModelField(id,field,value){
   var upd={};upd[field]=value;
@@ -6940,6 +7025,12 @@ async function updateMouseModelField(id,field,value){
   if(error){alert('Error: '+error.message);return;}
   var mo=(S.kep.mouseModels||[]).find(function(x){return x.id===id;});
   if(mo)mo[field]=value;
+}
+async function markMouseModelReviewed(id){
+  await sb.from('mouse_models').update({needs_review:false}).eq('id',id);
+  var mo=(S.kep.mouseModels||[]).find(function(x){return x.id===id;});
+  if(mo)mo.needs_review=false;
+  renderKepModelsTab();
 }
 async function submitAddMouseModel(){
   var name=((document.getElementById('mm-name')&&document.getElementById('mm-name').value)||'').trim();
@@ -6951,7 +7042,7 @@ async function submitAddMouseModel(){
   var{data,error}=await sb.from('mouse_models').insert({name:name,family:family,track_type:track,latency_days:latRaw?parseInt(latRaw):null,notes:notes}).select().single();
   if(error){alert('Error: '+error.message);return;}
   S.kep.mouseModels.push(data);
-  showMouseModelsAdmin();
+  renderKepModelsTab();
 }
 async function deleteMouseModel(id){
   var used=S.kep.mice.some(function(m){return m.model_id===id;});
@@ -6960,7 +7051,7 @@ async function deleteMouseModel(id){
   var{error}=await sb.from('mouse_models').delete().eq('id',id);
   if(error){alert('Error: '+error.message);return;}
   S.kep.mouseModels=S.kep.mouseModels.filter(function(x){return x.id!==id;});
-  showMouseModelsAdmin();
+  renderKepModelsTab();
 }
 
 function showKepAddExternalExp(){
