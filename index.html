@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v149</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v150</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -6356,11 +6356,16 @@ async function submitKepBulkAddInjection(){
   // blocking the import just because the model wasn't defined ahead of time.
   var newNames={};
   rows.forEach(function(r){if(!r.modelId)newNames[r.modelName.trim()]=true;});
+  var modelErrors=[];
   for(var newName in newNames){
     var already=(S.kep.mouseModels||[]).some(function(mo){return mo.track_type==='injection'&&mo.name.toLowerCase()===newName.toLowerCase();});
     if(already)continue;
     var{data:newMo,error:newModErr}=await sb.from('mouse_models').insert({name:newName,family:newName,track_type:'injection',needs_review:true,notes:'Auto-created from bulk add on '+TISO+' — confirm family and latency.'}).select().single();
-    if(!newModErr&&newMo)S.kep.mouseModels.push(newMo);
+    if(newModErr)modelErrors.push('Model "'+newName+'": '+newModErr.message);
+    else if(newMo)S.kep.mouseModels.push(newMo);
+  }
+  if(modelErrors.length){
+    alert('Could not create '+modelErrors.length+' new model(s), so no mice using them were added:\n'+modelErrors.join('\n'));
   }
   rows.forEach(function(r){
     if(!r.modelId){
@@ -6368,6 +6373,9 @@ async function submitKepBulkAddInjection(){
       if(mo)r.modelId=mo.id;
     }
   });
+  // A row whose model still has no id means its auto-create failed above — skip it rather than
+  // silently inserting the mouse with model_id null, which would miscategorize it as spontaneous.
+  rows=rows.filter(function(r){return r.modelId;});
   var errors=[];
   for(var i=0;i<rows.length;i++){
     var r=rows[i];
