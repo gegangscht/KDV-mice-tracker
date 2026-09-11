@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v141</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v142</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5785,28 +5785,42 @@ function renderKepDailyTop(){
     +'</div>';
 }
 function kepLogDateChanged(v){S.kep.logDate=v||TISO;renderKepDailyTop();}
+// Per-site detail for the print sheet — "4R 2x1 3L 3x3", not the summed burden, so the
+// technician can see exactly where each prior tumor was without having to add areas in their
+// head standing at the cage.
+function kepSiteDetail(sites){
+  if(!sites||!sites.length)return'--';
+  return sites.map(function(s){
+    if(s.status==='gone')return s.location+' gone';
+    if(s.status==='nm')return s.location+' nm';
+    return s.location+' '+(s.dim1&&s.dim2?s.dim1+'x'+s.dim2:'--');
+  }).join(' ');
+}
 function buildKepPrintHTML(){
   var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
   var ordered=kepClusterMice(mice);
   var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   var phtml='<div style="font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1.5px solid #000;padding-bottom:3px">KEP palpation sheet — '+today+'</div>';
-  phtml+='<table style="width:100%;border-collapse:collapse;font-size:10px">';
+  phtml+='<table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed">';
   phtml+='<thead><tr style="border-bottom:1px solid #000;text-align:left">'
-    +'<th style="padding:3px">Barcode</th><th style="padding:3px">Location</th><th style="padding:3px">Previous size</th><th style="padding:3px">Size (mm)</th><th style="padding:3px">Notes</th>'
+    +'<th style="padding:3px;width:9%">Barcode</th><th style="padding:3px;width:7%">Location</th><th style="padding:3px;width:26%">Previous (last 2)</th><th style="padding:3px;width:13%">Size (mm)</th><th style="padding:3px">Notes</th>'
     +'</tr></thead><tbody>';
   ordered.forEach(function(m){
     if(!m){phtml+='<tr><td colspan="5" style="height:8px;border:none"></td></tr>';return;}
     var msl=kepQualifyingMs(m.id);
-    var last=msl.length?msl[msl.length-1]:null;
-    var prevDate=last?fmtD(last.measured_at):'';
-    var prevSize=last?bShort(last.kep_tumor_sites,true):'';
-    var prevNote=last&&last.note?last.note:'';
+    var lastTwo=msl.slice(-2).reverse();
+    var prevHtml=lastTwo.length?lastTwo.map(function(ms){
+      return '<div style="margin-bottom:2px"><span style="font-size:8px;color:#888">'+fmtD(ms.measured_at)+':</span> '+kepSiteDetail(ms.kep_tumor_sites)+'</div>';
+    }).join(''):'--';
+    var notesHtml=lastTwo.filter(function(ms){return ms.note;}).map(function(ms){
+      return '<div style="font-size:8px;color:#555;margin-bottom:2px">'+fmtD(ms.measured_at)+': '+ms.note+'</div>';
+    }).join('');
     phtml+='<tr style="border-bottom:.5px solid #ccc">'
       +'<td style="padding:4px 3px;font-family:monospace">'+m.id+'</td>'
       +'<td style="padding:4px 3px;border-bottom:1px solid #000">&nbsp;</td>'
-      +'<td style="padding:4px 3px;color:#555">'+(last?prevSize+' <span style="font-size:8px">('+prevDate+')</span>':'--')+'</td>'
+      +'<td style="padding:4px 3px;color:#555">'+prevHtml+'</td>'
       +'<td style="padding:4px 3px;border-bottom:1px solid #000">&nbsp;</td>'
-      +'<td style="padding:4px 3px;border-bottom:1px solid #000">'+(prevNote?'<div style="font-size:8px;color:#555;margin-bottom:2px">Last ('+prevDate+'): '+prevNote+'</div>':'')+'&nbsp;</td>'
+      +'<td style="padding:4px 3px;border-bottom:1px solid #000">'+notesHtml+'&nbsp;</td>'
       +'</tr>';
   });
   phtml+='</tbody></table>';
