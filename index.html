@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v146</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v147</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -287,9 +287,11 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="nav-i" id="nav-new" onclick="go('new')"><i class="ti ti-plus"></i> New experiment</div>
       <div class="nav-i" onclick="showDuplicateExpPicker()"><i class="ti ti-copy"></i> Duplicate experiment</div>
       <div class="ndiv"></div>
-      <div class="nav-sec">KEP watch</div>
-      <div class="nav-i" id="nav-kepdaily" onclick="go('kepdaily')"><i class="ti ti-clipboard-list"></i> Palpations</div>
-      <div class="nav-i" id="nav-kep" onclick="go('kep')"><i class="ti ti-search"></i> Tumor watch</div>
+      <div class="nav-sec">Induction mice</div>
+      <div class="nav-i" id="nav-kepdaily" onclick="go('kepdaily')"><i class="ti ti-clipboard-list"></i> KEP palpations</div>
+      <div class="nav-i" id="nav-kepdaily-ind" onclick="go('kepdaily-ind')"><i class="ti ti-clipboard-list"></i> Intraductal palpations</div>
+      <div class="nav-i" id="nav-kep" onclick="go('kep')"><i class="ti ti-search"></i> KEP tumor watch</div>
+      <div class="nav-i" id="nav-kep-ind" onclick="go('kep-ind')"><i class="ti ti-search"></i> Intraductal tumor watch</div>
       <div class="ndiv"></div>
       <div class="nav-sec">Active</div>
       <div id="exp-nav"></div>
@@ -315,11 +317,6 @@ const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const COLS=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556','#854F0B','#0891B2','#7C3AED','#D97706','#DC2626','#059669','#DB2777','#0369A1','#65A30D','#92400E','#4B5563'];
 const LOCS=['1R','2R','3R','4R','5R','1L','2L','3L','4L','5L','skin'];
 const ROUTES=['IP','IV','SC','PO','Oral gavage'];
-// The only Model value that makes an experiment an actual KEP-tumor-watch protocol — must
-// match exactly. "KEP transplant"/"Intraductal KEP" mice are implanted directly, never drawn
-// from the watched/palpated pool, so they don't belong in Needs KEPs/allocation either — only
-// spontaneous-tumor protocols actually draw from Tumor Watch.
-const KEP_MODELS=['KEP spontaneous'];
 document.getElementById('route-opts').innerHTML=ROUTES.map(function(r){return'<option value="'+r+'">'}).join('');
 function routeInputHTML(id,val,extraAttrs){
   return '<input class="fi" list="route-opts" id="'+id+'" value="'+(val||'')+'" placeholder="route" style="'+(extraAttrs&&extraAttrs.style||'')+'"'+(extraAttrs&&extraAttrs.oninput?' oninput="'+extraAttrs.oninput+'"':'')+'>';
@@ -329,7 +326,7 @@ const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined'
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
 const S={view:'daily',curExp:null,expTab:'mice',sortBy:'exp',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{},
-  kep:{mice:[],cages:[],externalExps:[],measurements:{},mevents:{},loaded:false,tab:'watch',selected:{},sortBy:'group',sortDir:'asc',panelOpen:true,panelExpanded:{},logDate:TISO}};
+  kep:{mice:[],cages:[],externalExps:[],measurements:{},mevents:{},mouseModels:[],injections:{},trackFilter:'spontaneous',loaded:false,tab:'watch',selected:{},sortBy:'group',sortDir:'asc',panelOpen:true,panelExpanded:{},logDate:TISO}};
 var kepMouseOrder=[];
 var kepDailyOrder=[];
 var _kepDragIds=[];
@@ -393,8 +390,39 @@ function sizeWeightBadges(eid,mid,dateIso,needsTumor){
 function nearEP(mid,eid){var l=lastMs(mid,eid);return l?burden(l.tumor_sites,false)>=81:false}
 function dInTx(m){var d0=m.day0_date||m.tx_start;if(!d0)return null;return Math.round((new Date(TISO)-new Date(d0))/86400000)}
 function ageMonths(dob){if(!dob)return null;return(new Date(TISO)-new Date(dob))/86400000/30.44}
-function kepDueDate(dob){if(!dob)return null;var d=new Date(dob);d.setMonth(d.getMonth()+5);return d.toISOString().slice(0,10)}
 function addD(iso,n){var d=new Date(iso);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
+function kepModelById(id){return(S.kep.mouseModels||[]).find(function(mo){return mo.id===id;})||null;}
+function kepTrackType(m){var mo=kepModelById(m.model_id);return mo?mo.track_type:'spontaneous';}
+function kepPool(){return S.kep.mice.filter(function(m){return kepTrackType(m)===S.kep.trackFilter;});}
+function kepFirstInjection(kmid){var arr=S.kep.injections[kmid];return arr&&arr.length?arr[0]:null;}
+function kepInjectionSummary(kmid){
+  var arr=S.kep.injections[kmid];if(!arr||!arr.length)return'';
+  var first=arr[0];
+  var same=arr.filter(function(inj){return inj.injected_at===first.injected_at;});
+  var sites=same.map(function(inj){return inj.nipple+(inj.volume_ul?' '+inj.volume_ul+'ul':'');}).join(' + ');
+  return sites+' — '+fmtD(first.injected_at)+(first.virus?' ('+first.virus+')':'');
+}
+// "Due" = expected to have a palpable tumor by now, given the anchor and latency appropriate
+// to this mouse's track type — spontaneous mice use the fixed 5mo-from-DOB rule that's always
+// applied here; injection-tracked mice use their model's typical days-to-palpable from the
+// injection date instead (no latency set on the model = never flagged due).
+function kepDueDate(m){
+  if(kepTrackType(m)==='injection'){
+    var mo=kepModelById(m.model_id),inj=kepFirstInjection(m.id);
+    if(!inj||!mo||!mo.latency_days)return null;
+    return addD(inj.injected_at,mo.latency_days);
+  }
+  if(!m.dob)return null;
+  var d=new Date(m.dob);d.setMonth(d.getMonth()+5);return d.toISOString().slice(0,10);
+}
+function kepIsDue(m){var dd=kepDueDate(m);return dd!=null&&dd<=TISO;}
+function kepDueSortKey(m){
+  if(kepTrackType(m)==='injection'){
+    var inj=kepFirstInjection(m.id);
+    return inj?Math.round((new Date(TISO)-new Date(inj.injected_at))/86400000):-1;
+  }
+  return ageMonths(m.dob)||0;
+}
 function wkMon(off){var d=new Date(TODAY);var day=d.getDay();d.setDate(d.getDate()+(day===0?-6:1-day)+off*7);return d.toISOString().slice(0,10)}
 function fmtD(iso){return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -548,6 +576,9 @@ async function loadMev(eid){
   all.forEach(function(ev){if(!S.mevents[eid][ev.mouse_id])S.mevents[eid][ev.mouse_id]=[];S.mevents[eid][ev.mouse_id].push(ev);});
 }
 async function loadAll(eid){await dbLoad();if(eid)await Promise.all([loadMs(eid),loadMev(eid)]);}
+async function loadMouseModels(){
+  S.kep.mouseModels=await fetchAll(sb.from('mouse_models').select('*').order('family').order('name'));
+}
 async function loadKep(){
   const[miceAll,cagesAll,extAll]=await Promise.all([
     fetchAll(sb.from('kep_mice').select('*').order('created_at')),
@@ -556,7 +587,7 @@ async function loadKep(){
   ]);
   S.kep.mice=miceAll;S.kep.cages=cagesAll;S.kep.externalExps=extAll;
   const ids=miceAll.map(function(m){return m.id});
-  if(!ids.length){S.kep.measurements={};S.kep.mevents={};S.kep.loaded=true;return;}
+  if(!ids.length){S.kep.measurements={};S.kep.mevents={};S.kep.injections={};S.kep.loaded=true;return;}
   var msAll=[],from=0,PAGE=1000;
   while(true){
     var{data,error}=await sb.from('kep_measurements').select('*,kep_tumor_sites(*)').in('kep_mouse_id',ids).order('measured_at').range(from,from+PAGE-1);
@@ -566,13 +597,16 @@ async function loadKep(){
     from+=PAGE;
   }
   var evAll=await fetchAll(sb.from('kep_mouse_events').select('*').in('kep_mouse_id',ids).order('event_date'));
+  var injAll=await fetchAll(sb.from('kep_injections').select('*').in('kep_mouse_id',ids).order('injected_at'));
   S.kep.measurements={};msAll.forEach(function(ms){if(!S.kep.measurements[ms.kep_mouse_id])S.kep.measurements[ms.kep_mouse_id]=[];S.kep.measurements[ms.kep_mouse_id].push(ms);});
   S.kep.mevents={};evAll.forEach(function(ev){if(!S.kep.mevents[ev.kep_mouse_id])S.kep.mevents[ev.kep_mouse_id]=[];S.kep.mevents[ev.kep_mouse_id].push(ev);});
+  S.kep.injections={};injAll.forEach(function(inj){if(!S.kep.injections[inj.kep_mouse_id])S.kep.injections[inj.kep_mouse_id]=[];S.kep.injections[inj.kep_mouse_id].push(inj);});
   S.kep.loaded=true;
 }
 async function init(){
   await dbLoad();
   await backfillCageSlots();
+  await loadMouseModels();
   await Promise.all(S.experiments.filter(function(e){return e.status==='active'}).map(function(e){return Promise.all([loadMs(e.id),loadMev(e.id)])}));
   buildExpNav();go('daily');
 }
@@ -3560,6 +3594,17 @@ function checkModelForKep(){
   var wrap=document.getElementById('nkep-prereqs-wrap');
   if(wrap)wrap.style.display=/kep/i.test(mod)?'block':'none';
 }
+// Static quick-fills for models that don't draw from a watch pool, plus one button per distinct
+// mouse_models family (e.g. "PIK3CA") so adding a new family in "Manage models" automatically
+// surfaces it here — no second place to keep in sync.
+function modelQuickFillButtonsHTML(){
+  var statics=['KEP transplant','MMTV-Neu'];
+  var families=kepModelFamilies('spontaneous').concat(kepModelFamilies('injection'));
+  var all=statics.concat(families.filter(function(f){return statics.indexOf(f)<0;}));
+  return all.map(function(f){
+    return'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\''+f+'\';checkModelForKep()">'+f+'</button>';
+  }).join('');
+}
 function newFormHTML(){
   return '<div class="card">'
     +'<div style="font-size:12px;font-weight:500;margin-bottom:.625rem">Experiment details</div>'
@@ -3573,10 +3618,7 @@ function newFormHTML(){
     +'<div class="fg full"><label class="fl">Title</label><input class="fi" id="ntit" placeholder="e.g. PIK3CA aCD25+ICB"></div>'
     +'<div class="fg full"><label class="fl">Model</label>'
     +'<div style="display:flex;gap:3px;margin-bottom:4px;flex-wrap:wrap">'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP transplant\';checkModelForKep()">KEP transplant</button>'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'Intraductal KEP\';checkModelForKep()">Intraductal KEP</button>'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'KEP spontaneous\';checkModelForKep()">KEP spontaneous</button>'
-    +'<button type="button" class="btn btn-xs" onclick="document.getElementById(\'nmod\').value=\'MMTV-Neu\';checkModelForKep()">MMTV-Neu</button>'
+    +modelQuickFillButtonsHTML()
     +'</div>'
     +'<input class="fi" id="nmod" placeholder="or type custom model name" oninput="checkModelForKep()"></div>'
     +'<div class="fg full" id="nkep-prereqs-wrap" style="display:none"><label class="fl">KEP prerequisites <span style="font-weight:400;color:var(--text3)">(location, size, or anything else needed before allocating a KEP here)</span></label><textarea class="fi" id="nkep-prereqs" rows="2" placeholder="e.g. include at 5x5, include 3 at the same time" style="resize:vertical"></textarea></div>'
@@ -5197,25 +5239,28 @@ function buildExpNav(){
       }).join('');
   }).join('');
 }
+var KEP_NAV_IDS=['daily','week','exps','new','kep','kepdaily','kep-ind','kepdaily-ind'];
 function go(view){
   S.view=view;S.curExp=null;S.expTab='mice';
   if(typeof clearSelection==='function')clearSelection();
-  ['daily','week','exps','new','kep','kepdaily'].forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.toggle('act',n===view);});
+  KEP_NAV_IDS.forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.toggle('act',n===view);});
   if(view==='daily'){S.dailyDate=TISO;renderDaily();}
   else if(view==='week')renderWeek();
   else if(view==='exps')renderExps();
   else if(view==='new')renderNew();
-  else if(view==='kep'){
+  else if(view==='kep'||view==='kep-ind'){
+    S.kep.trackFilter=view==='kep-ind'?'injection':'spontaneous';
     if(S.kep.loaded)renderKep();
     else{document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';loadKep().then(renderKep);}
   }
-  else if(view==='kepdaily'){
+  else if(view==='kepdaily'||view==='kepdaily-ind'){
+    S.kep.trackFilter=view==='kepdaily-ind'?'injection':'spontaneous';
     S.kep.logDate=TISO;
     if(S.kep.loaded)renderKepDailyTop();
     else{document.getElementById('content').innerHTML='<div class="loading"><div class="spin"></div> Loading...</div>';loadKep().then(renderKepDailyTop);}
   }
   else if(view.indexOf('exp-')===0){
-    ['daily','week','exps','new','kep','kepdaily'].forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.remove('act');});
+    KEP_NAV_IDS.forEach(function(n){var el=document.getElementById('nav-'+n);if(el)el.classList.remove('act');});
     S.curExp=view.replace('exp-','');window.scrollTo(0,0);renderExp(S.curExp);
   }
 }
@@ -5502,16 +5547,18 @@ document.addEventListener('change',function(e){
 
 // KEP TUMOR WATCH
 function renderKep(){
+  var isInd=S.kep.trackFilter==='injection';
   document.getElementById('tb-acts').innerHTML='';
-  document.getElementById('pg-title').textContent='KEP tumor watch';
+  document.getElementById('pg-title').textContent=isInd?'Intraductal tumor watch':'KEP tumor watch';
   document.getElementById('pg-acts').innerHTML=(S.kep.tab==='watch'
-    ?'<button class="btn btn-p btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add KEP mice</button>'
+    ?'<button class="btn btn-p btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add '+(isInd?'intraductal':'KEP')+' mice</button>'
     :'')
+    +'<button class="btn btn-xs" onclick="showMouseModelsAdmin()"><i class="ti ti-settings"></i> Manage models</button>'
     +'<button class="btn btn-xs" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Enroll mice (paste)</button>';
   var html='<div class="tabs">'
     +'<div class="tab '+(S.kep.tab==='watch'?'act':'')+'" onclick="STKep(\'watch\')">Watch list</div>'
     +'<div class="tab '+(S.kep.tab==='allocated'?'act':'')+'" onclick="STKep(\'allocated\')">Allocated</div>'
-    +'<div class="tab '+(S.kep.tab==='needs'?'act':'')+'" onclick="STKep(\'needs\')">Needs KEPs</div>'
+    +'<div class="tab '+(S.kep.tab==='needs'?'act':'')+'" onclick="STKep(\'needs\')">Needs '+(isInd?'mice':'KEPs')+'</div>'
     +'<div class="tab '+(S.kep.tab==='deceased'?'act':'')+'" onclick="STKep(\'deceased\')">Deceased</div>'
     +'</div>';
   if(S.kep.tab==='needs'){
@@ -5528,7 +5575,7 @@ function renderKep(){
   document.getElementById('content').innerHTML=html;
 }
 function renderKepDeceasedView(){
-  var mice=S.kep.mice.filter(function(m){return m.status==='sacrificed';}).sort(function(a,b){return(b.sac_date||'').localeCompare(a.sac_date||'');});
+  var mice=S.kep.mice.filter(function(m){return m.status==='sacrificed'&&kepTrackType(m)===S.kep.trackFilter;}).sort(function(a,b){return(b.sac_date||'').localeCompare(a.sac_date||'');});
   if(!mice.length)return'<div class="empty">No deceased KEP mice.</div>';
   var html='<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
   html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border)">'
@@ -5553,7 +5600,7 @@ function kepQualifyingMs(kmid){
   });
 }
 function kepGroupMembers(cageId){
-  return S.kep.mice.filter(function(m){return m.kep_cage_id===cageId&&m.status==='active'&&m.alloc_status==='none';}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
+  return S.kep.mice.filter(function(m){return m.kep_cage_id===cageId&&m.status==='active'&&m.alloc_status==='none'&&kepTrackType(m)===S.kep.trackFilter;}).sort(function(a,b){return a.id.localeCompare(b.id,undefined,{numeric:true});});
 }
 function kepCageLabel(cageId){
   if(!cageId)return'Ungrouped';
@@ -5611,11 +5658,12 @@ function kepMeasureCellText(sites){
 }
 var KEP_HIST_COLS=5;
 function renderKepWatchList(){
-  var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
-  if(!mice.length)return'<div class="empty">No KEP mice being watched yet — add some with "Add KEP mice".</div>';
+  var isInd=S.kep.trackFilter==='injection';
+  var mice=kepPool().filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
+  if(!mice.length)return'<div class="empty">No '+(isInd?'intraductal':'KEP')+' mice being watched yet — add some with "Add mice".</div>';
   var ordered=kepWatchOrder(mice);
   kepMouseOrder=ordered.filter(Boolean).map(function(m){return m.id;});
-  var nCols=6+KEP_HIST_COLS;
+  var nCols=6+KEP_HIST_COLS+(isInd?1:0);
   var html='<div style="display:flex;gap:6px;align-items:center;margin-bottom:.5rem">'
     +'<button class="btn btn-xs'+(S.kep.sortBy==='group'?' btn-p':'')+'" onclick="kepSetSort(\'group\')">Grouped view</button>'
     +'<button class="btn btn-xs" onclick="showKepGroupBuilder()"><i class="ti ti-search"></i> Build group by barcode</button>'
@@ -5624,15 +5672,16 @@ function renderKepWatchList(){
   html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border)">'
     +'<th style="padding:4px 5px;width:22px"></th>'
     +'<th style="padding:4px 5px;cursor:pointer" onclick="kepSetSort(\'id\')">Barcode'+kepSortArrow('id')+'</th>'
+    +(isInd?'<th style="padding:4px 5px">Model / injection</th>':'')
     +'<th style="padding:4px 5px;cursor:pointer" onclick="kepSetSort(\'dob\')">DOB'+kepSortArrow('dob')+'</th>'
-    +'<th style="padding:4px 5px">Age</th>';
+    +'<th style="padding:4px 5px">'+(isInd?'Day':'Age')+'</th>';
   for(var h=1;h<=KEP_HIST_COLS;h++)html+='<th style="padding:4px 5px" title="Measurement '+h+'">M'+h+'</th>';
   html+='<th style="padding:4px 5px">Notes</th>'
     +'<th style="padding:4px 5px"></th></tr></thead><tbody>';
   ordered.forEach(function(m){
     if(!m){html+='<tr><td colspan="'+nCols+'" style="height:14px;border:none;background:var(--bg)"></td></tr>';return;}
-    var age=ageMonths(m.dob);
-    var due=age!=null&&age>=5;
+    var due=kepIsDue(m);
+    var ageDisp=isInd?(kepFirstInjection(m.id)?Math.round((new Date(TISO)-new Date(kepFirstInjection(m.id).injected_at))/86400000)+'d':'--'):(ageMonths(m.dob)!=null?ageMonths(m.dob).toFixed(1):'--');
     var lastNote=kepLastNote(m.id);
     var color=kepGroupColor(m.kep_cage_id);
     var allQ=kepQualifyingMs(m.id);
@@ -5641,8 +5690,9 @@ function renderKepWatchList(){
     html+='<tr draggable="true" ondragstart="kepDragStart(event,\''+m.id+'\')" ondragover="event.preventDefault()" ondrop="kepDropOnMouse(event,\''+m.id+'\')" style="border-bottom:.5px solid var(--border)'+(color?';background:'+color+'14':'')+'">'
       +'<td style="padding:4px 5px"><input type="checkbox" class="kep-chk" data-kmid="'+m.id+'" '+(S.kep.selected[m.id]?'checked':'')+' onclick="onKepRowCheck(event,this)" style="width:13px;height:13px"></td>'
       +'<td style="padding:4px 5px" class="mono">'+m.id+'</td>'
+      +(isInd?'<td style="padding:4px 5px;font-size:9px">'+(kepModelById(m.model_id)?kepModelById(m.model_id).name:'--')+'<div style="color:var(--text3)">'+kepInjectionSummary(m.id)+'</div></td>':'')
       +'<td style="padding:4px 5px">'+(m.dob?fmtD(m.dob):'--')+'</td>'
-      +'<td style="padding:4px 5px'+(due?';color:var(--amber);font-weight:600':'')+'">'+(age!=null?age.toFixed(1):'--')+(due?' <span class="badge ba" style="font-size:7px">5mo+</span>':'')+'</td>';
+      +'<td style="padding:4px 5px'+(due?';color:var(--amber);font-weight:600':'')+'">'+ageDisp+(due?' <span class="badge ba" style="font-size:7px">due</span>':'')+'</td>';
     for(var i=0;i<KEP_HIST_COLS;i++){
       var ms=shown[i];
       var cell=ms?('<div style="font-size:8px;color:var(--text3)">'+fmtD(ms.measured_at)+'</div><div>'+kepMeasureCellText(ms.kep_tumor_sites)+'</div>'):'<span style="color:var(--text3)">—</span>';
@@ -5722,7 +5772,7 @@ function kgbSearch(){
   if(!q){b.results=[];b.activeIdx=-1;renderKgbResults();return;}
   var stagedIds=b.staged.map(function(m){return m.id;});
   b.results=S.kep.mice.filter(function(m){
-    return m.status==='active'&&m.id.indexOf(q)>=0&&stagedIds.indexOf(m.id)<0;
+    return m.status==='active'&&kepTrackType(m)===S.kep.trackFilter&&m.id.indexOf(q)>=0&&stagedIds.indexOf(m.id)<0;
   }).slice(0,8);
   b.activeIdx=b.results.length?0:-1;
   renderKgbResults();
@@ -5777,12 +5827,13 @@ async function submitKepGroupBuilder(){
 // --- Daily palpations: full multi-site inline form, modeled on the experiment daily log form (no weight) ---
 // Top-level sidebar view (separate from the KEP watch tab bar) — technicians land here directly, same as Daily tasks.
 function renderKepDailyTop(){
+  var isInd=S.kep.trackFilter==='injection';
   document.getElementById('tb-acts').innerHTML='';
-  document.getElementById('pg-title').textContent='Palpations';
+  document.getElementById('pg-title').textContent=isInd?'Intraductal palpations':'KEP palpations';
   document.getElementById('pg-acts').innerHTML='<span style="font-size:10px;color:var(--text2)">Logging for:</span>'
     +'<input type="date" class="fs" value="'+S.kep.logDate+'" style="padding:3px 6px;font-size:10px;width:130px" onchange="kepLogDateChanged(this.value)">'
     +'<button class="btn btn-xs" onclick="doKepPrint()"><i class="ti ti-printer"></i> Print</button>'
-    +'<button class="btn btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add KEP mice</button>';
+    +'<button class="btn btn-xs" onclick="showKepBulkAdd()"><i class="ti ti-plus"></i> Add '+(isInd?'intraductal':'KEP')+' mice</button>';
   var mainHtml=renderKepDaily();
   document.getElementById('content').innerHTML='<div style="display:flex;gap:.75rem;align-items:flex-start">'
     +'<div style="flex:1;min-width:0">'+mainHtml+'</div>'
@@ -5802,9 +5853,11 @@ function kepSiteDetail(sites){
   }).join(' ');
 }
 function buildKepPrintHTML(){
-  var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
+  var isInd=S.kep.trackFilter==='injection';
+  var mice=kepPool().filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
   var today=new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  var phtml='<div style="font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1.5px solid #000;padding-bottom:3px">KEP palpation sheet — '+today+'</div>';
+  var title=(isInd?'Intraductal':'KEP')+' palpation sheet';
+  var phtml='<div style="font-size:12px;font-weight:700;margin-bottom:8px;border-bottom:1.5px solid #000;padding-bottom:3px">'+title+' — '+today+'</div>';
   phtml+='<table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed">';
   phtml+='<thead><tr style="border-bottom:1px solid #000;text-align:left">'
     +'<th style="padding:3px;width:9%">Barcode</th><th style="padding:3px;width:7%">Location</th><th style="padding:3px;width:26%">Previous (last 2)</th><th style="padding:3px;width:13%">Size (mm)</th><th style="padding:3px">Notes</th>'
@@ -5822,8 +5875,9 @@ function buildKepPrintHTML(){
       var notesHtml=lastTwo.filter(function(ms){return ms.note;}).map(function(ms){
         return '<div style="font-size:8px;color:#555;margin-bottom:2px">'+fmtD(ms.measured_at)+': '+ms.note+'</div>';
       }).join('');
+      var injLine=isInd&&kepInjectionSummary(m.id)?'<div style="font-size:8px;color:#888;font-weight:400">'+kepInjectionSummary(m.id)+'</div>':'';
       phtml+='<tr style="border-bottom:.5px solid #ccc">'
-        +'<td style="padding:4px 3px 4px 6px;font-family:monospace;'+(color?'border-left:3px solid '+color:'')+'">'+m.id+'</td>'
+        +'<td style="padding:4px 3px 4px 6px;font-family:monospace;'+(color?'border-left:3px solid '+color:'')+'">'+m.id+injLine+'</td>'
         +'<td style="padding:4px 6px 4px 3px"><div style="border-bottom:1px solid #000;height:11px">&nbsp;</div></td>'
         +'<td style="padding:4px 3px;color:#555">'+prevHtml+'</td>'
         +'<td style="padding:4px 6px 4px 3px"><div style="border-bottom:1px solid #000;height:11px">&nbsp;</div></td>'
@@ -5849,7 +5903,7 @@ function buildKepPrintHTML(){
   return phtml;
 }
 function doKepPrint(){
-  printHTML('KEP palpation sheet',buildKepPrintHTML());
+  printHTML((S.kep.trackFilter==='injection'?'Intraductal':'KEP')+' palpation sheet',buildKepPrintHTML());
 }
 // Filters the "Not yet found" rows in place by mouse ID, without a full re-render — a
 // full renderKepDailyTop() on every keystroke would recreate this input and drop focus.
@@ -5870,22 +5924,23 @@ function kepSection2Order(mice,trackedIds){
     order=order.concat(sorted).concat([null]);
   });
   var ungrouped=mice.filter(function(m){return!m.kep_cage_id&&!trackedIds[m.id];});
-  var due=ungrouped.filter(function(m){return(ageMonths(m.dob)||0)>=5;}).sort(function(a,b){return(ageMonths(b.dob)||0)-(ageMonths(a.dob)||0);});
-  var notDue=ungrouped.filter(function(m){return(ageMonths(m.dob)||0)<5;}).sort(function(a,b){return(ageMonths(b.dob)||0)-(ageMonths(a.dob)||0);});
+  var due=ungrouped.filter(kepIsDue).sort(function(a,b){return kepDueSortKey(b)-kepDueSortKey(a);});
+  var notDue=ungrouped.filter(function(m){return!kepIsDue(m);}).sort(function(a,b){return kepDueSortKey(b)-kepDueSortKey(a);});
   return order.concat(due).concat(notDue);
 }
 function renderKepDaily(){
-  var mice=S.kep.mice.filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
+  var isInd=S.kep.trackFilter==='injection';
+  var mice=kepPool().filter(function(m){return m.status==='active'&&m.alloc_status==='none';});
   var trackedIds={};mice.forEach(function(m){if(kepQualifyingMs(m.id).length>0)trackedIds[m.id]=true;});
   var tracked=mice.filter(function(m){return trackedIds[m.id];});
   var untrackedCount=mice.length-tracked.length;
   var trackedOrdered=kepClusterMice(tracked);
   kepDailyOrder=trackedOrdered.filter(Boolean).map(function(m){return m.id;});
-  var newlyDue=mice.filter(function(m){return!trackedIds[m.id]&&kepDueDate(m.dob)===TISO;});
+  var newlyDue=mice.filter(function(m){return!trackedIds[m.id]&&kepDueDate(m)===TISO;});
   var html='';
   if(newlyDue.length){
     html+='<div style="background:var(--amber-bg);color:var(--amber);border-radius:var(--r);padding:.5rem .75rem;margin-bottom:.75rem;font-size:11px;display:flex;align-items:center;gap:6px">'
-      +'<i class="ti ti-alert-circle"></i> '+newlyDue.length+' mouse'+(newlyDue.length>1?'s':'')+' turned 5 months old today: '
+      +'<i class="ti ti-alert-circle"></i> '+newlyDue.length+' mouse'+(newlyDue.length>1?'s':'')+(isInd?' reached the expected latency today':' turned 5 months old today')+': '
       +newlyDue.map(function(m){return m.id;}).join(', ')+'</div>';
   }
   html+='<div class="card" style="padding:.5rem 0;margin-bottom:.75rem">';
@@ -5942,9 +5997,11 @@ function kepDailyRowHTML(m,color,clusterSize){
   var formHtml=doneToday
     ?'<span style="font-size:10px;color:var(--green)"><i class="ti ti-check"></i> '+loggedLabel+': '+bShort(last.kep_tumor_sites,true)+(last.note?' — '+last.note:'')+'</span> <button class="btn btn-xs btn-icon" onclick="kepReopenDaily(\''+m.id+'\')" title="Edit"><i class="ti ti-pencil"></i></button>'
     :kepDailyFormHTML(m.id,templateSites,last?last.note:'');
+  var injLine=S.kep.trackFilter==='injection'&&kepInjectionSummary(m.id)?'<span style="font-size:9px;color:var(--text3)">'+kepInjectionSummary(m.id)+'</span>':'';
   return '<div id="kqrow-'+m.id+'" style="padding:8px .75rem;border-bottom:.5px solid var(--border);'+(color?'background:'+color+'14;':'')+(doneToday?'opacity:.6':'')+'">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
     +'<span class="mono" style="font-size:11px">'+m.id+'</span>'
+    +injLine
     +(clusterSize?'<span style="font-size:9px;color:var(--text3)">'+clusterSize+' in this group</span>':'')
     +'<button class="btn btn-xs btn-icon" onclick="showKepMoveToExperiment(\''+m.id+'\')" title="Move to experiment" style="margin-left:auto"><i class="ti ti-arrows-exchange"></i></button>'
     +'</div>'
@@ -5960,14 +6017,15 @@ function kepLastNote(kmid){
   return candidates[candidates.length-1];
 }
 function kepDailyRow2HTML(m){
-  var age=ageMonths(m.dob);
-  var due=age!=null&&age>=5;
+  var isInd=S.kep.trackFilter==='injection';
+  var due=kepIsDue(m);
+  var ageLabel=isInd?(kepFirstInjection(m.id)?Math.round((new Date(TISO)-new Date(kepFirstInjection(m.id).injected_at))/86400000)+'d':'?'):(ageMonths(m.dob)!=null?ageMonths(m.dob).toFixed(1)+'mo':'?');
   var lastNote=kepLastNote(m.id);
   var color=kepGroupColor(m.kep_cage_id);
   return '<div id="kqrow2-'+m.id+'" class="nf-row" data-mid="'+m.id+'" style="padding:6px .75rem;border-bottom:.5px solid var(--border);'+(due?'':'opacity:.55')+(color?';background:'+color+'14':'')+'">'
     +'<div style="display:flex;align-items:center;gap:8px">'
     +'<span class="mono" style="font-size:11px;width:80px">'+m.id+'</span>'
-    +'<span style="font-size:9px;color:var(--text3);width:60px">'+(age!=null?age.toFixed(1)+'mo':'?')+'</span>'
+    +'<span style="font-size:9px;color:var(--text3);width:60px">'+ageLabel+'</span>'
     +(due?'<span class="badge ba" style="font-size:8px">due</span>':'<span style="width:28px"></span>')
     +'<span style="flex:1;font-size:9px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px">'+(lastNote?lastNote.text+' ('+fmtD(lastNote.date)+')':'')+'</span>'
     +'<div id="kq2field-'+m.id+'" style="display:flex;gap:4px;flex-shrink:0">'
@@ -6054,7 +6112,7 @@ async function kepInsertQuickMeasurement(kmid,sites,note){
   }
   return true;
 }
-function renderKepCurrent(){if(S.view==='kepdaily')renderKepDailyTop();else renderKep();}
+function renderKepCurrent(){if(S.view==='kepdaily'||S.view==='kepdaily-ind')renderKepDailyTop();else renderKep();}
 async function submitKepPromote(kmid){
   var note=((document.getElementById('il-n-'+kmid)&&document.getElementById('il-n-'+kmid).value)||'').trim();
   var sites=getKepSites(kmid);
@@ -6192,32 +6250,104 @@ function renderKepPastePreview(raw){
     +'</div>';
   prev.innerHTML=html;
 }
+// Nipple/volume shorthand like "4R 20ul + 4L 19ul" -> [{nipple:'4R',volume_ul:20},{nipple:'4L',volume_ul:19}]
+function parseNippleVolumes(s){
+  return(s||'').split('+').map(function(p){return p.trim();}).filter(Boolean).map(function(p){
+    var m=p.match(/^([1-5][LR])\s*([\d.]+)?/i);
+    if(!m)return null;
+    return{nipple:m[1].toUpperCase(),volume_ul:m[2]?parseFloat(m[2]):null};
+  }).filter(Boolean);
+}
+function parseKepInjectionPaste(raw){
+  return raw.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length;}).map(function(line){
+    var parts=line.indexOf('\t')>=0?line.split('\t'):line.split(',');
+    parts=parts.map(function(p){return p.trim();});
+    var dobRaw=parts[1]||'',modelName=parts[2]||'',injRaw=parts[3]||'';
+    var mo=(S.kep.mouseModels||[]).find(function(x){return x.track_type==='injection'&&x.name.toLowerCase()===modelName.toLowerCase();});
+    return{id:parts[0]||'',dobRaw:dobRaw,dob:parseKepDob(dobRaw),modelName:modelName,modelId:mo?mo.id:null,injRaw:injRaw,inj:parseKepDob(injRaw),nipples:parseNippleVolumes(parts[4]||''),virus:parts[5]||''};
+  });
+}
+function renderKepInjectionPastePreview(raw){
+  var prev=document.getElementById('ken-preview');if(!prev)return;
+  var rows=parseKepInjectionPaste(raw);
+  if(!rows.length){prev.innerHTML='';return;}
+  var html='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--text3)">'
+    +'<th style="padding:2px 6px">Barcode</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Model</th><th style="padding:2px 6px">Injected</th><th style="padding:2px 6px">Nipples</th><th style="padding:2px 6px">Virus</th></tr></thead><tbody>';
+  var nBad=0;
+  rows.forEach(function(r){
+    var bad=!r.id||(r.dobRaw&&!r.dob)||!r.modelId||!r.inj||!r.nipples.length;
+    if(bad)nBad++;
+    html+='<tr style="'+(bad?'color:var(--red)':'')+'">'
+      +'<td style="padding:2px 6px" class="mono">'+(r.id||'--')+'</td>'
+      +'<td style="padding:2px 6px">'+(r.dob||(r.dobRaw?'? '+r.dobRaw:'--'))+'</td>'
+      +'<td style="padding:2px 6px">'+(r.modelId?r.modelName:(r.modelName?'? '+r.modelName:'--'))+'</td>'
+      +'<td style="padding:2px 6px">'+(r.inj||(r.injRaw?'? '+r.injRaw:'--'))+'</td>'
+      +'<td style="padding:2px 6px">'+(r.nipples.length?r.nipples.map(function(n){return n.nipple+(n.volume_ul?' '+n.volume_ul+'ul':'');}).join(' + '):'--')+'</td>'
+      +'<td style="padding:2px 6px">'+(r.virus||'--')+'</td>'
+      +'</tr>';
+  });
+  html+='</tbody></table><div style="margin-top:4px;color:var(--text3)">'+rows.length+' row'+(rows.length>1?'s':'')
+    +(nBad?' — <span style="color:var(--red)">'+nBad+' row'+(nBad>1?'s':'')+' missing/invalid data (barcode, a model name matching one of the models above exactly, injected date, or nipples) and will be skipped</span>':'')
+    +'</div>';
+  prev.innerHTML=html;
+}
 function showKepBulkAdd(){
-  showModal('Add KEP mice',
-    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, strain, genotype, DOB</strong> (tab-separated, or comma-separated). Each mouse keeps its own DOB. All start ungrouped.</div>'
-    +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
-    +'<textarea class="fi" id="ken-paste" rows="8" placeholder="2591266\tKcre;EcdF;P53F\thet hom hom\t31/10/2025&#10;2599822\tKcre;EcdF;P53F\thet hom hom\t19/12/2025" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
-    +'<div id="ken-preview" style="font-size:10px;overflow-x:auto"></div>',
-    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
-    +'<button class="btn btn-p btn-xs" onclick="submitKepBulkAdd()"><i class="ti ti-check"></i> Add</button>',true);
+  var isInd=S.kep.trackFilter==='injection';
+  if(isInd){
+    var modelNames=(S.kep.mouseModels||[]).filter(function(mo){return mo.track_type==='injection';}).map(function(mo){return mo.name;});
+    showModal('Add intraductal mice',
+      '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, DOB, model, injected date, nipples, virus</strong> (tab- or comma-separated). Model must match exactly: '+(modelNames.length?modelNames.join(', '):'<em>none defined yet — add one via "Manage models" first</em>')+'. Nipples e.g. "4R 20ul + 4L 19ul".</div>'
+      +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
+      +'<textarea class="fi" id="ken-paste" rows="8" placeholder="2591266\t31/10/2025\tIntraductal KEP\t14/2/2020\t4R 20ul + 4L 19ul\tpLenti#737-Cre" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
+      +'<div id="ken-preview" style="font-size:10px;overflow-x:auto"></div>',
+      '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+      +'<button class="btn btn-p btn-xs" onclick="submitKepBulkAdd()"><i class="ti ti-check"></i> Add</button>',true);
+  } else {
+    showModal('Add KEP mice',
+      '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, strain, genotype, DOB</strong> (tab-separated, or comma-separated). Each mouse keeps its own DOB. All start ungrouped.</div>'
+      +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
+      +'<textarea class="fi" id="ken-paste" rows="8" placeholder="2591266\tKcre;EcdF;P53F\thet hom hom\t31/10/2025&#10;2599822\tKcre;EcdF;P53F\thet hom hom\t19/12/2025" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
+      +'<div id="ken-preview" style="font-size:10px;overflow-x:auto"></div>',
+      '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+      +'<button class="btn btn-p btn-xs" onclick="submitKepBulkAdd()"><i class="ti ti-check"></i> Add</button>',true);
+  }
   setTimeout(function(){
     var ta=document.getElementById('ken-paste');
     if(ta){
       ta.focus();
-      ta.addEventListener('input',function(){renderKepPastePreview(ta.value);});
+      ta.addEventListener('input',function(){isInd?renderKepInjectionPastePreview(ta.value):renderKepPastePreview(ta.value);});
     }
   },50);
 }
 async function submitKepBulkAdd(){
+  if(S.kep.trackFilter==='injection'){await submitKepBulkAddInjection();return;}
   var raw=(document.getElementById('ken-paste')&&document.getElementById('ken-paste').value)||'';
   var rows=parseKepPaste(raw).filter(function(r){return r.id&&/^\d+$/.test(r.id);});
   if(!rows.length){alert('Paste at least one row with a valid barcode');return;}
+  var spontModel=(S.kep.mouseModels||[]).find(function(mo){return mo.track_type==='spontaneous';});
   var errors=[];
   for(var i=0;i<rows.length;i++){
     var r=rows[i];
-    var result=await sb.from('kep_mice').insert({id:r.id,dob:r.dob||null,strain:r.strain,genotype:r.genotype,status:'active',alloc_status:'none'});
+    var result=await sb.from('kep_mice').insert({id:r.id,dob:r.dob||null,strain:r.strain,genotype:r.genotype,status:'active',alloc_status:'none',model_id:spontModel?spontModel.id:null});
     if(result.error){errors.push(r.id+': '+result.error.message);}
     else{await sb.from('kep_mouse_events').insert({kep_mouse_id:r.id,event_date:TISO,event_type:'created',label:'Added to KEP watch',logged_by:uname()});}
+  }
+  if(errors.length)alert('Some mice could not be added:\n'+errors.join('\n'));
+  closeModal();await loadKep();renderKepCurrent();
+}
+async function submitKepBulkAddInjection(){
+  var raw=(document.getElementById('ken-paste')&&document.getElementById('ken-paste').value)||'';
+  var rows=parseKepInjectionPaste(raw).filter(function(r){return r.id&&r.modelId&&r.inj&&r.nipples.length;});
+  if(!rows.length){alert('Paste at least one row with a valid barcode, matching model, injected date, and nipple(s)');return;}
+  var errors=[];
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    var result=await sb.from('kep_mice').insert({id:r.id,dob:r.dob||null,status:'active',alloc_status:'none',model_id:r.modelId});
+    if(result.error){errors.push(r.id+': '+result.error.message);continue;}
+    var injRows=r.nipples.map(function(n){return{kep_mouse_id:r.id,injected_at:r.inj,nipple:n.nipple,volume_ul:n.volume_ul,virus:r.virus||null};});
+    var injResult=await sb.from('kep_injections').insert(injRows);
+    if(injResult.error)errors.push(r.id+' (injection): '+injResult.error.message);
+    await sb.from('kep_mouse_events').insert({kep_mouse_id:r.id,event_date:TISO,event_type:'created',label:'Added to intraductal watch',logged_by:uname()});
   }
   if(errors.length)alert('Some mice could not be added:\n'+errors.join('\n'));
   closeModal();await loadKep();renderKepCurrent();
@@ -6397,25 +6527,56 @@ function kepActionMenu(event,kmid){
 }
 function showKepEditMouse(kmid){
   var m=S.kep.mice.find(function(x){return x.id===kmid;});if(!m)return;
+  var isInd=kepTrackType(m)==='injection';
   S._kepEditCtx={kmid:kmid};
+  var modelOpts=(S.kep.mouseModels||[]).filter(function(mo){return mo.track_type==='injection';})
+    .map(function(mo){return'<option value="'+mo.id+'"'+(mo.id===m.model_id?' selected':'')+'>'+mo.name+'</option>';}).join('');
+  var injHtml='';
+  if(isInd){
+    var injs=S.kep.injections[kmid]||[];
+    injHtml='<hr class="div"><div style="font-size:11px;font-weight:500;margin-bottom:6px">Injections</div>'
+      +(injs.length?injs.map(function(inj){return'<div style="font-size:10px;color:var(--text2);margin-bottom:2px">'+fmtD(inj.injected_at)+' — '+inj.nipple+(inj.volume_ul?' '+inj.volume_ul+'ul':'')+(inj.virus?' ('+inj.virus+')':'')+'</div>';}).join(''):'<div style="font-size:10px;color:var(--text3);margin-bottom:6px">None logged yet.</div>')
+      +'<div class="f2" style="margin-top:8px">'
+      +'<div class="fg"><label class="fl">Date</label><input class="fi" id="ke-inj-date" type="date" value="'+TISO+'"></div>'
+      +'<div class="fg"><label class="fl">Nipple</label><select class="fs" id="ke-inj-nipple">'+LOCS.filter(function(l){return l!=='skin';}).map(function(l){return'<option value="'+l+'">'+l+'</option>';}).join('')+'</select></div>'
+      +'<div class="fg"><label class="fl">Volume (ul)</label><input class="fi" type="number" id="ke-inj-vol"></div>'
+      +'<div class="fg"><label class="fl">Virus</label><input class="fi" id="ke-inj-virus"></div>'
+      +'</div>'
+      +'<button type="button" class="btn btn-xs" style="margin-top:6px" onclick="submitAddKepInjection(\''+kmid+'\')"><i class="ti ti-plus"></i> Add injection</button>';
+  }
   showModal('Edit mouse — '+kmid,
     '<div class="f2">'
     +'<div class="fg"><label class="fl">DOB</label><input class="fi" id="ke-dob" type="date" value="'+(m.dob||'')+'"></div>'
-    +'<div class="fg"><label class="fl">Strain</label><input class="fi" id="ke-strain" value="'+(m.strain||'')+'"></div>'
-    +'<div class="fg"><label class="fl">Genotype</label><input class="fi" id="ke-geno" value="'+(m.genotype||'')+'"></div>'
+    +(isInd?'<div class="fg"><label class="fl">Model</label><select class="fs" id="ke-model">'+modelOpts+'</select></div>'
+       :'<div class="fg"><label class="fl">Strain</label><input class="fi" id="ke-strain" value="'+(m.strain||'')+'"></div>')
+    +(isInd?'':'<div class="fg"><label class="fl">Genotype</label><input class="fi" id="ke-geno" value="'+(m.genotype||'')+'"></div>')
     +'<div class="fg full"><label class="fl">Notes</label><textarea class="fi" id="ke-notes" rows="2" style="resize:vertical">'+(m.notes||'')+'</textarea></div>'
-    +'</div>',
+    +'</div>'
+    +injHtml,
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
-    +'<button class="btn btn-p btn-xs" onclick="submitKepEditMouse()"><i class="ti ti-check"></i> Save</button>');
+    +'<button class="btn btn-p btn-xs" onclick="submitKepEditMouse()"><i class="ti ti-check"></i> Save</button>',true);
 }
 async function submitKepEditMouse(){
   var d=S._kepEditCtx;if(!d)return;
   var dob=(document.getElementById('ke-dob')&&document.getElementById('ke-dob').value)||null;
-  var strain=(document.getElementById('ke-strain')&&document.getElementById('ke-strain').value)||'';
-  var geno=(document.getElementById('ke-geno')&&document.getElementById('ke-geno').value)||'';
   var notes=(document.getElementById('ke-notes')&&document.getElementById('ke-notes').value)||'';
-  await sb.from('kep_mice').update({dob:dob,strain:strain,genotype:geno,notes:notes}).eq('id',d.kmid);
+  var upd={dob:dob,notes:notes};
+  var strainEl=document.getElementById('ke-strain'),genoEl=document.getElementById('ke-geno'),modelEl=document.getElementById('ke-model');
+  if(strainEl)upd.strain=strainEl.value||'';
+  if(genoEl)upd.genotype=genoEl.value||'';
+  if(modelEl)upd.model_id=modelEl.value||null;
+  await sb.from('kep_mice').update(upd).eq('id',d.kmid);
   closeModal();await loadKep();renderKep();
+}
+async function submitAddKepInjection(kmid){
+  var date=(document.getElementById('ke-inj-date')&&document.getElementById('ke-inj-date').value)||TISO;
+  var nipple=(document.getElementById('ke-inj-nipple')&&document.getElementById('ke-inj-nipple').value)||'';
+  var volRaw=(document.getElementById('ke-inj-vol')&&document.getElementById('ke-inj-vol').value)||'';
+  var virus=(document.getElementById('ke-inj-virus')&&document.getElementById('ke-inj-virus').value)||'';
+  if(!nipple){alert('Select a nipple');return;}
+  var{error}=await sb.from('kep_injections').insert({kep_mouse_id:kmid,injected_at:date,nipple:nipple,volume_ul:volRaw?parseFloat(volRaw):null,virus:virus||null});
+  if(error){alert('Error: '+error.message);return;}
+  await loadKep();showKepEditMouse(kmid);
 }
 
 // --- Protocol panel: ambient view of which protocols need KEPs, their prereqs, and progress ---
@@ -6435,7 +6596,7 @@ function kepProtocolSummaries(){
       totalHave:arms.reduce(function(s,a){return s+a.have;},0),totalTarget:arms.reduce(function(s,a){return s+(a.target||0);},0),
       last:allocated[0]||null};
   });
-  var ext=(S.kep.externalExps||[]).map(function(e){
+  var ext=(S.kep.externalExps||[]).filter(function(e){return(e.track_type||'spontaneous')===S.kep.trackFilter;}).map(function(e){
     var extArms=e.arms||[];
     var arms=extArms.map(function(a){
       var have=S.kep.mice.filter(function(m){return m.alloc_experiment_id===e.id&&m.alloc_group_name===a.name&&m.status==='active';}).length;
@@ -6476,7 +6637,7 @@ function renderKepProtocolPanel(){
     +'<div style="font-size:11px;font-weight:600">Protocols</div>'
     +'<button class="btn btn-xs btn-icon" onclick="toggleKepPanel()" title="Hide"><i class="ti ti-chevron-right"></i></button>'
     +'</div>';
-  if(!protos.length)html+='<div style="font-size:10px;color:var(--text3)">None yet — tag an experiment\'s Model with "KEP", or add an external one from Needs KEPs.</div>';
+  if(!protos.length)html+='<div style="font-size:10px;color:var(--text3)">None yet — set an experiment\'s Model to a family defined in "Manage models", or add an external one from Needs KEPs.</div>';
   protos.forEach(function(p){
     var expanded=!!S.kep.panelExpanded[p.id];
     html+='<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:.5px solid var(--border)">'
@@ -6502,17 +6663,28 @@ function renderKepProtocolPanel(){
 }
 
 // --- Allocation (soft — no real transfer yet) ---
-function kepModelExps(){return S.experiments.filter(function(e){return e.status==='active'&&KEP_MODELS.includes(e.model);});}
+// An experiment's Model field is matched against mouse_models.family, not a hardcoded list —
+// several submodels can share one family (e.g. 4 PIK3CA variants), so a protocol that just says
+// "PIK3CA" is satisfied by any of them without needing to know which one in advance.
+function kepModelFamilies(trackType){
+  var seen={};
+  (S.kep.mouseModels||[]).forEach(function(mo){if(mo.track_type===trackType)seen[mo.family]=true;});
+  return Object.keys(seen);
+}
+function kepModelExps(){
+  var families=kepModelFamilies(S.kep.trackFilter);
+  return S.experiments.filter(function(e){return e.status==='active'&&families.indexOf(e.model)>=0;});
+}
 function kepAllocationTargets(){
   var real=kepModelExps().map(function(e){return{id:e.id,label:e.id+' — '+e.name,kind:'real',prereqs:e.kep_prereqs};});
-  var ext=(S.kep.externalExps||[]).map(function(e){return{id:e.id,label:e.id+' — '+(e.researcher||'external')+' (not using the tool)',kind:'external',prereqs:e.note};});
+  var ext=(S.kep.externalExps||[]).filter(function(e){return(e.track_type||'spontaneous')===S.kep.trackFilter;}).map(function(e){return{id:e.id,label:e.id+' — '+(e.researcher||'external')+' (not using the tool)',kind:'external',prereqs:e.note};});
   return real.concat(ext);
 }
 function showKepAllocate(kmid){
   S._kepAllocCtx={kmid:kmid};
   var targets=kepAllocationTargets();
   showModal('Allocate to experiment — '+kmid,
-    (targets.length?'':'<div style="font-size:10px;color:var(--amber);margin-bottom:8px">No active experiments are tagged with a KEP model yet, and no external experiments added — add "KEP" to an experiment\'s Model field, or add an external experiment from the Needs KEPs tab.</div>')
+    (targets.length?'':'<div style="font-size:10px;color:var(--amber);margin-bottom:8px">No active experiments match a model family for this pool yet, and no external experiments added — set an experiment\'s Model to a family defined in "Manage models", or add an external experiment from the Needs tab.</div>')
     +'<div class="fg full"><label class="fl">Experiment</label><select class="fs" id="ka-wp" onchange="kaWpChanged()" style="width:100%"><option value="">Select...</option>'+targets.map(function(t){return'<option value="'+t.id+'" data-kind="'+t.kind+'">'+t.label+'</option>';}).join('')+'</select></div>'
     +'<div class="fg full" id="ka-group-wrap" style="margin-top:.5rem"><label class="fl">Group</label><select class="fs" id="ka-group" disabled style="width:100%"><option value="">Select an experiment first</option></select></div>'
     +'<div id="ka-prereqs" style="margin-top:.5rem"></div>',
@@ -6566,7 +6738,7 @@ async function cancelKepAllocation(kmid){
   await loadKep();renderKep();
 }
 function renderKepAllocatedView(){
-  var mice=S.kep.mice.filter(function(m){return m.alloc_status==='allocated'&&m.status==='active';}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
+  var mice=S.kep.mice.filter(function(m){return m.alloc_status==='allocated'&&m.status==='active'&&kepTrackType(m)===S.kep.trackFilter;}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
   if(!mice.length)return'<div class="empty">No KEPs currently allocated.</div>';
   var html='<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
   html+='<thead><tr style="text-align:left;border-bottom:1px solid var(--border)">'
@@ -6661,7 +6833,7 @@ function renderKepNeedsKepsPanel(){
   var ext=protos.filter(function(p){return p.kind==='external';});
   var html='';
   if(!real.length){
-    html+='<div class="empty">No active experiments are tagged with a KEP model yet. Add "KEP" to an experiment\'s Model field to have it show up here.</div>';
+    html+='<div class="empty">No active experiments match a model family for this pool yet. Set an experiment\'s Model to a family defined in "Manage models" to have it show up here.</div>';
   } else {
     html+='<div class="card" style="margin-bottom:.75rem">';
     real.forEach(function(p){
@@ -6718,6 +6890,75 @@ function kepExtArmsHTML(){
   }).join('');
 }
 function kepExtAddArm(){KEPARMS.push({name:'Arm '+String.fromCharCode(65+KEPARMS.length),target_n:6});document.getElementById('kx-arms').innerHTML=kepExtArmsHTML();}
+
+// --- Mouse models admin (Family = coarse match against an experiment's Model field for Needs
+// KEPs/allocation; Name = the specific submodel a watch mouse actually is; Latency only applies
+// to injection-tracked models, to flag mice overdue for a first palpable tumor) ---
+function mouseModelRowHTML(mo){
+  return '<tr style="border-bottom:.5px solid var(--border)">'
+    +'<td style="padding:4px 6px"><input class="fi" value="'+(mo.name||'')+'" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'name\',this.value)"></td>'
+    +'<td style="padding:4px 6px"><input class="fi" value="'+(mo.family||'')+'" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'family\',this.value)"></td>'
+    +'<td style="padding:4px 6px"><select class="fs" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'track_type\',this.value)">'
+    +'<option value="spontaneous"'+(mo.track_type==='spontaneous'?' selected':'')+'>Spontaneous</option>'
+    +'<option value="injection"'+(mo.track_type==='injection'?' selected':'')+'>Injection</option>'
+    +'</select></td>'
+    +'<td style="padding:4px 6px"><input class="fi" type="number" min="0" value="'+(mo.latency_days!=null?mo.latency_days:'')+'" style="width:70px;font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'latency_days\',this.value?parseInt(this.value):null)"></td>'
+    +'<td style="padding:4px 6px"><input class="fi" value="'+(mo.notes||'')+'" style="font-size:11px;padding:3px 5px" onchange="updateMouseModelField(\''+mo.id+'\',\'notes\',this.value)"></td>'
+    +'<td style="padding:4px 6px;text-align:right"><button class="btn btn-xs btn-icon" onclick="deleteMouseModel(\''+mo.id+'\')" title="Delete"><i class="ti ti-trash"></i></button></td>'
+    +'</tr>';
+}
+function mouseModelsTableHTML(){
+  var rows=(S.kep.mouseModels||[]).slice().sort(function(a,b){return(a.family||'').localeCompare(b.family)||(a.name||'').localeCompare(b.name);});
+  if(!rows.length)return'<div class="empty">No models defined yet.</div>';
+  return '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text3)">'
+    +'<th style="padding:4px 6px">Name</th><th style="padding:4px 6px">Family</th><th style="padding:4px 6px">Track type</th><th style="padding:4px 6px">Latency (days)</th><th style="padding:4px 6px">Notes</th><th></th>'
+    +'</tr></thead><tbody id="mm-tbody">'+rows.map(mouseModelRowHTML).join('')+'</tbody></table>';
+}
+function showMouseModelsAdmin(){
+  showModal('Manage mouse models',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">These define the watch pools. <strong>Family</strong> is what an experiment\'s Model field is matched against for Needs KEPs / allocation (e.g. several PIK3CA submodels can share family "PIK3CA" so any of them satisfies that protocol). <strong>Track type</strong> decides which of the two watch/palpation sections a mouse using this model shows up in. <strong>Latency</strong> only applies to injection models, to flag mice overdue for a first palpable tumor.</div>'
+    +'<div style="overflow-x:auto">'+mouseModelsTableHTML()+'</div>'
+    +'<hr class="div">'
+    +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Add a model</div>'
+    +'<div class="f2">'
+    +'<div class="fg"><label class="fl">Name</label><input class="fi" id="mm-name" placeholder="e.g. PIK3CA H1047R AvW"></div>'
+    +'<div class="fg"><label class="fl">Family</label><input class="fi" id="mm-family" placeholder="e.g. PIK3CA"></div>'
+    +'<div class="fg"><label class="fl">Track type</label><select class="fs" id="mm-track"><option value="spontaneous">Spontaneous</option><option value="injection" selected>Injection</option></select></div>'
+    +'<div class="fg"><label class="fl">Latency (days)</label><input class="fi" type="number" min="0" id="mm-latency" placeholder="optional"></div>'
+    +'<div class="fg full"><label class="fl">Notes</label><input class="fi" id="mm-notes" placeholder="optional"></div>'
+    +'</div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Close</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitAddMouseModel()"><i class="ti ti-check"></i> Add model</button>',true);
+}
+async function updateMouseModelField(id,field,value){
+  var upd={};upd[field]=value;
+  var{error}=await sb.from('mouse_models').update(upd).eq('id',id);
+  if(error){alert('Error: '+error.message);return;}
+  var mo=(S.kep.mouseModels||[]).find(function(x){return x.id===id;});
+  if(mo)mo[field]=value;
+}
+async function submitAddMouseModel(){
+  var name=((document.getElementById('mm-name')&&document.getElementById('mm-name').value)||'').trim();
+  var family=((document.getElementById('mm-family')&&document.getElementById('mm-family').value)||'').trim();
+  var track=(document.getElementById('mm-track')&&document.getElementById('mm-track').value)||'spontaneous';
+  var latRaw=(document.getElementById('mm-latency')&&document.getElementById('mm-latency').value)||'';
+  var notes=(document.getElementById('mm-notes')&&document.getElementById('mm-notes').value)||'';
+  if(!name||!family){alert('Enter a name and a family');return;}
+  var{data,error}=await sb.from('mouse_models').insert({name:name,family:family,track_type:track,latency_days:latRaw?parseInt(latRaw):null,notes:notes}).select().single();
+  if(error){alert('Error: '+error.message);return;}
+  S.kep.mouseModels.push(data);
+  showMouseModelsAdmin();
+}
+async function deleteMouseModel(id){
+  var used=S.kep.mice.some(function(m){return m.model_id===id;});
+  if(used){alert('This model is used by one or more mice already in the watch pool — can\'t delete it.');return;}
+  if(!confirm('Delete this model?'))return;
+  var{error}=await sb.from('mouse_models').delete().eq('id',id);
+  if(error){alert('Error: '+error.message);return;}
+  S.kep.mouseModels=S.kep.mouseModels.filter(function(x){return x.id!==id;});
+  showMouseModelsAdmin();
+}
+
 function showKepAddExternalExp(){
   KEPARMS=[{name:'Arm A',target_n:6}];
   showModal('Add external experiment',
@@ -6740,7 +6981,7 @@ async function submitKepAddExternalExp(){
   var note=(document.getElementById('kx-note')&&document.getElementById('kx-note').value)||'';
   if(!wp){alert('Enter a WP number');return;}
   var arms=KEPARMS.filter(function(a){return a.name&&a.name.trim();});
-  var{error}=await sb.from('kep_external_experiments').insert({id:wp,researcher:res,note:note,arms:arms});
+  var{error}=await sb.from('kep_external_experiments').insert({id:wp,researcher:res,note:note,arms:arms,track_type:S.kep.trackFilter});
   if(error){alert('Error: '+error.message);return;}
   closeModal();await loadKep();renderKep();
 }
@@ -6782,7 +7023,7 @@ async function deleteKepExternalExp(id){
 }
 function renderKepRecentAllocations(){
   var cutoff=addD(TISO,-30);
-  var recent=S.kep.mice.filter(function(m){return m.alloc_date&&m.alloc_date>=cutoff;}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
+  var recent=S.kep.mice.filter(function(m){return m.alloc_date&&m.alloc_date>=cutoff&&kepTrackType(m)===S.kep.trackFilter;}).sort(function(a,b){return(b.alloc_date||'').localeCompare(a.alloc_date||'');});
   if(!recent.length)return'<div class="empty">No allocations in the last 30 days.</div>';
   var byResearcher={};
   recent.forEach(function(m){
