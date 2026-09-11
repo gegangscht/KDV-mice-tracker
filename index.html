@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v150</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v151</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5642,10 +5642,14 @@ function kepSetSort(field){
   renderKep();
 }
 function kepSortArrow(field){return S.kep.sortBy!==field?'':(S.kep.sortDir==='asc'?' ↑':' ↓');}
+function kepDobColValue(m){
+  if(S.kep.trackFilter==='injection'){var inj=kepFirstInjection(m.id);return inj?inj.injected_at:'';}
+  return m.dob||'';
+}
 function kepWatchOrder(mice){
   if(S.kep.sortBy==='id'||S.kep.sortBy==='dob'){
     return mice.slice().sort(function(a,b){
-      var av=S.kep.sortBy==='dob'?(a.dob||''):a.id,bv=S.kep.sortBy==='dob'?(b.dob||''):b.id;
+      var av=S.kep.sortBy==='dob'?kepDobColValue(a):a.id,bv=S.kep.sortBy==='dob'?kepDobColValue(b):b.id;
       var cmp=S.kep.sortBy==='dob'?(av<bv?-1:av>bv?1:0):av.localeCompare(bv,undefined,{numeric:true});
       return S.kep.sortDir==='asc'?cmp:-cmp;
     });
@@ -5678,7 +5682,7 @@ function renderKepWatchList(){
     +'<th style="padding:4px 5px;width:22px"></th>'
     +'<th style="padding:4px 5px;cursor:pointer" onclick="kepSetSort(\'id\')">Barcode'+kepSortArrow('id')+'</th>'
     +(isInd?'<th style="padding:4px 5px">Model / injection</th>':'')
-    +'<th style="padding:4px 5px;cursor:pointer" onclick="kepSetSort(\'dob\')">DOB'+kepSortArrow('dob')+'</th>'
+    +'<th style="padding:4px 5px;cursor:pointer" onclick="kepSetSort(\'dob\')">'+(isInd?'Injected':'DOB')+kepSortArrow('dob')+'</th>'
     +'<th style="padding:4px 5px">'+(isInd?'Day':'Age')+'</th>';
   for(var h=1;h<=KEP_HIST_COLS;h++)html+='<th style="padding:4px 5px" title="Measurement '+h+'">M'+h+'</th>';
   html+='<th style="padding:4px 5px">Notes</th>'
@@ -5696,7 +5700,7 @@ function renderKepWatchList(){
       +'<td style="padding:4px 5px"><input type="checkbox" class="kep-chk" data-kmid="'+m.id+'" '+(S.kep.selected[m.id]?'checked':'')+' onclick="onKepRowCheck(event,this)" style="width:13px;height:13px"></td>'
       +'<td style="padding:4px 5px" class="mono">'+m.id+'</td>'
       +(isInd?'<td style="padding:4px 5px;font-size:9px">'+(kepModelById(m.model_id)?kepModelById(m.model_id).name:'--')+'<div style="color:var(--text3)">'+kepInjectionSummary(m.id)+'</div></td>':'')
-      +'<td style="padding:4px 5px">'+(m.dob?fmtD(m.dob):'--')+'</td>'
+      +'<td style="padding:4px 5px">'+(kepDobColValue(m)?fmtD(kepDobColValue(m)):'--')+'</td>'
       +'<td style="padding:4px 5px'+(due?';color:var(--amber);font-weight:600':'')+'">'+ageDisp+(due?' <span class="badge ba" style="font-size:7px">due</span>':'')+'</td>';
     for(var i=0;i<KEP_HIST_COLS;i++){
       var ms=shown[i];
