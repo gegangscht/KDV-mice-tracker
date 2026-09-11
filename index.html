@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v147</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v148</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -6251,12 +6251,15 @@ function renderKepPastePreview(raw){
   prev.innerHTML=html;
 }
 // Nipple/volume shorthand like "4R 20ul + 4L 19ul" -> [{nipple:'4R',volume_ul:20},{nipple:'4L',volume_ul:19}]
+// Splits on +, comma or semicolon (real sheets mix all three); a chunk that doesn't match the
+// "4R 20ul" shape is kept as a literal nipple label (e.g. "unk") rather than dropped, so a row
+// missing real nipple data can still be recorded instead of failing validation entirely.
 function parseNippleVolumes(s){
-  return(s||'').split('+').map(function(p){return p.trim();}).filter(Boolean).map(function(p){
-    var m=p.match(/^([1-5][LR])\s*([\d.]+)?/i);
-    if(!m)return null;
-    return{nipple:m[1].toUpperCase(),volume_ul:m[2]?parseFloat(m[2]):null};
-  }).filter(Boolean);
+  return(s||'').split(/[+,;]/).map(function(p){return p.trim();}).filter(Boolean).map(function(p){
+    var m=p.match(/^([1-5][LR])\s*([\d.,]+)?/i);
+    if(m)return{nipple:m[1].toUpperCase(),volume_ul:m[2]?parseFloat(m[2].replace(',','.')):null};
+    return{nipple:p,volume_ul:null};
+  });
 }
 function parseKepInjectionPaste(raw){
   return raw.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length;}).map(function(line){
@@ -6264,7 +6267,7 @@ function parseKepInjectionPaste(raw){
     parts=parts.map(function(p){return p.trim();});
     var dobRaw=parts[1]||'',modelName=parts[2]||'',injRaw=parts[3]||'';
     var mo=(S.kep.mouseModels||[]).find(function(x){return x.track_type==='injection'&&x.name.toLowerCase()===modelName.toLowerCase();});
-    return{id:parts[0]||'',dobRaw:dobRaw,dob:parseKepDob(dobRaw),modelName:modelName,modelId:mo?mo.id:null,injRaw:injRaw,inj:parseKepDob(injRaw),nipples:parseNippleVolumes(parts[4]||''),virus:parts[5]||''};
+    return{id:parts[0]||'',dobRaw:dobRaw,dob:parseKepDob(dobRaw),modelName:modelName,modelId:mo?mo.id:null,injRaw:injRaw,inj:parseKepDob(injRaw),nipples:parseNippleVolumes(parts[4]||''),virus:parts[5]||'',notes:parts[6]||''};
   });
 }
 function renderKepInjectionPastePreview(raw){
@@ -6272,7 +6275,7 @@ function renderKepInjectionPastePreview(raw){
   var rows=parseKepInjectionPaste(raw);
   if(!rows.length){prev.innerHTML='';return;}
   var html='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--text3)">'
-    +'<th style="padding:2px 6px">Barcode</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Model</th><th style="padding:2px 6px">Injected</th><th style="padding:2px 6px">Nipples</th><th style="padding:2px 6px">Virus</th></tr></thead><tbody>';
+    +'<th style="padding:2px 6px">Barcode</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Model</th><th style="padding:2px 6px">Injected</th><th style="padding:2px 6px">Nipples</th><th style="padding:2px 6px">Virus</th><th style="padding:2px 6px">Notes</th></tr></thead><tbody>';
   var nBad=0;
   rows.forEach(function(r){
     var bad=!r.id||(r.dobRaw&&!r.dob)||!r.modelId||!r.inj||!r.nipples.length;
@@ -6284,6 +6287,7 @@ function renderKepInjectionPastePreview(raw){
       +'<td style="padding:2px 6px">'+(r.inj||(r.injRaw?'? '+r.injRaw:'--'))+'</td>'
       +'<td style="padding:2px 6px">'+(r.nipples.length?r.nipples.map(function(n){return n.nipple+(n.volume_ul?' '+n.volume_ul+'ul':'');}).join(' + '):'--')+'</td>'
       +'<td style="padding:2px 6px">'+(r.virus||'--')+'</td>'
+      +'<td style="padding:2px 6px">'+(r.notes||'--')+'</td>'
       +'</tr>';
   });
   html+='</tbody></table><div style="margin-top:4px;color:var(--text3)">'+rows.length+' row'+(rows.length>1?'s':'')
@@ -6296,7 +6300,7 @@ function showKepBulkAdd(){
   if(isInd){
     var modelNames=(S.kep.mouseModels||[]).filter(function(mo){return mo.track_type==='injection';}).map(function(mo){return mo.name;});
     showModal('Add intraductal mice',
-      '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, DOB, model, injected date, nipples, virus</strong> (tab- or comma-separated). Model must match exactly: '+(modelNames.length?modelNames.join(', '):'<em>none defined yet — add one via "Manage models" first</em>')+'. Nipples e.g. "4R 20ul + 4L 19ul".</div>'
+      '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste rows straight from Excel — one mouse per line, columns in order <strong>barcode, DOB, model, injected date, nipples, virus, notes (optional)</strong> (tab-separated). Model must match exactly: '+(modelNames.length?modelNames.join(', '):'<em>none defined yet — add one via "Manage models" first</em>')+'. Nipples e.g. "4R 20ul + 4L 19ul" (+ , or ; all work) — use "unk" if not recorded.</div>'
       +'<div class="fg" style="margin-bottom:8px"><label class="fl">Paste data</label>'
       +'<textarea class="fi" id="ken-paste" rows="8" placeholder="2591266\t31/10/2025\tIntraductal KEP\t14/2/2020\t4R 20ul + 4L 19ul\tpLenti#737-Cre" style="resize:vertical;font-family:var(--mono);font-size:11px"></textarea></div>'
       +'<div id="ken-preview" style="font-size:10px;overflow-x:auto"></div>',
@@ -6342,7 +6346,7 @@ async function submitKepBulkAddInjection(){
   var errors=[];
   for(var i=0;i<rows.length;i++){
     var r=rows[i];
-    var result=await sb.from('kep_mice').insert({id:r.id,dob:r.dob||null,status:'active',alloc_status:'none',model_id:r.modelId});
+    var result=await sb.from('kep_mice').insert({id:r.id,dob:r.dob||null,status:'active',alloc_status:'none',model_id:r.modelId,notes:r.notes||''});
     if(result.error){errors.push(r.id+': '+result.error.message);continue;}
     var injRows=r.nipples.map(function(n){return{kep_mouse_id:r.id,injected_at:r.inj,nipple:n.nipple,volume_ul:n.volume_ul,virus:r.virus||null};});
     var injResult=await sb.from('kep_injections').insert(injRows);
