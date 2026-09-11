@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v142</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v143</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -5817,10 +5817,10 @@ function buildKepPrintHTML(){
     }).join('');
     phtml+='<tr style="border-bottom:.5px solid #ccc">'
       +'<td style="padding:4px 3px;font-family:monospace">'+m.id+'</td>'
-      +'<td style="padding:4px 3px;border-bottom:1px solid #000">&nbsp;</td>'
+      +'<td style="padding:4px 6px 4px 3px"><div style="border-bottom:1px solid #000;height:11px">&nbsp;</div></td>'
       +'<td style="padding:4px 3px;color:#555">'+prevHtml+'</td>'
-      +'<td style="padding:4px 3px;border-bottom:1px solid #000">&nbsp;</td>'
-      +'<td style="padding:4px 3px;border-bottom:1px solid #000">'+notesHtml+'&nbsp;</td>'
+      +'<td style="padding:4px 6px 4px 3px"><div style="border-bottom:1px solid #000;height:11px">&nbsp;</div></td>'
+      +'<td style="padding:4px 3px">'+notesHtml+'<div style="border-bottom:1px solid #000;height:11px">&nbsp;</div></td>'
       +'</tr>';
   });
   phtml+='</tbody></table>';
