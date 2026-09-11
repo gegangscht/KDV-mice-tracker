@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v136</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v137</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3069,6 +3069,7 @@ async function renderExp(eid){
         +'<div style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="group-row-chk" data-gid="'+g.id+'" data-eid="'+eid+'" onchange="onGroupRowCheck(this)"'+(S._selectedGroups&&S._selectedGroups[g.id]?' checked':'')+'><div class="edot" style="background:'+g.color+'"></div>'
         +'<span style="font-size:11px;font-weight:500">'+groupDisplayName(g)+'</span>'
         +'<span class="badge bgy">target: '+g.target_n+'</span>'
+        +(g.egp?'<span class="badge bgy">EGP: '+g.egp+'</span>':'')
         +(g.discomfort?'<span class="badge bgy">'+g.discomfort+'</span>':'')
         +(groupTwiceDailyWeight(g.id)?'<span class="badge bgy">2x weight</span>':'')
         +'</div>'
