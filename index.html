@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v131</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v132</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -589,7 +589,10 @@ function getTasksForDate(iso){
       var tgtD=new Date(iso);
       gevts.forEach(function(ev){
         if((ev.type==='measure'||ev.type==='measure-tumor'||ev.type==='measure-weight')&&ev.schedule_type==='fixed-days'&&(ev.schedule_days||[]).includes(dow)){
-          var measOk=ev.trigger_type==='day-after-tx'?!!(txD&&tgtD>=txD):!!(enD&&tgtD>=enD);
+          var measOk=false;
+          if(ev.trigger_type==='size'&&last){var mb=burden(last.tumor_sites,false);var mthr=parseSz(ev.trigger_value||'5x5');if(mthr&&mb>=mthr.v1*mthr.v2)measOk=true;}
+          else if(ev.trigger_type==='day-after-tx'){measOk=!!(txD&&tgtD>=txD);}
+          else{measOk=!!(enD&&tgtD>=enD);}
           if(measOk){
             var taskType=ev.type==='measure-weight'?'measure-weight':(ev.type==='measure-tumor'?'measure-tumor':'measure');
             tasks.push({type:taskType,mouseId:m.id,expId:exp.id,expName:exp.name,researcher:exp.researcher,group:g.name,groupColor:g.color,label:ev.label,lastBurden:last?bShort(last.tumor_sites,S.inclSkin):'--',lastNote:last&&last.note?last.note:'',dayInTx:txD?Math.round((tgtD-txD)/86400000):null,m:m,exp:exp,g:g,ev:ev,date:iso,taskId:'meas-'+m.id+'-'+iso});
@@ -2900,6 +2903,7 @@ async function renderExp(eid){
     +'<div class="tab '+(S.expTab==='km'?'act':'')+'" onclick="ST(\'km\')">Survival</div>'
     +'<div class="tab '+(S.expTab==='weight'?'act':'')+'" onclick="ST(\'weight\')">Weight</div>'
     +'<div class="tab '+(S.expTab==='sched'?'act':'')+'" onclick="ST(\'sched\')">Schedule</div>'
+    +'<div class="tab '+(S.expTab==='notes'?'act':'')+'" onclick="ST(\'notes\')">Notes</div>'
     +'</div>';
 
   if(S.expTab==='mice'){
@@ -2911,6 +2915,7 @@ async function renderExp(eid){
       +(miceHasAxes?groupByAxisSelectHTML(exp,eid):'')+'</div>'
       +'<div style="display:flex;align-items:center;gap:6px">'
       +'<button class="btn btn-g btn-xs" onclick="showGlobalEnroll()"><i class="ti ti-user-plus"></i> Bulk enroll mice</button>'
+      +'<button class="btn btn-xs" onclick="showBulkEditDates(\''+eid+'\')"><i class="ti ti-calendar-event"></i> Bulk edit dates</button>'
       +'<button class="btn btn-xs" onclick="S.showHist[\''+eid+'\']=!S.showHist[\''+eid+'\'];renderExp(\''+eid+'\')"><i class="ti ti-history"></i> '+(showAllHist?'Collapse all history':'Show full history for all mice')+'</button>'
       +'</div></div>';
     if(showAllHist){
@@ -3105,6 +3110,13 @@ async function renderExp(eid){
       groups.forEach(function(g){html+=schedGroupBlockHTML(g);});
     }
     html+='</div>';
+  } else if(S.expTab==='notes'){
+    html+='<div class="card">'
+      +'<div style="font-size:11px;font-weight:500;margin-bottom:6px">Notes</div>'
+      +'<div style="font-size:9px;color:var(--text3);margin-bottom:6px">Free-form scratchpad for this experiment — saves automatically when you click away.</div>'
+      +'<textarea class="fi" id="exp-scratch-notes" rows="18" placeholder="Random thoughts, things to check, ideas..." style="resize:vertical;width:100%;font-size:12px" onblur="saveScratchNotes(\''+eid+'\')">'+(exp.scratch_notes||'')+'</textarea>'
+      +'<div id="exp-scratch-saved" style="font-size:9px;color:var(--green);margin-top:4px;visibility:hidden">Saved</div>'
+      +'</div>';
   }
   document.getElementById('content').innerHTML=html;
   if(S.expTab==='growth')setTimeout(function(){drawGrowth(exp,qualGrowthGroups)},50);
@@ -3439,6 +3451,15 @@ function toggleWtGrpVis(eid,gid){
 }
 
 var _wtThrTimer=null;
+async function saveScratchNotes(eid){
+  var el=document.getElementById('exp-scratch-notes');if(!el)return;
+  var val=el.value;
+  await sb.from('experiments').update({scratch_notes:val}).eq('id',eid);
+  var exp=S.experiments.find(function(e){return e.id===eid});
+  if(exp)exp.scratch_notes=val;
+  var savedEl=document.getElementById('exp-scratch-saved');
+  if(savedEl){savedEl.style.visibility='visible';setTimeout(function(){savedEl.style.visibility='hidden';},1500);}
+}
 async function saveWtThreshold(eid){
   var el=document.getElementById('wt-thr');if(!el)return;
   var raw=el.value.trim();
@@ -4176,6 +4197,72 @@ async function submitBulkEditEgp(eid){
   }
   closeModal();await loadAll(eid);renderExp(eid);
   if(changed)alert('Updated EGP on '+changed+' group(s)');
+}
+
+// BULK EDIT DOB / ENROLLED / TX START — same cascade-paste table pattern as Bulk edit EGP,
+// for correcting or backfilling dates that had no edit path anywhere else (e.g. a mouse
+// enrolled without a DOB). Enrolled is never cleared to blank — it's load-bearing for task
+// generation — DOB and Tx start can be cleared.
+function showBulkEditDates(eid){
+  var mice=sortMiceForDisplay((S.mice[eid]||[]).filter(function(m){return m.status==='active';}));
+  if(!mice.length){alert('No active mice in this experiment.');return;}
+  S._bulkDateMids=mice.map(function(m){return m.id;});
+  var rows=mice.map(function(m,i){
+    return '<tr><td style="padding:3px 6px;font-size:11px" class="mono">'+m.id+'</td>'
+      +'<td style="padding:3px 6px"><input class="fi" type="date" id="bed-dob-'+m.id+'" value="'+(m.dob||'')+'" style="width:100%;font-size:11px;padding:3px 6px" onpaste="handleDateCascadePaste(event,\'bed-dob-\',\''+m.id+'\',S._bulkDateMids)"></td>'
+      +'<td style="padding:3px 6px"><input class="fi" type="date" id="bed-enr-'+m.id+'" value="'+(m.enrolled||'')+'" style="width:100%;font-size:11px;padding:3px 6px" onpaste="handleDateCascadePaste(event,\'bed-enr-\',\''+m.id+'\',S._bulkDateMids)"></td>'
+      +'<td style="padding:3px 6px"><input class="fi" type="date" id="bed-tx-'+m.id+'" value="'+(m.tx_start||'')+'" style="width:100%;font-size:11px;padding:3px 6px" onpaste="handleDateCascadePaste(event,\'bed-tx-\',\''+m.id+'\',S._bulkDateMids)"></td></tr>';
+  }).join('');
+  showModal('Bulk edit dates',
+    '<div style="font-size:10px;color:var(--text2);margin-bottom:8px">Paste a column of dates copied from Excel into any cell — it fills that cell and every one below it in the same column, in the order shown. Accepts DD/MM/YYYY, YYYY-MM-DD, or Excel date serials. Enrolled can\'t be left blank (it drives the task schedule); DOB and Tx start can.</div>'
+    +'<div style="max-height:420px;overflow-y:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;font-size:9px;color:var(--text3);padding:3px 6px">Mouse</th><th style="text-align:left;font-size:9px;color:var(--text3);padding:3px 6px">DOB</th><th style="text-align:left;font-size:9px;color:var(--text3);padding:3px 6px">Enrolled</th><th style="text-align:left;font-size:9px;color:var(--text3);padding:3px 6px">Tx start</th></tr></thead><tbody>'
+    +rows+'</tbody></table></div>',
+    '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-p btn-xs" onclick="submitBulkEditDates(\''+eid+'\')"><i class="ti ti-check"></i> Save all</button>',true);
+}
+function handleDateCascadePaste(e,idPrefix,startMid,midList){
+  e.preventDefault();
+  var text=(e.clipboardData||window.clipboardData).getData('text');
+  var lines=text.split(/\r?\n/).map(function(s){return s.trim();}).filter(function(s,i,arr){return!(s===''&&i===arr.length-1);});
+  var startIdx=midList.indexOf(startMid);
+  if(startIdx<0)return;
+  for(var i=0;i<lines.length;i++){
+    var mid=midList[startIdx+i];
+    if(!mid)break;
+    var input=document.getElementById(idPrefix+mid);
+    if(!input)continue;
+    if(!lines[i]){input.value='';continue;}
+    var parsed=parseKepDob(lines[i]);
+    if(parsed)input.value=parsed;
+  }
+}
+async function submitBulkEditDates(eid){
+  var mice=S.mice[eid]||[];
+  var changed=0;
+  for(var i=0;i<S._bulkDateMids.length;i++){
+    var mid=S._bulkDateMids[i];
+    var m=mice.find(function(x){return x.id===mid;});
+    var dobEl=document.getElementById('bed-dob-'+mid);
+    var enrEl=document.getElementById('bed-enr-'+mid);
+    var txEl=document.getElementById('bed-tx-'+mid);
+    if(!m||!dobEl||!enrEl||!txEl)continue;
+    var newDob=dobEl.value||null;
+    var newEnr=enrEl.value||m.enrolled;
+    var newTx=txEl.value||null;
+    var dobChanged=newDob!==(m.dob||null);
+    var enrChanged=newEnr!==(m.enrolled||null);
+    var txChanged=newTx!==(m.tx_start||null);
+    if(!dobChanged&&!enrChanged&&!txChanged)continue;
+    await sb.from('mice').update({dob:newDob,enrolled:newEnr,tx_start:newTx}).eq('id',mid);
+    var parts=[];
+    if(dobChanged)parts.push('DOB '+(m.dob||'--')+' → '+(newDob||'--'));
+    if(enrChanged)parts.push('Enrolled '+(m.enrolled||'--')+' → '+(newEnr||'--'));
+    if(txChanged)parts.push('Tx start '+(m.tx_start||'--')+' → '+(newTx||'--'));
+    await sb.from('mouse_events').insert({mouse_id:mid,experiment_id:eid,event_date:TISO,event_type:'note',label:'Dates corrected via bulk edit — '+parts.join('; '),logged_by:uname()});
+    changed++;
+  }
+  closeModal();await loadAll(eid);renderExp(eid);
+  if(changed)alert('Updated dates on '+changed+' mouse/mice');
 }
 function showAddGroup(eid){
   S._addGrpEid=eid;
