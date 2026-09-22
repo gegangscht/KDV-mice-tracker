@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v153</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v154</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -326,7 +326,7 @@ const TLBL2={measure:'Tumor measurements','measure-tumor':'Tumor measurements','
 const TICO={measure:'ti-ruler-2','measure-tumor':'ti-ruler-2','measure-combined':'ti-ruler-2','measure-weight':'ti-weight',treatment:'ti-syringe',blood:'ti-droplet',ivis:'ti-camera',custom:'ti-clipboard-list',distress:'ti-stethoscope','note-only':'ti-pin'};
 const EICO={enrolled:'ti-door-enter',transferred:'ti-arrows-exchange',tx_start:'ti-syringe',schedule_start:'ti-calendar-event',blood_draw:'ti-droplet',ivis:'ti-camera',cage_change:'ti-cage',note:'ti-note',sacrifice:'ti-heart-broken',mastectomy:'ti-scissors',recurrence:'ti-refresh-alert',distress_check:'ti-stethoscope'};
 
-const S={view:'daily',curExp:null,expTab:'mice',sortBy:'exp',wkOff:0,plotMode:'both',inclSkin:true,showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{},
+const S={view:'daily',curExp:null,expTab:'mice',sortBy:'exp',wkOff:0,plotMode:'both',inclSkin:true,timelineDateFilter:'all',showHist:{},showAllMs:{},user:null,users:[],experiments:[],mice:{},measurements:{},groups:{},events:{},mevents:{},adhoc:{},charts:{},
   kep:{mice:[],cages:[],externalExps:[],measurements:{},mevents:{},mouseModels:[],injections:{},trackFilter:'spontaneous',loaded:false,tab:'watch',selected:{},sortBy:'group',sortDir:'asc',panelOpen:true,panelExpanded:{},logDate:TISO}};
 var kepMouseOrder=[];
 var kepDailyOrder=[];
@@ -2838,25 +2838,31 @@ function tlShowTip(e){
   tip.style.top=(r.bottom+4)+'px';
 }
 function tlHideTip(){var tip=document.getElementById('tl-tip');if(tip)tip.style.display='none';}
+function tlHasTumor(ms){return!!(ms.tumor_sites&&ms.tumor_sites.some(function(s){return s.dim1;}));}
+function tlHasWeight(ms){return ms.weight!=null&&ms.weight!==''||ms.weight_pm!=null&&ms.weight_pm!=='';}
 function renderTimelineTab(exp,groups,eid){
   var miceAll=sortMiceForDisplay(S.mice[eid]||[]);
   if(!miceAll.length)return'<div class="empty">No mice in this experiment yet.</div>';
 
-  // Collect every date that has at least one real tumor measurement, across all mice.
+  var tumorOnly=S.timelineDateFilter==='tumor';
+  // Collect every date with a real entry, across all mice — a tumor measurement always counts;
+  // a weight-only day (no tumor_sites) counts too unless narrowed to tumor-only.
   var allDatesSet={};
   miceAll.forEach(function(m){
     ((S.measurements[eid]||{})[m.id]||[]).forEach(function(ms){
-      if(ms.tumor_sites&&ms.tumor_sites.some(function(s){return s.dim1;}))allDatesSet[ms.measured_at]=true;
+      if(tlHasTumor(ms)||(!tumorOnly&&tlHasWeight(ms)))allDatesSet[ms.measured_at]=true;
     });
   });
   var allDates=Object.keys(allDatesSet).sort();
   if(!allDates.length)return'<div class="empty">No measurements logged yet for this experiment.</div>';
 
   var html='<div class="card" style="padding:.75rem">';
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">'
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:6px">'
     +'<div style="font-size:11px;font-weight:500">Timeline — every measurement date, '+allDates.length+' dates</div>'
+    +'<div style="display:flex;align-items:center;gap:8px">'
+    +'<div style="display:flex;gap:3px"><button class="pt-btn'+(!tumorOnly?' act':'')+'" onclick="S.timelineDateFilter=\'all\';ST(\'timeline\')">All dates</button><button class="pt-btn'+(tumorOnly?' act':'')+'" onclick="S.timelineDateFilter=\'tumor\';ST(\'timeline\')">Tumor only</button></div>'
     +'<div style="font-size:9px;color:var(--text3)">Read-only — log values from Mice & measurements or the daily spreadsheet</div>'
-    +'</div>';
+    +'</div></div>';
 
   groups.forEach(function(g){
     var gMice=miceAll.filter(function(m){return m.group_id===g.id||m.group_name===g.name;});
@@ -2887,11 +2893,13 @@ function renderTimelineTab(exp,groups,eid){
       var mevts=(S.mevents[eid]||{})[m.id]||[];
       html+='<div style="display:flex">';
       allDates.forEach(function(d){
-        var ms=msl.find(function(x){return x.measured_at===d&&x.tumor_sites&&x.tumor_sites.some(function(s){return s.dim1;});});
+        var ms=msl.find(function(x){return x.measured_at===d&&(tlHasTumor(x)||tlHasWeight(x));});
         var cellContent='';
-        if(ms){
+        if(ms&&tlHasTumor(ms)){
           var sz=bShort(ms.tumor_sites,S.inclSkin);
           cellContent='<span class="tl-sz">'+sz+'</span><span class="tl-w">'+(ms.weight!=null&&ms.weight!==''?ms.weight+'g':'')+'</span>';
+        } else if(ms){
+          cellContent='<span class="tl-sz" style="color:var(--text3)">—</span><span class="tl-w">'+(ms.weight!=null&&ms.weight!==''?ms.weight+'g':'')+'</span>';
         } else {
           cellContent='<span class="tl-sz" style="color:var(--text3)">—</span><span class="tl-w"></span>';
         }
