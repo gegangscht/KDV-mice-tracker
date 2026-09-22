@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v152</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v153</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -4410,7 +4410,7 @@ function showEditEvent(evid,eid){
   showModal('Edit scheduled event',
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Type</label>'
-    +'<select class="fs" id="ee-type">'
+    +'<select class="fs" id="ee-type" onchange="toggleTwiceDailyWrap(\'ee\')">'
     +['measure','measure-tumor','measure-weight','treatment','blood','ivis','custom'].map(function(t){return'<option value="'+t+'"'+(ev.type===t?' selected':'')+'>'+t+'</option>'}).join('')
     +'</select></div>'
     +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ee-label" value="'+(ev.label||'')+'"></div>'
@@ -4428,7 +4428,7 @@ function showEditEvent(evid,eid){
     +'<div class="fg"><label class="fl">Trigger value</label><input class="fi" id="ee-trigval" value="'+(ev.trigger_value||'')+'" placeholder="e.g. 5x5"></div>'
     +'<div class="fg"><label class="fl">Day offset</label><input class="fi" id="ee-dayoff" type="number" value="'+(ev.day_offset||0)+'"></div>'
     +'<div class="fg"><label class="fl">Max doses</label><input class="fi" id="ee-maxdose" type="number" value="'+(ev.max_doses||'')+'" placeholder="unlimited"></div>'
-    +'<div class="fg full"><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ee-2xd"'+(ev.twice_daily?' checked':'')+' style="width:14px;height:14px">Twice-daily (AM+PM) — applies to Weight events</label></div>'
+    +'<div class="fg full" id="ee-2xd-wrap" style="'+(ev.type==='measure-weight'?'':'display:none')+'"><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ee-2xd"'+(ev.twice_daily?' checked':'')+' style="width:14px;height:14px">Twice-daily (AM+PM)</label></div>'
     +'</div>',
     '<button class="btn btn-xs btn-r" onclick="deleteEvent()"><i class="ti ti-trash"></i> Delete</button>'
     +'<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
@@ -4471,7 +4471,7 @@ function showAddEvent(gid,eid){
   }).join('');
   showModal('Add scheduled event',
     '<div class="f2">'
-    +'<div class="fg"><label class="fl">Type</label><select class="fs" id="ae-type">'+['measure','measure-tumor','measure-weight','treatment','blood','ivis','custom'].map(function(t){return'<option>'+t+'</option>'}).join('')+'</select></div>'
+    +'<div class="fg"><label class="fl">Type</label><select class="fs" id="ae-type" onchange="toggleTwiceDailyWrap(\'ae\')">'+['measure','measure-tumor','measure-weight','treatment','blood','ivis','custom'].map(function(t){return'<option>'+t+'</option>'}).join('')+'</select></div>'
     +'<div class="fg"><label class="fl">Label</label><input class="fi" id="ae-label" placeholder="e.g. anti-PD1 IP" autofocus></div>'
     +'<div class="fg"><label class="fl">Drug</label><input class="fi" id="ae-drug"></div>'
     +'<div class="fg"><label class="fl">Dose</label><input class="fi" id="ae-dose" placeholder="200ug"></div>'
@@ -4483,10 +4483,23 @@ function showAddEvent(gid,eid){
     +'<div class="fg"><label class="fl">Trigger value</label><input class="fi" id="ae-trigval" placeholder="e.g. 5x5"></div>'
     +'<div class="fg"><label class="fl">Day offset</label><input class="fi" id="ae-dayoff" type="number" value="0"></div>'
     +'<div class="fg"><label class="fl">Max doses</label><input class="fi" id="ae-maxdose" type="number" placeholder="unlimited"></div>'
-    +'<div class="fg full"><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ae-2xd" style="width:14px;height:14px">Twice-daily (AM+PM) — applies to Weight events</label></div>'
+    +'<div class="fg full" id="ae-2xd-wrap" style="display:none"><label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ae-2xd" style="width:14px;height:14px">Twice-daily (AM+PM)</label></div>'
     +'</div>',
     '<button class="btn btn-xs" onclick="closeModal()">Cancel</button>'
     +'<button class="btn btn-p btn-xs" onclick="saveAddEvent()"><i class="ti ti-check"></i> Add event</button>');
+}
+// The twice-daily flag only has any effect on a measure-weight event (groupTwiceDailyWeight()
+// only checks that type) — hide the checkbox for every other type instead of letting it be set
+// somewhere it's silently ignored, and clear it when hidden so a stale check from before a type
+// switch can't get saved onto the wrong event type.
+function toggleTwiceDailyWrap(prefix){
+  var type=(document.getElementById(prefix+'-type')&&document.getElementById(prefix+'-type').value)||'';
+  var wrap=document.getElementById(prefix+'-2xd-wrap');
+  var chk=document.getElementById(prefix+'-2xd');
+  if(!wrap)return;
+  var show=type==='measure-weight';
+  wrap.style.display=show?'':'none';
+  if(!show&&chk)chk.checked=false;
 }
 async function saveAddEvent(){
   var d=S._addEvt;if(!d)return;
