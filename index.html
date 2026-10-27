@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v155</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v156</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3033,14 +3033,14 @@ async function renderExp(eid){
         +'<span style="font-size:11px;font-weight:500">'+groupDisplayName(g)+'</span>'
         +'<span class="badge bgy">'+actN+'/'+gM.length+' active - target '+(g.target_n||'?')+'</span></div>'
         +'<button class="btn btn-g btn-xs" onclick="showEnroll(\''+eid+'\',\''+g.id+'\',\''+g.name+'\')"><i class="ti ti-user-plus"></i> Enroll mouse</button></div>'
-        +'<table class="mt"><thead><tr>'
+        +'<div style="overflow-x:auto"><table class="mt"><thead><tr>'
         +'<th style="width:22px"></th>'
         +'<th style="width:80px">Mouse ID</th><th style="width:50px">Cage</th><th style="width:70px">Tx start</th>'
         +'<th style="width:42px">Day</th><th style="width:'+(exp.multi_tumor?'145px':'85px')+'">'+(exp.multi_tumor?'Burden':'Last size')+'</th>'
         +'<th style="width:65px">Last date</th><th style="width:48px">Weight</th><th style="width:90px">Note</th>'
         +'<th style="width:68px">KDV#</th>'
         +(exp.is_mastectomy?'<th style="width:65px">Mx date</th>':'')
-        +'<th style="width:70px">Status</th><th style="width:90px"></th>'
+        +'<th style="width:70px">Status</th><th style="width:'+(exp.is_mastectomy?'230px':'200px')+'"></th>'
         +'</tr></thead><tbody>';
       gM.forEach(function(m){
         var last=lastMs(m.id,eid);var days=dInTx(m);var near=nearEP(m.id,eid);var isAct=m.status==='active';
@@ -3066,7 +3066,7 @@ async function renderExp(eid){
           +'<td>'+kdvC+'</td>'
           +(exp.is_mastectomy?'<td style="font-size:10px">'+(m.mx_date||'—')+'</td>':'')
           +'<td>'+sbb+'</td>'
-          +'<td><div style="display:flex;gap:2px;flex-wrap:wrap">'
+          +'<td><div style="display:flex;gap:2px;flex-wrap:nowrap;white-space:nowrap">'
           // Log button: shown for active non-post-mx, and recurrence mice
           +(isAct&&m.post_mx_status!=='post_mx'?'<button class="btn btn-g btn-xs" onclick="openLogE(\''+eid+'\',\''+m.id+'\',-1)"><i class="ti ti-plus"></i> Log</button>':'')
           // Distress check button: post-mx only
@@ -3087,7 +3087,7 @@ async function renderExp(eid){
           +'</div></td></tr>'
           +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="'+(exp.is_mastectomy?13:12)+'" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
       });
-      mh+='</tbody></table></div>';
+      mh+='</tbody></table></div></div>';
       return mh;
     }
     var miceGroupBy=miceHasAxes?(S.schedGroupBy&&S.schedGroupBy[eid])||'':'';
