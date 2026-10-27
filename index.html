@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v154</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v155</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3038,7 +3038,9 @@ async function renderExp(eid){
         +'<th style="width:80px">Mouse ID</th><th style="width:50px">Cage</th><th style="width:70px">Tx start</th>'
         +'<th style="width:42px">Day</th><th style="width:'+(exp.multi_tumor?'145px':'85px')+'">'+(exp.multi_tumor?'Burden':'Last size')+'</th>'
         +'<th style="width:65px">Last date</th><th style="width:48px">Weight</th><th style="width:90px">Note</th>'
-        +'<th style="width:68px">KDV#</th><th style="width:70px">Status</th><th style="width:90px"></th>'
+        +'<th style="width:68px">KDV#</th>'
+        +(exp.is_mastectomy?'<th style="width:65px">Mx date</th>':'')
+        +'<th style="width:70px">Status</th><th style="width:90px"></th>'
         +'</tr></thead><tbody>';
       gM.forEach(function(m){
         var last=lastMs(m.id,eid);var days=dInTx(m);var near=nearEP(m.id,eid);var isAct=m.status==='active';
@@ -3083,7 +3085,7 @@ async function renderExp(eid){
           +'<button class="btn btn-xs btn-icon" title="History" onclick="toggleHist(\''+eid+'\',\''+m.id+'\')"><i class="ti ti-history"></i></button>'
           +'<button class="btn btn-xs btn-icon btn-r" title="Remove mouse from experiment" onclick="removeMouse(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-user-minus"></i></button>'
           +'</div></td></tr>'
-          +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="12" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
+          +'<tr id="hist-tr-'+m.id+'" class="hist-row" style="display:none"><td colspan="'+(exp.is_mastectomy?13:12)+'" style="padding:0 6px 8px;background:var(--surface2);overflow:visible;white-space:normal">'+renderMouseHist(m,eid)+'</td></tr>';
       });
       mh+='</tbody></table></div>';
       return mh;
