@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v156</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v157</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3985,9 +3985,11 @@ async function submitRecurrence(){
 // DISTRESS CHECK (Post-Mx daily check)
 function logDistressCheck(eid,mid){
   S._mxCtx={eid:eid,mid:mid};
+  var m=(S.mice[eid]||[]).find(function(x){return x.id===mid});
   showModal('Distress check — '+mid,
     '<div class="f2">'
     +'<div class="fg"><label class="fl">Date</label><input class="fi" id="dc-date" type="date" value="'+TISO+'"></div>'
+    +'<div class="fg"><label class="fl">Weight (g)</label><input class="fi" id="dc-weight" placeholder="'+(m&&m.weight?m.weight:'g')+'"></div>'
     +'<div class="fg"><label class="fl">Status</label>'
     +'<select class="fs" id="dc-status">'
     +'<option value="clear">All clear — no distress</option>'
@@ -4007,12 +4009,18 @@ async function submitDistressCheck(){
   var dcDate=document.getElementById('dc-date')&&document.getElementById('dc-date').value||TISO;
   var status=document.getElementById('dc-status')&&document.getElementById('dc-status').value||'clear';
   var note=document.getElementById('dc-note')&&document.getElementById('dc-note').value||'';
+  var wStr=((document.getElementById('dc-weight')&&document.getElementById('dc-weight').value)||'').trim();
+  var w=wStr?parseFloat(wStr):null;
   var label=status==='clear'?'Distress check: clear':status==='watch'?'Distress check: watch'+(note?' — '+note:''):'Respiratory distress endpoint';
   await sb.from('mouse_events').insert({
     mouse_id:d.mid,experiment_id:d.eid,event_date:dcDate,
     event_type:'distress_check',label:label,
-    details:{status:status,note:note},logged_by:uname()
+    details:{status:status,note:note,weight:(w!=null&&!isNaN(w))?w:null},logged_by:uname()
   });
+  if(w!=null&&!isNaN(w)){
+    await sb.from('measurements').insert({mouse_id:d.mid,experiment_id:d.eid,measured_at:dcDate,note:note||null,logged_by:uname(),weight:w});
+    await sb.from('mice').update({weight:w}).eq('id',d.mid);
+  }
   if(status==='endpoint'){
     await sb.from('mice').update({status:'sacrificed',cause:'endpoint',sac_date:dcDate}).eq('id',d.mid);
     await sb.from('mouse_events').insert({mouse_id:d.mid,experiment_id:d.eid,event_date:dcDate,event_type:'sacrifice',label:'Sacrificed — respiratory endpoint',logged_by:uname()});
