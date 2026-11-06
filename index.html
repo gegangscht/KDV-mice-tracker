@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v157</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v158</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -1325,6 +1325,15 @@ function buildEgpMap(){
   });
   return map;
 }
+// A matched experiment id that shares its "base" (text before any dot) with another real
+// experiment id is exactly the trap that put mice in the wrong WP before: a stale EGP left over
+// on an old WP's group silently matches, even though a newer WP sharing that same base number
+// (e.g. WP12032 vs WP12032.2) was the one actually intended. One EGP match is never itself
+// ambiguous to the matching logic, so this is the only way to catch it before it's submitted.
+function expIdSiblings(eid){
+  var base=eid.split('.')[0];
+  return S.experiments.filter(function(e){return e.id!==eid&&e.id.split('.')[0]===base;}).map(function(e){return e.id;});
+}
 function renderGlobalEnrollPreview(raw){
   var prev=document.getElementById('gen-preview');if(!prev)return;
   var rows=parseGlobalEnrollPaste(raw);
@@ -1332,12 +1341,19 @@ function renderGlobalEnrollPreview(raw){
   var egpMap=buildEgpMap();
   var html='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--text3)">'
     +'<th style="padding:2px 6px">EGP</th><th style="padding:2px 6px">Mouse ID</th><th style="padding:2px 6px">Matched group</th><th style="padding:2px 6px">DOB</th><th style="padding:2px 6px">Enrolled</th><th style="padding:2px 6px">Tx start</th></tr></thead><tbody>';
-  var nBad=0;
+  var nBad=0,nWarn=0;
   rows.forEach(function(r){
     var matches=r.egp?(egpMap[r.egp]||[]):[];
     var bad=!r.id||!matches.length||matches.length>1||(r.dobRaw&&!r.dob)||(r.enrolledRaw&&!r.enrolled)||(r.txRaw&&!r.tx);
     if(bad)nBad++;
     var matchLabel=!r.egp?'--':!matches.length?'no EGP match':matches.length>1?'EGP matches '+matches.length+' groups':matches[0].eid+' — '+matches[0].gname;
+    if(!bad&&matches.length===1){
+      var sib=expIdSiblings(matches[0].eid);
+      if(sib.length){
+        nWarn++;
+        matchLabel='<span style="color:var(--amber)" title="'+matches[0].eid+' has a similarly-numbered sibling experiment: '+sib.join(', ')+'. Double-check this EGP really belongs here, not there."><i class="ti ti-alert-triangle" style="font-size:10px;vertical-align:-1px"></i> '+matchLabel+'</span>';
+      }
+    }
     var enrolledLabel=r.enrolled?r.enrolled:(r.enrolledRaw?'? '+r.enrolledRaw:'(today)');
     var txLabel;
     if(r.tx)txLabel=r.tx;
@@ -1356,6 +1372,7 @@ function renderGlobalEnrollPreview(raw){
   });
   html+='</tbody></table><div style="margin-top:4px;color:var(--text3)">'+rows.length+' row'+(rows.length>1?'s':'')
     +(nBad?' — <span style="color:var(--red)">'+nBad+' row'+(nBad>1?'s':'')+' will be skipped (no mouse ID, no/ambiguous EGP match, or unparseable date)</span>':'')
+    +(nWarn?' — <span style="color:var(--amber)">'+nWarn+' row'+(nWarn>1?'s':'')+' matched an experiment with a similarly-numbered sibling — check the warning icon before enrolling</span>':'')
     +'</div>';
   prev.innerHTML=html;
 }
@@ -1376,6 +1393,21 @@ async function submitGlobalEnroll(){
   var raw=(document.getElementById('gen-paste')&&document.getElementById('gen-paste').value)||'';
   var rows=parseGlobalEnrollPaste(raw);
   var egpMap=buildEgpMap();
+  var warnLines=[];
+  rows.forEach(function(r){
+    if(!r.id||!r.egp)return;
+    var matches=egpMap[r.egp]||[];
+    if(matches.length===1){
+      var sib=expIdSiblings(matches[0].eid);
+      if(sib.length)warnLines.push(r.id+' → '+matches[0].eid+' — '+matches[0].expName+' (also exists: '+sib.join(', ')+')');
+    }
+  });
+  if(warnLines.length){
+    var proceed=confirm('Heads up — this is exactly how mice got enrolled into the wrong WP before:\n\n'
+      +warnLines.join('\n')
+      +'\n\nEach matched experiment above has a similarly-numbered sibling. Double-check these EGPs belong to the experiment shown, not the sibling, before continuing.\n\nEnroll anyway?');
+    if(!proceed)return;
+  }
   var errors=[];
   S._cageSortPool=S._cageSortPool||[];
   var added=0;
