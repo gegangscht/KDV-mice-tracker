@@ -270,7 +270,7 @@ hr.div{border:none;border-top:.5px solid var(--border);margin:.625rem 0}
       <div class="tb-title">MouseTracker</div>
       <div class="tb-user" id="tb-user" onclick="switchUser()">
         <div class="udot" id="tb-dot"></div>
-        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v158</span>
+        <span id="tb-name">—</span><span style="font-size:9px;color:var(--text3);margin-left:6px;opacity:.6">v159</span>
         <i class="ti ti-chevron-down" style="font-size:10px;color:var(--text3)"></i>
       </div>
     </div>
@@ -3353,6 +3353,7 @@ function renderMouseHist(m,eid){
       var evShowD0Btn=!d0BtnShownForDate[ev.event_date];
       d0BtnShownForDate[ev.event_date]=true;
       var isEditableNote=ev.event_type==='note'&&ev.id;
+      var isSacEvt=ev.event_type==='sacrifice'&&m.status==='sacrificed';
       html+='<tr class="'+ec+(evIsD0?' d0-row':'')+'">'
         +'<td class="mono">'+ev.event_date+(evIsD0?'<span class="d0-badge">Day 0</span>':'')+'</td>'
         +'<td><i class="ti '+icon+'" style="font-size:12px"></i></td>'
@@ -3362,6 +3363,7 @@ function renderMouseHist(m,eid){
         +'<td><div style="display:flex;gap:3px">'
         +(evShowD0Btn?'<button class="d0-btn" onclick="setDay0(\''+m.id+'\',\''+eid+'\',\''+ev.event_date+'\')">'+(evIsD0?'Day 0 set':'Set day 0')+'</button>':'')
         +(isEditableNote?'<button class="btn btn-xs btn-icon" title="Edit note" onclick="editMouseNote(\''+ev.id+'\',\''+eid+'\',\''+m.id+'\')"><i class="ti ti-pencil"></i></button>':'')
+        +(isSacEvt?'<button class="btn btn-xs" title="Undo — set this mouse back to active" onclick="reactivateMouse(\''+m.id+'\',\''+eid+'\')"><i class="ti ti-refresh"></i> Reactivate</button>':'')
         +'</div></td></tr>';
     }
   });
